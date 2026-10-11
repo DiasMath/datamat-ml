@@ -2,16 +2,17 @@
 
 Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta revisão inclui integração ML no código, checklist/prioridades, métricas/indicadores de publicidade e preparação Vercel, além de cálculo ao digitar, autocomplete, login removido e Excel. Testes de negócio usam projetos aleatórios `demo-*` no emulador Firestore e não escrevem cadastros na base operacional `datamat-ml`.
 
-| Verificação              | Resultado                                                                                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TypeScript               | `npm run typecheck`: passou                                                                                                                               |
-| Domínio e serviços       | `npm test`: **92 passaram**, nenhuma falha ou teste ignorado                                                                                              |
-| Build de produção        | `npm run build`: passou                                                                                                                                   |
-| Navegador Chromium       | `npm run test:e2e`: **32 passaram**, nenhuma falha ou teste ignorado                                                                                      |
-| Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                |
-| Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                 |
-| Responsividade           | 15 telas/abas × 6 larguras: **90 combinações**, sem transbordamento horizontal do documento                                                               |
-| Firestore real           | CRUD técnico isolado confirmado na revisão anterior; acesso atual sem login: `/api/workspace` 200 no Firebase real, duas lojas e nenhum cadastro fictício |
+| Verificação              | Resultado                                                                                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript               | `npm run typecheck`: passou                                                                                                                                |
+| Domínio e serviços       | `npm test`: **101 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Build de produção        | `npm run build`: passou                                                                                                                                    |
+| Navegador Chromium       | `npm run test:e2e`: **32 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
+| Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
+| Responsividade           | 15 telas/abas × 6 larguras: **90 combinações**, sem transbordamento horizontal do documento                                                                |
+| Firestore real           | CRUD técnico isolado confirmado na revisão anterior; JSON privado preparado para Vercel validado com leitura autenticada, sem alterar documentos           |
+| Publicação do usuário    | `https://datamat-ml.vercel.app/api/workspace`: inicialmente 503; conferência final **200**, sem acesso autenticado ao painel para conferir/alterar valores |
 
 ## Comportamentos exercitados
 
@@ -34,7 +35,7 @@ Capturas em `test-results/review/`, traces de falhas e relatórios são locais e
 
 O emulador verifica persistência e regras de negócio, sem garantir que todos os fluxos comerciais foram usados em uma conta real. O CRUD técnico anterior no Firebase real usou um único documento UUID em `_datamat_review_checks`, removido depois. A verificação atual não introduz anúncios/tarefas de teste no projeto real.
 
-OAuth/catálogo/tarifas/métricas ML foram implementados e testados com respostas controladas. Não foram autorizadas contas reais nem validados contratos/permissões na aplicação ML do usuário: API/documentação retornaram HTTP 403 neste ambiente. Bling, IA, deploy público, portal, backup/restauração, pipeline Power BI e extensão permanecem pendentes. Regras publicadas do projeto real já negam acesso direto de clientes; índices versionados não foram publicados. Paginação é visual: a consulta inicial ainda carrega os registros das lojas selecionadas. Importação com vários lotes preserva os lotes concluídos, sem atomicidade do arquivo inteiro.
+OAuth/catálogo/tarifas/métricas ML foram implementados e testados com respostas controladas. Não foram autorizadas contas reais nem validados contratos/permissões na aplicação ML do usuário: API/documentação retornaram HTTP 403 neste ambiente. Bling, IA, inspeção autenticada das variáveis da publicação, portal, backup/restauração, pipeline Power BI e extensão permanecem pendentes. Regras publicadas do projeto real já negam acesso direto de clientes; índices versionados não foram publicados. Paginação é visual: a consulta inicial ainda carrega os registros das lojas selecionadas. Importação com vários lotes preserva os lotes concluídos, sem atomicidade do arquivo inteiro.
 
 As fontes públicas do Avantpro foram pesquisadas, mas a experiência Free/Pro e a extensão paga não foram testadas. Veja [avantpro.md](avantpro.md), [roadmap.md](roadmap.md) e [README](../README.md).
 
@@ -74,3 +75,12 @@ Os testes Chromium da integração usam contratos controlados: consulta após pa
 - A rota de análise valida loja, período e origem das mutações. Testes API usam emulador isolado; os dados dos gráficos dos testes são respostas controladas.
 
 Permissões e contratos do ML real ainda precisam ser conferidos com a conta autorizada. Publicidade automática, conciliação, reclamações/devoluções e concorrência permanecem pendentes. Veja [analytics.md](analytics.md).
+
+## Revisão das variáveis de ambiente
+
+- Nove testes adicionais cobrem JSON normal/codificado como string, aspas externas, BOM, espaços e quebras de linha da chave; campos ausentes, projeto/e-mail divergentes e chave inválida recebem mensagens específicas sem expor entradas.
+- A Vercel exige o JSON completo e rejeita emulador; caminhos locais nunca são lidos na hospedagem. Fora dela, arquivo local e ADC continuam disponíveis. Um JSON inválido não é ignorado em favor de outra credencial.
+- Validador de deploy e servidor compartilham as mesmas regras. Aplicação ML exige ID numérico, segredo, callback da mesma origem e chave canônica base64 de 32 bytes; chaves existentes não são substituídas.
+- O arquivo privado com cinco variáveis foi carregado pelo parser dotenv do Next.js e passou no validador com valores reais. O Firebase Admin realizou uma leitura autenticada usando exatamente esse JSON, sem escrita e sem imprimir segredos.
+- Os 101 testes, o build, a verificação TypeScript e os 32 testes Chromium passaram depois das alterações. Testes de tela cobrem CRUD, persistência, Excel, cálculos ao digitar, análises e responsividade.
+- A publicação inicialmente respondeu 503 e passou a responder **200** em `/api/workspace` na conferência final. O painel Vercel não está autenticado neste ambiente para inspecionar os valores ou identificar a ação que corrigiu o deploy. Importação em **Production**, remoção de variáveis locais e **Redeploy**, quando necessários, devem ser feitos no painel; salvar variáveis não atualiza uma publicação existente. Veja [passo a passo](vercel.md).

@@ -1,6 +1,9 @@
 import { randomUUID, createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { readFileSync } from "node:fs";
+import {
+  readFirebaseConfiguration,
+  FirebaseConfigurationError,
+} from "./firebase-configuration";
 import {
   initializeApp,
   getApps,
@@ -30,58 +33,21 @@ const context = new AsyncLocalStorage<Context>();
 let database: Firestore | undefined;
 export function db() {
   if (database) return database;
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  if (!projectId)
-    throw new DatabaseConfigurationError(
-      "Configure FIREBASE_PROJECT_ID para acessar o Cloud Firestore",
-    );
-  const emulator = process.env.FIRESTORE_EMULATOR_HOST;
-  if (emulator && !projectId.startsWith("demo-"))
-    throw new DatabaseConfigurationError(
-      "O emulador exige projeto demo-* separado do projeto real",
-    );
+  let configuration: ReturnType<typeof readFirebaseConfiguration>;
   let credential;
-  if (!emulator) {
-    try {
-      const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
-        path = process.env.FIREBASE_ADMIN_CREDENTIALS_PATH;
-      if (raw || path) {
-        const data = JSON.parse(
-          raw || readFileSync(/* turbopackIgnore: true */ path!, "utf8"),
-        );
-        if (
-          data.type !== "service_account" ||
-          !data.private_key ||
-          !data.client_email ||
-          data.project_id !== projectId ||
-          (process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL &&
-            data.client_email !== process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL)
-        )
-          throw new Error("invalid");
-        credential = cert(data);
-      } else {
-        const adc = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        if (adc) {
-          const data = JSON.parse(
-            readFileSync(/* turbopackIgnore: true */ adc, "utf8"),
-          );
-          if (
-            ![
-              "service_account",
-              "authorized_user",
-              "external_account",
-            ].includes(data.type)
-          )
-            throw new Error("invalid");
-        }
-        credential = applicationDefault();
-      }
-    } catch {
-      throw new DatabaseConfigurationError(
-        "Credencial administrativa ausente ou inválida. Configure FIREBASE_SERVICE_ACCOUNT_JSON ou FIREBASE_ADMIN_CREDENTIALS_PATH com uma conta de serviço do projeto.",
-      );
-    }
+  try {
+    configuration = readFirebaseConfiguration();
+    if (configuration.account) credential = cert(configuration.account);
+    else if (configuration.mode === "application-default")
+      credential = applicationDefault();
+  } catch (error) {
+    throw new DatabaseConfigurationError(
+      error instanceof FirebaseConfigurationError
+        ? error.message
+        : "Não foi possível carregar a credencial administrativa. Confira FIREBASE_SERVICE_ACCOUNT_JSON ou a credencial local configurada.",
+    );
   }
+  const { projectId } = configuration;
   const app =
     getApps().find((a) => a.name === "datamat-server") ||
     initializeApp(

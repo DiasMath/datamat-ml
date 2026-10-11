@@ -82,7 +82,7 @@ Disponibilize a porta 3000 por um proxy reverso **HTTPS** e configure `APP_URL` 
 
 Em cada servidor, forneça uma credencial segura da conta autorizada e o mesmo `FIREBASE_PROJECT_ID`. Prefira identidade de serviço gerenciada no Google Cloud ou JSON mantido no gerenciador de segredos da hospedagem. Configure backup/PITR e retenção no Firestore conforme a operação; valide uma restauração. Não inclua a chave privada no bundle, no Git ou em variáveis `NEXT_PUBLIC_*`.
 
-O ambiente cloud preparado e o rascunho de configuração não constituem publicação da aplicação. Não foram configurados domínio público, hospedagem ou dados reais.
+O usuário publicou em `https://datamat-ml.vercel.app`. A configuração segura das variáveis da hospedagem é descrita em [Vercel](docs/vercel.md); os arquivos privados do ambiente cloud não são enviados ao GitHub.
 
 ## Integrações e limites desta versão
 
@@ -93,7 +93,7 @@ O ambiente cloud preparado e o rascunho de configuração não constituem public
 
 Credenciais externas são configuradas no servidor, nunca no navegador. Sua presença não significa autorização de uma conta. A tela diferencia sem configuração e sem autorização e registra tentativas indisponíveis com fidelidade. Consulte [integrações](docs/integrations.md).
 
-Fora do escopo concluído: validação da integração com contas reais, escrita externa, gestão de outras organizações pela interface, identidade/permissões do portal, extensão Chrome, consultas de grandes volumes com paginação Firestore e deploy público. A separação por organização existe no banco e nas validações; novas lojas podem ser adicionadas na organização atual.
+Fora do escopo concluído: validação da integração com contas reais, escrita externa, gestão de outras organizações pela interface, identidade/permissões do portal, extensão Chrome e consultas de grandes volumes com paginação Firestore. A separação por organização existe no banco e nas validações; novas lojas podem ser adicionadas na organização atual.
 
 ## Organização do código
 
@@ -113,6 +113,6 @@ Precificação ao digitar, fórmulas auditadas e limites: [docs/pricing.md](docs
 
 ## Publicar na Vercel
 
-Configuração pronta em `vercel.json`, com Node.js 24, build Next.js e Firestore no servidor. Variáveis de produção, passo a passo e URLs OAuth/notificações estão em [docs/vercel.md](docs/vercel.md). Use `FIREBASE_SERVICE_ACCOUNT_JSON` como segredo na Vercel; o caminho da credencial deste ambiente não existe na hospedagem. A publicação ainda não foi executada.
+Configuração pronta em `vercel.json`, com Node.js 24, build Next.js e Firestore no servidor. Variáveis obrigatórias/opcionais, importação privada, diagnóstico e URLs OAuth/notificações estão em [docs/vercel.md](docs/vercel.md). No endereço atual `https://datamat-ml.vercel.app`, use `APP_URL` com essa origem e `FIREBASE_SERVICE_ACCOUNT_JSON` como segredo completo; o caminho da credencial deste ambiente não existe na hospedagem. Salvar variáveis exige Redeploy para atualizar a aplicação publicada.
 
 Melhorias adicionais: prioridades explicáveis para margem negativa/estoque/custos, checklist que cria tarefas sem duplicação, métricas com origem e intervalo, ROAS/ACOS/TACOS manuais ao digitar e saúde das conexões por loja.

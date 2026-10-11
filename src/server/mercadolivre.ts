@@ -36,11 +36,9 @@ export const ML_STATE_COOKIE = "datamat-ml-oauth";
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 function encryptionKey() {
-  const value = Buffer.from(
-    process.env.ML_TOKEN_ENCRYPTION_KEY || "",
-    "base64",
-  );
-  if (value.length !== 32)
+  const encoded = process.env.ML_TOKEN_ENCRYPTION_KEY?.trim() || "";
+  const value = Buffer.from(encoded, "base64");
+  if (value.length !== 32 || value.toString("base64") !== encoded)
     throw new HttpError(
       503,
       "Configure a chave de proteção dos tokens do Mercado Livre no servidor",
@@ -76,15 +74,18 @@ export function decryptSecret(value: string): any {
   }
 }
 function config() {
-  const {
-    ML_CLIENT_ID: clientId,
-    ML_CLIENT_SECRET: clientSecret,
-    ML_REDIRECT_URI: redirectUri,
-  } = process.env;
+  const clientId = process.env.ML_CLIENT_ID?.trim(),
+    clientSecret = process.env.ML_CLIENT_SECRET?.trim(),
+    redirectUri = process.env.ML_REDIRECT_URI?.trim();
   if (!clientId || !clientSecret || !redirectUri)
     throw new HttpError(
       503,
       "Configure as credenciais da aplicação do Mercado Livre no servidor antes de conectar uma conta",
+    );
+  if (!/^[1-9]\d*$/.test(clientId))
+    throw new HttpError(
+      503,
+      "ML_CLIENT_ID deve ser o ID numérico da aplicação no portal de desenvolvedores do Mercado Livre",
     );
   encryptionKey();
   let redirect: URL, app: URL;

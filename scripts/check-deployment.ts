@@ -1,6 +1,9 @@
 // Run with the intended production environment. Never print credential values.
 import { mlConfigured } from "../src/server/mercadolivre";
-import { createPrivateKey } from "node:crypto";
+import {
+  readFirebaseConfiguration,
+  FirebaseConfigurationError,
+} from "../src/server/firebase-configuration";
 const errors: string[] = [];
 let app: URL | undefined;
 try {
@@ -19,31 +22,15 @@ try {
 } catch {
   errors.push("Configure APP_URL com a URL de produção da Vercel.");
 }
-if (!process.env.FIREBASE_PROJECT_ID)
-  errors.push("Configure FIREBASE_PROJECT_ID.");
 try {
-  const account = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "");
-  if (
-    account.type !== "service_account" ||
-    account.project_id !== process.env.FIREBASE_PROJECT_ID ||
-    !account.private_key ||
-    !account.client_email
-  )
-    throw new Error();
-  if (createPrivateKey(account.private_key).asymmetricKeyType !== "rsa")
-    throw new Error();
-  if (
-    process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL &&
-    account.client_email !== process.env.FIREBASE_SERVICE_ACCOUNT_EMAIL
-  )
-    throw new Error();
-} catch {
+  readFirebaseConfiguration({ ...process.env, VERCEL: "1" });
+} catch (error) {
   errors.push(
-    "Configure FIREBASE_SERVICE_ACCOUNT_JSON com a conta administrativa do projeto; o caminho local não funciona na Vercel.",
+    error instanceof FirebaseConfigurationError
+      ? error.message
+      : "Não foi possível validar a credencial administrativa do Firebase.",
   );
 }
-if (process.env.FIRESTORE_EMULATOR_HOST)
-  errors.push("Remova FIRESTORE_EMULATOR_HOST do ambiente de produção.");
 if (
   ["ML_CLIENT_ID", "ML_CLIENT_SECRET", "ML_REDIRECT_URI"].some(
     (k) => process.env[k],

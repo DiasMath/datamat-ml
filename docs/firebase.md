@@ -6,13 +6,15 @@ Cloud Firestore, banco `(default)`, projeto `datamat-ml`. Firebase Admin acessa 
 
 A conta configurada é `firebase-adminsdk-fbsvc@datamat-ml.iam.gserviceaccount.com`. Neste ambiente, `.env.local` aponta para o arquivo recebido, fora do repositório, com permissão `600`. A chave privada não foi adicionada ao código, aos scripts de instalação ou ao rascunho de configuração.
 
-Para outra hospedagem, configure uma alternativa:
+Na Vercel, configure `FIREBASE_SERVICE_ACCOUNT_JSON` com o JSON administrativo completo como segredo; caminhos da máquina local e ADC não são usados na hospedagem. Remova variáveis de caminhos locais e emulador do painel e faça Redeploy. Veja [configuração e diagnóstico da Vercel](vercel.md).
+
+Fora da Vercel, configure uma alternativa:
 
 - `FIREBASE_SERVICE_ACCOUNT_JSON`: JSON completo inserido como segredo no ambiente do processo pelo gerenciador da hospedagem.
 - `FIREBASE_ADMIN_CREDENTIALS_PATH`: caminho absoluto de um arquivo de credencial montado de forma segura, fora do Git.
 - Application Default Credentials: identidade de serviço gerenciada ou `GOOGLE_APPLICATION_CREDENTIALS` válido, quando as duas alternativas anteriores não forem usadas.
 
-Mantenha `FIREBASE_PROJECT_ID=datamat-ml`. Credenciais JSON devem corresponder ao projeto e e-mail esperado. A conta deve ter permissão no Firestore, por exemplo `roles/datastore.user`. Não use variáveis `NEXT_PUBLIC_*` para credenciais privadas.
+Mantenha `FIREBASE_PROJECT_ID=datamat-ml`. Credenciais JSON devem corresponder ao projeto e, quando `FIREBASE_SERVICE_ACCOUNT_EMAIL` for informado, ao e-mail esperado. O servidor valida a estrutura e a chave RSA, normaliza as quebras de linha e informa correções sem expor valores. A conta deve ter permissão no Firestore, por exemplo `roles/datastore.user`. Não use variáveis `NEXT_PUBLIC_*` para credenciais privadas.
 
 ## Inicialização
 
@@ -48,4 +50,4 @@ npx tsx scripts/verify-firestore.ts --write
 
 O comando recusa configuração de emulador e remove apenas o documento que ele próprio criou, inclusive em sua rotina de limpeza. Os fluxos de negócio completos continuam sendo testados no emulador, sem inserir cadastros demonstrativos no projeto real. Veja [a revisão funcional](review.md).
 
-Domínio público, hospedagem externa e restauração em nova tarefa ainda não foram validados. Configure backups/PITR, retenção e monitoramento conforme a operação.
+Na revisão das variáveis, o JSON privado preparado para importação na Vercel autorizou uma leitura real do Firestore, sem escrita. A publicação do usuário em `https://datamat-ml.vercel.app` inicialmente respondeu 503 por configuração administrativa e, na conferência final, `/api/workspace` respondeu **200**. O painel Vercel não está autenticado neste ambiente para alterar ou inspecionar os valores. Restauração em nova tarefa ainda não foi validada. Configure backups/PITR, retenção e monitoramento conforme a operação.

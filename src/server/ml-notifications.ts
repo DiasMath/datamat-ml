@@ -20,7 +20,7 @@ export async function receiveNotification(payload: unknown) {
     .parse(payload);
   if (!process.env.ML_CLIENT_ID)
     throw new HttpError(503, "Aplicação Mercado Livre não configurada");
-  if (String(body.application_id) !== process.env.ML_CLIENT_ID)
+  if (String(body.application_id) !== process.env.ML_CLIENT_ID?.trim())
     throw new HttpError(403, "Notificação de outra aplicação");
   const patterns: Record<string, RegExp> = {
     items: /^\/items\/MLB\d{1,20}$/,

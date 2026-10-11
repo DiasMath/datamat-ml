@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Operational collections, password hashes, sessions and decisions are server-only.
+    // The Admin SDK authenticates through IAM; browser SDKs must never access these directly.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

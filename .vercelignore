@@ -1,0 +1,15 @@
+.env*
+!.env.example
+.cache
+.firebase
+.next
+node_modules
+data
+test-results
+playwright-report
+service-account*.json
+*-adminsdk-*.json
+*.tsbuildinfo
+firebase-debug.log
+firestore-debug.log
+datamat-ml-53d1294eaa26.json

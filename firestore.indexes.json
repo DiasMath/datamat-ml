@@ -1,0 +1,60 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "history",
+      "fieldPath": "snapshot_json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "proposals",
+      "fieldPath": "snapshot_json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "simulations",
+      "fieldPath": "snapshot_json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "costs",
+      "fieldPath": "data_json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "parameters",
+      "fieldPath": "data_json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "users",
+      "fieldPath": "password_hash",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ml_tokens",
+      "fieldPath": "encrypted",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ml_oauth_states",
+      "fieldPath": "secret",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ml_sync_pages",
+      "fieldPath": "page",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "ml_notification_inbox",
+      "fieldPath": "events",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "offers",
+      "fieldPath": "ml",
+      "indexes": []
+    }
+  ]
+}

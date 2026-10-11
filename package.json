@@ -1,0 +1,40 @@
+{
+  "name": "datamat-ml",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "test": "tsx scripts/test-with-firestore.ts unit",
+    "test:e2e": "tsx scripts/test-with-firestore.ts browser",
+    "typecheck": "tsc --noEmit",
+    "vercel:check": "tsx scripts/check-deployment.ts",
+    "emulator:download": "tsx scripts/firestore-emulator.ts download",
+    "emulator:start": "tsx scripts/firestore-emulator.ts download && java -jar .cache/firestore/cloud-firestore-emulator-v1.22.0.jar --host 127.0.0.1 --port 8080 --rules firestore.rules"
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0",
+    "firebase-admin": "^14.5.0",
+    "lucide-react": "^0.468.0",
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "read-excel-file": "^9.3.12",
+    "write-excel-file": "^4.1.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

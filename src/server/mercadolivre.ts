@@ -1,0 +1,1347 @@
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
+import Decimal from "decimal.js";
+import { z } from "zod";
+import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  admin,
+  authorizeStore,
+  canWrite,
+  HttpError,
+  type Actor,
+} from "./access";
+import {
+  claim,
+  release,
+  get,
+  find,
+  put,
+  remove,
+  transaction,
+  key,
+  now,
+  type Row,
+} from "./db";
+import { emptyCosts, priceAmount } from "../domain/finance";
+import { normalizeTariff, listingQuality } from "../domain/marketplace";
+
+const API = "https://api.mercadolibre.com";
+const requestDeadline = new AsyncLocalStorage<number>();
+export const ML_STATE_COOKIE = "datamat-ml-oauth";
+const digest = (value: string) =>
+  createHash("sha256").update(value).digest("hex");
+function encryptionKey() {
+  const value = Buffer.from(
+    process.env.ML_TOKEN_ENCRYPTION_KEY || "",
+    "base64",
+  );
+  if (value.length !== 32)
+    throw new HttpError(
+      503,
+      "Configure a chave de proteção dos tokens do Mercado Livre no servidor",
+    );
+  return value;
+}
+export function encryptSecret(value: unknown) {
+  const iv = randomBytes(12),
+    cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const data = Buffer.concat([
+    cipher.update(JSON.stringify(value)),
+    cipher.final(),
+  ]);
+  return [iv, cipher.getAuthTag(), data]
+    .map((b) => b.toString("base64"))
+    .join(".");
+}
+export function decryptSecret(value: string): any {
+  try {
+    const [iv, tag, data] = value
+      .split(".")
+      .map((v) => Buffer.from(v, "base64"));
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), iv);
+    decipher.setAuthTag(tag);
+    return JSON.parse(
+      Buffer.concat([decipher.update(data), decipher.final()]).toString(),
+    );
+  } catch {
+    throw new HttpError(
+      503,
+      "Não foi possível abrir as credenciais da conta; confira a chave de proteção no servidor",
+    );
+  }
+}
+function config() {
+  const {
+    ML_CLIENT_ID: clientId,
+    ML_CLIENT_SECRET: clientSecret,
+    ML_REDIRECT_URI: redirectUri,
+  } = process.env;
+  if (!clientId || !clientSecret || !redirectUri)
+    throw new HttpError(
+      503,
+      "Configure as credenciais da aplicação do Mercado Livre no servidor antes de conectar uma conta",
+    );
+  encryptionKey();
+  let redirect: URL, app: URL;
+  try {
+    redirect = new URL(redirectUri);
+    app = new URL(process.env.APP_URL || "http://localhost:3000");
+  } catch {
+    throw new HttpError(503, "Confira APP_URL e ML_REDIRECT_URI no servidor");
+  }
+  if (
+    redirect.origin !== app.origin ||
+    redirect.pathname !== "/api/mercadolivre/callback" ||
+    redirect.search ||
+    redirect.hash ||
+    redirect.username ||
+    redirect.password ||
+    (redirect.protocol !== "https:" &&
+      !(
+        redirect.protocol === "http:" &&
+        ["localhost", "127.0.0.1"].includes(redirect.hostname)
+      ))
+  )
+    throw new HttpError(
+      503,
+      "A URL de retorno deve ser /api/mercadolivre/callback no mesmo endereço público HTTPS do sistema",
+    );
+  return { clientId, clientSecret, redirectUri, app };
+}
+export function mlConfigured() {
+  try {
+    config();
+    return true;
+  } catch {
+    return false;
+  }
+}
+export function publicConnection(c: Row) {
+  return {
+    id: c.id,
+    store_id: c.store_id,
+    provider: c.provider,
+    status: mlConfigured()
+      ? c.status === "unconfigured"
+        ? "unauthorized"
+        : c.status
+      : "unconfigured",
+    configured: mlConfigured(),
+    external_account: c.external_account || null,
+    nickname: c.nickname || null,
+    last_sync_at: c.last_sync_at || null,
+    has_more: Boolean(c.has_more || c.pending_batch),
+    last_error: c.last_error || null,
+    last_notification_at: c.last_notification_at || null,
+    updated_at: c.updated_at,
+  };
+}
+async function connection(actor: Actor, connectionId: string) {
+  const c = await get("connections", connectionId);
+  if (!c || c.provider !== "mercadolivre")
+    throw new HttpError(404, "Conexão Mercado Livre não encontrada");
+  authorizeStore(actor, c.store_id);
+  return c;
+}
+async function http(
+  path: string,
+  options: RequestInit = {},
+  retry = 0,
+): Promise<unknown> {
+  if (
+    requestDeadline.getStore() &&
+    Date.now() + 16000 > requestDeadline.getStore()!
+  )
+    throw new HttpError(
+      429,
+      "A consulta atingiu o tempo deste lote; continue a importação para retomar os anúncios restantes",
+    );
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\"))
+    throw new HttpError(422, "Caminho de integração inválido");
+  let response: Response;
+  try {
+    response = await fetch(API + path, {
+      ...options,
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    throw new HttpError(
+      502,
+      "O Mercado Livre não respondeu; tente novamente em instantes",
+    );
+  }
+  if (
+    (response.status === 429 || response.status >= 500) &&
+    (!options.method || options.method === "GET") &&
+    !path.includes("/items/search?") &&
+    retry < 2
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** retry));
+    return http(path, options, retry + 1);
+  }
+  if (!response.ok) {
+    if (path === "/oauth/token" && [400, 401].includes(response.status)) {
+      const body = await response.json().catch(() => ({}));
+      if (body.error === "invalid_grant")
+        throw new HttpError(
+          401,
+          "A autorização do Mercado Livre expirou ou foi revogada; reconecte a conta",
+        );
+    }
+    throw new HttpError(
+      response.status === 401 ? 401 : response.status === 429 ? 429 : 502,
+      response.status === 401
+        ? "A conta precisa de nova autorização no Mercado Livre"
+        : `Mercado Livre retornou HTTP ${response.status}; confira as permissões da aplicação e tente novamente`,
+    );
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new HttpError(502, "Resposta inválida recebida do Mercado Livre");
+  }
+}
+const tokenSchema = z.object({
+  access_token: z.string().min(1),
+  refresh_token: z.string().min(1),
+  token_type: z.string().refine((v) => v.toLowerCase() === "bearer"),
+  expires_in: z.number().int().positive(),
+  user_id: z.number().int().positive(),
+  scope: z.string().optional(),
+});
+async function exchange(values: Record<string, string>) {
+  const c = config();
+  const raw = await http("/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: c.clientId,
+      client_secret: c.clientSecret,
+      ...values,
+    }),
+  });
+  const parsed = tokenSchema.safeParse(raw);
+  if (!parsed.success)
+    throw new HttpError(
+      502,
+      "O Mercado Livre não retornou credenciais válidas para renovar a conta",
+    );
+  return parsed.data;
+}
+export async function startAuthorization(actor: Actor, connectionId: string) {
+  admin(actor);
+  const c = await connection(actor, connectionId),
+    cfg = config(),
+    state = randomBytes(32).toString("base64url"),
+    verifier = randomBytes(48).toString("base64url");
+  await put("ml_oauth_states", digest(state), {
+    connection_id: c.id,
+    organization_id: actor.organization_id,
+    actor_id: actor.id,
+    auth_version: c.auth_version || 0,
+    secret: encryptSecret(verifier),
+    expires_at: Date.now() + 600000,
+    status: "pending",
+  });
+  const url = new URL("https://auth.mercadolivre.com.br/authorization");
+  url.search = new URLSearchParams({
+    response_type: "code",
+    client_id: cfg.clientId,
+    redirect_uri: cfg.redirectUri,
+    state,
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    code_challenge_method: "S256",
+  }).toString();
+  return { url: url.toString(), state };
+}
+export async function finishAuthorization(
+  actor: Actor,
+  params: URLSearchParams,
+  cookie: string | undefined,
+) {
+  admin(actor);
+  const state = params.get("state");
+  if (
+    !state ||
+    state.length > 200 ||
+    !cookie ||
+    digest(cookie) !== digest(state)
+  )
+    throw new HttpError(
+      400,
+      "A autorização não corresponde a este navegador; conecte a conta novamente",
+    );
+  const documentId = digest(state);
+  const pending = await transaction(async () => {
+    const row = await get("ml_oauth_states", documentId);
+    if (
+      !row ||
+      row.status !== "pending" ||
+      row.expires_at < Date.now() ||
+      row.organization_id !== actor.organization_id ||
+      row.actor_id !== actor.id
+    )
+      throw new HttpError(
+        400,
+        "Autorização expirada ou já utilizada; conecte a conta novamente",
+      );
+    const c = await connection(actor, row.connection_id);
+    if ((c.auth_version || 0) !== row.auth_version)
+      throw new HttpError(
+        409,
+        "A conexão foi alterada; inicie uma nova autorização",
+      );
+    await put("ml_oauth_states", documentId, {
+      ...row,
+      status: "processing",
+      secret: null,
+    });
+    return row;
+  });
+  try {
+    if (params.get("error"))
+      throw new HttpError(400, "Autorização não concedida no Mercado Livre");
+    const code = params.get("code");
+    if (!code || code.length > 2000)
+      throw new HttpError(400, "Código de autorização ausente ou inválido");
+    const tokens = await exchange({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: config().redirectUri,
+      code_verifier: decryptSecret(pending.secret),
+    });
+    const user = z
+      .object({
+        id: z.number().int().positive(),
+        nickname: z.string(),
+        site_id: z.string(),
+      })
+      .parse(
+        await http("/users/me", {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        }),
+      );
+    if (tokens.user_id !== user.id || user.site_id !== "MLB")
+      throw new HttpError(
+        422,
+        "Autorize uma conta vendedora brasileira do Mercado Livre",
+      );
+    await transaction(async () => {
+      const c = await connection(actor, pending.connection_id);
+      if ((c.auth_version || 0) !== pending.auth_version)
+        throw new HttpError(
+          409,
+          "A conexão foi alterada durante a autorização",
+        );
+      await claim("ml.seller." + actor.organization_id, String(user.id), c.id);
+      if (c.external_account && c.external_account !== String(user.id))
+        throw new HttpError(
+          409,
+          "Esta loja já está vinculada a outro vendedor; desconecte antes de trocar a conta",
+        );
+      await put("ml_tokens", c.id, {
+        encrypted: encryptSecret(tokens),
+        expires_at: Date.now() + tokens.expires_in * 1000,
+        auth_version: pending.auth_version + 1,
+        updated_at: now(),
+      });
+      await put("connections", c.id, {
+        ...c,
+        external_account: String(user.id),
+        nickname: user.nickname,
+        status: "connected",
+        auth_version: pending.auth_version + 1,
+        sync_cursor: null,
+        pending_batch: false,
+        has_more: false,
+        last_error: null,
+        updated_at: now(),
+      });
+      await put("ml_oauth_states", documentId, {
+        ...pending,
+        secret: null,
+        status: "completed",
+      });
+    });
+    return {
+      storeId: (await connection(actor, pending.connection_id)).store_id,
+    };
+  } catch (e) {
+    await put("ml_oauth_states", documentId, {
+      ...pending,
+      secret: null,
+      status: "failed",
+    });
+    throw e;
+  }
+}
+export async function disconnect(actor: Actor, connectionId: string) {
+  admin(actor);
+  return transaction(async () => {
+    const c = await connection(actor, connectionId);
+    if (c.external_account)
+      await release(
+        "ml.seller." + actor.organization_id,
+        c.external_account,
+        c.id,
+      );
+    await remove("ml_tokens", c.id);
+    await remove("ml_sync_pages", c.id);
+    await put("connections", c.id, {
+      ...c,
+      status: "unauthorized",
+      external_account: null,
+      nickname: null,
+      auth_version: (c.auth_version || 0) + 1,
+      sync_cursor: null,
+      pending_batch: false,
+      sync_lease: null,
+      has_more: false,
+      last_error: null,
+      updated_at: now(),
+    });
+    return { disconnected: true };
+  });
+}
+async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
+  config();
+  const lease = randomUUID();
+  const token = await transaction(async () => {
+    const current = await get("connections", c.id),
+      row = await get("ml_tokens", c.id);
+    if (
+      !row ||
+      !current?.external_account ||
+      row.auth_version !== c.auth_version ||
+      current.auth_version !== c.auth_version
+    )
+      throw new HttpError(
+        401,
+        "Conecte esta conta do Mercado Livre antes de consultar",
+      );
+    const value = decryptSecret(row.encrypted);
+    if (
+      row.expires_at > Date.now() + 60000 &&
+      (!rejectedToken || value.access_token !== rejectedToken)
+    )
+      return { access: value.access_token as string };
+    if (row.refresh_until > Date.now())
+      throw new HttpError(
+        429,
+        "A conta está renovando a autorização; tente novamente em instantes",
+      );
+    await put("ml_tokens", c.id, {
+      ...row,
+      refresh_lease: lease,
+      refresh_until: Date.now() + 30000,
+    });
+    return { refresh: value.refresh_token as string };
+  });
+  if (token.access) return token.access;
+  try {
+    const tokens = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: token.refresh!,
+    });
+    if (String(tokens.user_id) !== c.external_account)
+      throw new HttpError(
+        502,
+        "A renovação retornou uma conta diferente da autorizada",
+      );
+    await transaction(async () => {
+      const row = await get("ml_tokens", c.id),
+        current = await get("connections", c.id);
+      if (
+        !row ||
+        row.refresh_lease !== lease ||
+        current?.auth_version !== c.auth_version
+      )
+        throw new HttpError(409, "A conexão mudou durante a renovação");
+      await put("ml_tokens", c.id, {
+        encrypted: encryptSecret(tokens),
+        auth_version: c.auth_version,
+        expires_at: Date.now() + tokens.expires_in * 1000,
+        updated_at: now(),
+      });
+      await put("connections", c.id, {
+        ...current,
+        status: "connected",
+        last_error: null,
+        updated_at: now(),
+      });
+    });
+    return tokens.access_token;
+  } catch (e) {
+    await transaction(async () => {
+      const row = await get("ml_tokens", c.id),
+        current = await get("connections", c.id);
+      if (
+        row?.refresh_lease === lease &&
+        current?.auth_version === c.auth_version
+      ) {
+        await put("ml_tokens", c.id, {
+          ...row,
+          refresh_lease: null,
+          refresh_until: 0,
+        });
+        if (e instanceof HttpError && e.status === 401)
+          await put("connections", c.id, {
+            ...current,
+            status: "unauthorized",
+            last_error: e.message,
+            updated_at: now(),
+          });
+      }
+    });
+    throw e;
+  }
+}
+async function api(c: Row, path: string) {
+  const token = await accessToken(c);
+  try {
+    return await http(path, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (e) {
+    if (!(e instanceof HttpError) || e.status !== 401) throw e;
+    return http(path, {
+      headers: { Authorization: `Bearer ${await accessToken(c, token)}` },
+    });
+  }
+}
+const itemSchema = z.object({
+  id: z.string().regex(/^MLB\d+$/),
+  seller_id: z.number().int().positive(),
+  site_id: z.literal("MLB"),
+  title: z.string().min(1).max(200),
+  category_id: z.string(),
+  currency_id: z.string(),
+  price: z
+    .number()
+    .finite()
+    .positive()
+    .refine((v) => priceAmount.safeParse(v).success),
+  status: z.string(),
+  listing_type_id: z.string(),
+  seller_custom_field: z.string().nullable().optional(),
+  available_quantity: z.number().int().nonnegative(),
+  sold_quantity: z.number().int().nonnegative(),
+  catalog_listing: z.boolean().optional(),
+  pictures: z.array(z.object({ id: z.string().optional() })),
+  attributes: z.array(
+    z.object({
+      id: z.string(),
+      value_name: z.string().nullable().optional(),
+      value_id: z.string().nullable().optional(),
+    }),
+  ),
+  shipping: z.object({
+    mode: z.string().optional(),
+    logistic_type: z.string().optional(),
+    free_shipping: z.boolean().optional(),
+  }),
+  variations: z
+    .array(
+      z.object({
+        id: z.number(),
+        price: z.number().optional(),
+        seller_custom_field: z.string().nullable().optional(),
+        attribute_combinations: z
+          .array(
+            z.object({
+              name: z.string(),
+              value_name: z.string().nullable().optional(),
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .default([]),
+});
+type Item = z.infer<typeof itemSchema>;
+async function audit(
+  actor: Actor,
+  storeId: string,
+  offerId: string,
+  field: string,
+  before: unknown,
+  after: unknown,
+  reason: string,
+) {
+  await put("history", randomUUID(), {
+    organization_id: actor.organization_id,
+    store_id: storeId,
+    offer_id: offerId,
+    actor_id: actor.id,
+    actor_name: actor.name,
+    field,
+    old_value: before == null ? null : JSON.stringify(before),
+    new_value: JSON.stringify(after),
+    reason,
+    origin: "mercadolivre",
+    status: "confirmed",
+    snapshot_json: "{}",
+    created_at: now(),
+  });
+}
+async function importItem(
+  actor: Actor,
+  c: Row,
+  item: Item,
+  observation: Row,
+  description: string | null,
+  lease: string,
+) {
+  return transaction(async () => {
+    const current = await connection(actor, c.id);
+    if (current.sync_lease !== lease || current.auth_version !== c.auth_version)
+      throw new HttpError(409, "A conexão mudou durante a sincronização");
+    const existing = (
+      await find("offers", { store_id: c.store_id, ml_id: item.id })
+    )[0];
+    if (existing?.origin === "reference")
+      throw new HttpError(
+        409,
+        "Este código está cadastrado como referência; confira o vínculo antes de importar",
+      );
+    const offerId = existing?.id || key(c.store_id, item.id),
+      productId =
+        existing?.product_id || key(actor.organization_id, c.store_id, item.id);
+    await claim("offers.ml." + c.store_id, item.id, offerId);
+    const attribute = (id: string) =>
+      item.attributes.find((a) => a.id === id)?.value_name || null;
+    if (!existing) {
+      const brand = attribute("BRAND"),
+        brandId = brand ? key(actor.organization_id, "brands", brand) : null;
+      if (brandId && !(await get("brands", brandId)))
+        await put("brands", brandId, {
+          organization_id: actor.organization_id,
+          name: brand,
+        });
+      await put("products", productId, {
+        organization_id: actor.organization_id,
+        name: item.title,
+        model: attribute("MODEL"),
+        brand_id: brandId,
+        category_id: null,
+        version: 1,
+      });
+      await put("costs", offerId, {
+        offer_id: offerId,
+        store_id: c.store_id,
+        data_json: JSON.stringify(emptyCosts()),
+        updated_at: now(),
+      });
+      if (item.variations.length)
+        for (const v of item.variations.slice(0, 100))
+          await put("components", key(offerId, String(v.id)), {
+            offer_id: offerId,
+            product_id: productId,
+            quantity: 1,
+            variation:
+              v.attribute_combinations
+                ?.map((a) => `${a.name}: ${a.value_name || "a conferir"}`)
+                .join(" · ") || String(v.id),
+          });
+    }
+    const status = ["active", "paused", "closed"].includes(item.status)
+      ? item.status
+      : "draft";
+    const next = {
+      title: item.title,
+      price: new Decimal(item.price).toFixed(2),
+      status,
+      description: description ?? existing?.description ?? "",
+      sku:
+        attribute("SELLER_SKU") ||
+        item.seller_custom_field ||
+        existing?.sku ||
+        null,
+    };
+    const contextFields = [
+      "sellerId",
+      "authVersion",
+      "listingTypeId",
+      "categoryId",
+      "currencyId",
+      "shippingMode",
+      "logisticType",
+      "freeShipping",
+      "catalogListing",
+      "variablePrices",
+      "variationCount",
+    ];
+    const pricingChanged = Boolean(
+      existing &&
+      contextFields.some(
+        (field) => existing.ml?.[field] !== observation[field],
+      ),
+    );
+    const changed =
+      pricingChanged ||
+      !existing ||
+      Object.entries(next).some(([k, v]) => existing[k] !== v);
+    const row = {
+      ...existing,
+      ...next,
+      organization_id: actor.organization_id,
+      store_id: c.store_id,
+      product_id: productId,
+      ml_id: item.id,
+      type: existing?.type || (item.variations.length ? "variation" : "unit"),
+      origin: existing?.origin || "import",
+      reference_account: existing?.reference_account || null,
+      version: (existing?.version || 0) + (changed ? 1 : 0),
+      ml: observation,
+      updated_at: changed ? now() : existing.updated_at,
+    };
+    await put("offers", offerId, row);
+    const page = await get("ml_sync_pages", c.id);
+    if (page && page.auth_version === c.auth_version)
+      await put("ml_sync_pages", c.id, {
+        ...page,
+        processed_ids: [...new Set([...(page.processed_ids || []), item.id])],
+      });
+    if (changed)
+      await audit(
+        actor,
+        c.store_id,
+        offerId,
+        existing ? "ml.observed_update" : "ml.import",
+        existing
+          ? {
+              title: existing.title,
+              price: existing.price,
+              status: existing.status,
+              description: existing.description,
+              sku: existing.sku,
+            }
+          : null,
+        {
+          ...next,
+          mlConditions: Object.fromEntries(
+            contextFields.map((field) => [field, observation[field]]),
+          ),
+        },
+        "Estado confirmado pela consulta à conta Mercado Livre",
+      );
+    return { created: !existing, changed };
+  });
+}
+export async function syncListings(
+  actor: Actor,
+  connectionId: string,
+  payload: unknown,
+) {
+  return requestDeadline.run(Date.now() + 240000, () =>
+    syncListingsInside(actor, connectionId, payload),
+  );
+}
+async function syncListingsInside(
+  actor: Actor,
+  connectionId: string,
+  payload: unknown,
+) {
+  admin(actor);
+  const p = z
+    .object({ requestId: z.uuid(), restart: z.boolean().default(false) })
+    .parse(payload);
+  let c = await connection(actor, connectionId);
+  const logId = key("sync", p.requestId),
+    lease = randomUUID();
+  const prior = await transaction(async () => {
+    const current = await connection(actor, c.id),
+      old = await get("sync_logs", logId);
+    if (old && old.connection_id !== c.id)
+      throw new HttpError(409, "Chave utilizada em outra conexão");
+    if (old && old.status !== "running") return old;
+    if (current.sync_until > Date.now())
+      throw new HttpError(
+        429,
+        "Já existe uma sincronização desta loja em andamento",
+      );
+    c = current;
+    await put("connections", c.id, {
+      ...current,
+      sync_lease: lease,
+      sync_until: Date.now() + 180000,
+    });
+    await put("sync_logs", logId, {
+      connection_id: c.id,
+      operation: "sync",
+      status: "running",
+      request_id: p.requestId,
+      created_at: now(),
+      message: "Consulta de até 20 anúncios da conta",
+    });
+    return null;
+  });
+  if (prior) return prior;
+  try {
+    config();
+    if (!c.external_account)
+      throw new HttpError(401, "Autorize esta conta antes de sincronizar");
+    const query = new URLSearchParams({ search_type: "scan", limit: "20" });
+    if (!p.restart && c.has_more && c.sync_cursor)
+      query.set("scroll_id", c.sync_cursor);
+    const schema = z.object({
+      results: z.array(z.string().regex(/^MLB\d+$/)).max(20),
+      scroll_id: z.string().optional(),
+      paging: z.object({ total: z.number().int().nonnegative() }),
+    });
+    const pending = !p.restart ? await get("ml_sync_pages", c.id) : null;
+    const page =
+      pending && pending.auth_version === c.auth_version
+        ? schema.parse(pending.page)
+        : schema.parse(
+            await api(c, `/users/${c.external_account}/items/search?${query}`),
+          );
+    await transaction(async () => {
+      const current = await connection(actor, c.id);
+      if (
+        current.sync_lease !== lease ||
+        current.auth_version !== c.auth_version
+      )
+        throw new HttpError(409, "A conexão mudou durante a consulta do lote");
+      await put("ml_sync_pages", c.id, {
+        auth_version: c.auth_version,
+        page,
+        processed_ids:
+          pending && pending.auth_version === c.auth_version
+            ? pending.processed_ids || []
+            : [],
+      });
+      await put("connections", c.id, { ...current, pending_batch: true });
+    });
+    let created = 0,
+      updated = 0;
+    const categoryCache = new Map<string, Row[] | null>();
+    for (const itemId of page.results) {
+      if (
+        pending &&
+        pending.auth_version === c.auth_version &&
+        pending.processed_ids?.includes(itemId)
+      )
+        continue;
+      const item = itemSchema.parse(await api(c, "/items/" + itemId));
+      if (item.currency_id !== "BRL")
+        throw new HttpError(
+          422,
+          "O anúncio utiliza outra moeda; a importação atual aceita apenas BRL",
+        );
+      if (String(item.seller_id) !== c.external_account || item.id !== itemId)
+        throw new HttpError(
+          403,
+          "A consulta retornou um anúncio de outra conta",
+        );
+      let description: string | null = null;
+      const unavailable: string[] = [];
+      try {
+        description = z
+          .object({ plain_text: z.string().max(15000) })
+          .parse(await api(c, `/items/${itemId}/description`)).plain_text;
+      } catch {
+        unavailable.push("Descrição não consultada");
+      }
+      if (!categoryCache.has(item.category_id)) {
+        try {
+          const attrs = z
+            .array(
+              z.object({
+                id: z.string(),
+                name: z.string(),
+                tags: z
+                  .object({ required: z.boolean().optional() })
+                  .passthrough(),
+              }),
+            )
+            .parse(
+              await api(
+                c,
+                `/categories/${encodeURIComponent(item.category_id)}/attributes`,
+              ),
+            );
+          categoryCache.set(
+            item.category_id,
+            attrs.filter((a) => a.tags.required),
+          );
+        } catch {
+          categoryCache.set(item.category_id, null);
+        }
+      }
+      const required = categoryCache.get(item.category_id);
+      if (!required) unavailable.push("Atributos obrigatórios não consultados");
+      const observation = {
+        sellerId: c.external_account,
+        connectionId: c.id,
+        authVersion: c.auth_version,
+        categoryId: item.category_id,
+        currencyId: item.currency_id,
+        listingTypeId: item.listing_type_id,
+        rawStatus: item.status,
+        shippingMode: item.shipping.mode || null,
+        logisticType: item.shipping.logistic_type || null,
+        freeShipping: item.shipping.free_shipping ?? null,
+        availableQuantity: item.available_quantity,
+        soldQuantityLifetime: item.sold_quantity,
+        catalogListing: item.catalog_listing || false,
+        photoCount: item.pictures.length,
+        variationCount: item.variations.length,
+        variablePrices: item.variations.some(
+          (v) => v.price !== undefined && !new Decimal(v.price).eq(item.price),
+        ),
+        missingRequiredAttributes:
+          required
+            ?.filter(
+              (a) =>
+                !item.attributes.some(
+                  (v) => v.id === a.id && (v.value_id || v.value_name),
+                ) &&
+                !(
+                  item.variations.length &&
+                  item.variations.every((v) =>
+                    v.attribute_combinations?.some(
+                      (x) => x.name === a.name && x.value_name,
+                    ),
+                  )
+                ),
+            )
+            .map((a) => ({ id: a.id, name: a.name })) || [],
+        unavailable,
+        observedAt: now(),
+      };
+      const result = await importItem(
+        actor,
+        c,
+        item,
+        observation,
+        description,
+        lease,
+      );
+      if (result.created) created++;
+      else if (result.changed) updated++;
+    }
+    const hasMore = page.results.length > 0 && Boolean(page.scroll_id);
+    return transaction(async () => {
+      const current = await connection(actor, c.id);
+      if (
+        current.sync_lease !== lease ||
+        current.auth_version !== c.auth_version
+      )
+        throw new HttpError(409, "A conexão mudou durante a sincronização");
+      await put("connections", c.id, {
+        ...current,
+        status: "connected",
+        sync_lease: null,
+        sync_until: 0,
+        sync_cursor: hasMore ? page.scroll_id : null,
+        pending_batch: false,
+        has_more: hasMore,
+        last_sync_at: now(),
+        last_error: null,
+        updated_at: now(),
+      });
+      await remove("ml_sync_pages", c.id);
+      return put("sync_logs", logId, {
+        connection_id: c.id,
+        operation: "sync",
+        status: "confirmed",
+        request_id: p.requestId,
+        created_at: now(),
+        created,
+        updated,
+        processed: page.results.length,
+        has_more: hasMore,
+        message: `${created} importados · ${updated} atualizados · ${page.results.length} consultados${hasMore ? " · continuar próximo lote" : " · consulta concluída"}`,
+      });
+    });
+  } catch (e) {
+    const message =
+      e instanceof HttpError
+        ? e.message
+        : "O formato de resposta do Mercado Livre precisa ser conferido; consulte o registro da sincronização";
+    await transaction(async () => {
+      const current = await get("connections", c.id);
+      const savedPage = await get("ml_sync_pages", c.id);
+      if (current?.sync_lease === lease)
+        await put("connections", c.id, {
+          ...current,
+          sync_lease: null,
+          sync_until: 0,
+          ...(!savedPage || savedPage.auth_version !== c.auth_version
+            ? { sync_cursor: null, has_more: false }
+            : {}),
+          last_error: message,
+          updated_at: now(),
+        });
+      await put("sync_logs", logId, {
+        connection_id: c.id,
+        operation: "sync",
+        status: "failed",
+        request_id: p.requestId,
+        created_at: now(),
+        message,
+      });
+    });
+    throw new HttpError(e instanceof HttpError ? e.status : 502, message);
+  }
+}
+async function connectedOffer(actor: Actor, offerId: string) {
+  const offer = await get("offers", offerId);
+  if (!offer) throw new HttpError(404, "Anúncio não encontrado");
+  authorizeStore(actor, offer.store_id);
+  if (offer.origin === "reference" || !/^MLB\d+$/.test(offer.ml_id || ""))
+    throw new HttpError(
+      422,
+      "Sincronize um anúncio próprio antes de consultar suas condições",
+    );
+  const c = await connection(actor, key(offer.store_id, "mercadolivre"));
+  return { offer, c };
+}
+export async function quoteTariff(
+  actor: Actor,
+  offerId: string,
+  payload: unknown,
+) {
+  canWrite(actor);
+  const p = z
+      .object({
+        price: priceAmount.refine((v) => v !== null),
+        offerVersion: z.number().int().positive(),
+      })
+      .parse(payload),
+    { offer, c } = await connectedOffer(actor, offerId);
+  if (offer.version !== p.offerVersion)
+    throw new HttpError(409, "O anúncio mudou; recarregue a precificação");
+  const item = itemSchema.parse(await api(c, "/items/" + offer.ml_id));
+  if (String(item.seller_id) !== c.external_account || item.id !== offer.ml_id)
+    throw new HttpError(403, "O anúncio pertence a outra conta");
+  if (
+    item.currency_id !== "BRL" ||
+    item.variations.some(
+      (v) => v.price !== undefined && !new Decimal(v.price).eq(item.price),
+    )
+  )
+    throw new HttpError(
+      422,
+      "Confira a moeda ou os preços individuais das variações antes de precificar",
+    );
+  if (
+    !new Decimal(item.price).eq(offer.price!) ||
+    item.listing_type_id !== offer.ml?.listingTypeId ||
+    item.category_id !== offer.ml?.categoryId ||
+    item.shipping.mode !== (offer.ml?.shippingMode ?? undefined) ||
+    item.shipping.logistic_type !== (offer.ml?.logisticType ?? undefined)
+  )
+    throw new HttpError(
+      409,
+      "As condições do anúncio mudaram no Mercado Livre; sincronize a loja novamente",
+    );
+  const query = new URLSearchParams({
+    price: p.price!,
+    category_id: item.category_id,
+    listing_type_id: item.listing_type_id,
+    currency_id: "BRL",
+    quantity: "1",
+  });
+  if (item.shipping.mode) query.set("shipping_mode", item.shipping.mode);
+  if (item.shipping.logistic_type)
+    query.set("logistic_type", item.shipping.logistic_type);
+  let fees: ReturnType<typeof normalizeTariff>;
+  try {
+    fees = normalizeTariff(
+      await api(c, "/sites/MLB/listing_prices?" + query),
+      item.listing_type_id,
+      p.price!,
+    );
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    throw new HttpError(
+      502,
+      e instanceof Error && !(e instanceof z.ZodError)
+        ? e.message
+        : "A resposta de tarifas precisa de validação; confira no Mercado Livre",
+    );
+  }
+  const quoteId = randomUUID(),
+    quotedAt = now(),
+    expiresAt = Date.now() + 300000;
+  const quote = {
+    id: quoteId,
+    offer_id: offerId,
+    store_id: offer.store_id,
+    offer_version: offer.version,
+    connection_id: c.id,
+    auth_version: c.auth_version,
+    seller_id: c.external_account,
+    price: new Decimal(p.price!).toFixed(2),
+    listing_type_id: item.listing_type_id,
+    category_id: item.category_id,
+    shipping_mode: item.shipping.mode || null,
+    logistic_type: item.shipping.logistic_type || null,
+    ...fees,
+    quoted_at: quotedAt,
+    expires_at: expiresAt,
+    source: "Mercado Livre · listing_prices",
+    shippingVerified: false,
+  };
+  await transaction(async () => {
+    const current = await get("offers", offerId),
+      currentConnection = await connection(actor, c.id);
+    if (
+      current?.version !== offer.version ||
+      currentConnection.auth_version !== c.auth_version
+    )
+      throw new HttpError(
+        409,
+        "A oferta ou a conexão mudou durante a consulta",
+      );
+    await put("ml_quotes", quoteId, quote);
+  });
+  return quote;
+}
+export async function validateQuote(
+  actor: Actor,
+  offer: Row,
+  quoteId: string,
+  price: string,
+) {
+  const q = await get("ml_quotes", quoteId),
+    c = await connection(actor, key(offer.store_id, "mercadolivre"));
+  if (
+    !q ||
+    q.offer_id !== offer.id ||
+    q.store_id !== offer.store_id ||
+    q.offer_version !== offer.version ||
+    q.auth_version !== c.auth_version ||
+    q.seller_id !== c.external_account ||
+    q.expires_at <= Date.now() ||
+    !new Decimal(q.price).eq(price)
+  )
+    throw new HttpError(
+      409,
+      "A consulta de tarifas expirou ou não corresponde ao cenário; consulte novamente",
+    );
+  return q;
+}
+export async function refreshMetrics(actor: Actor, offerId: string) {
+  return requestDeadline.run(Date.now() + 240000, () =>
+    refreshMetricsInside(actor, offerId),
+  );
+}
+async function refreshMetricsInside(actor: Actor, offerId: string) {
+  canWrite(actor);
+  const { offer, c } = await connectedOffer(actor, offerId);
+  const item = itemSchema.parse(await api(c, "/items/" + offer.ml_id));
+  if (String(item.seller_id) !== c.external_account || item.id !== offer.ml_id)
+    throw new HttpError(403, "O anúncio pertence a outra conta");
+  const visit = z
+    .object({
+      total_visits: z.number().int().nonnegative(),
+      date_from: z.string(),
+      date_to: z.string(),
+    })
+    .parse(
+      await api(c, `/items/${offer.ml_id}/visits/time_window?last=30&unit=day`),
+    );
+  const from = Date.parse(visit.date_from),
+    to = Date.parse(visit.date_to);
+  if (
+    !Number.isFinite(from) ||
+    !Number.isFinite(to) ||
+    to <= from ||
+    to - from > 32 * 86400000 ||
+    to > Date.now() + 86400000
+  )
+    throw new HttpError(
+      502,
+      "O período das visitas retornado pelo Mercado Livre é inválido",
+    );
+  const orderIds = new Set<number>();
+  let orders = 0,
+    units = 0,
+    gross = new Decimal(0),
+    offset = 0,
+    total = 0;
+  do {
+    const query = new URLSearchParams({
+      seller: c.external_account,
+      "order.status": "paid",
+      "order.date_created.from": new Date(from).toISOString(),
+      "order.date_created.to": new Date(to).toISOString(),
+      limit: "50",
+      offset: String(offset),
+    });
+    const page = z
+      .object({
+        paging: z.object({ total: z.number().int().nonnegative() }),
+        results: z.array(
+          z.object({
+            id: z.number().int(),
+            status: z.string(),
+            date_created: z.string(),
+            seller: z.object({ id: z.number().int() }),
+            currency_id: z.string(),
+            order_items: z.array(
+              z.object({
+                item: z.object({ id: z.string() }),
+                quantity: z.number().int().positive(),
+                unit_price: z.number().finite().nonnegative(),
+              }),
+            ),
+          }),
+        ),
+      })
+      .parse(await api(c, "/orders/search?" + query));
+    total = page.paging.total;
+    if (total > 1000)
+      throw new HttpError(
+        422,
+        "O período tem mais de 1.000 pedidos; será necessário processamento em lotes para calcular as métricas completas",
+      );
+    for (const order of page.results) {
+      if (String(order.seller.id) !== c.external_account)
+        throw new HttpError(403, "A consulta retornou pedidos de outra conta");
+      if (orderIds.has(order.id)) continue;
+      orderIds.add(order.id);
+      const created = Date.parse(order.date_created);
+      if (!Number.isFinite(created))
+        throw new HttpError(
+          502,
+          "Pedido com data inválida retornado pelo Mercado Livre",
+        );
+      if (order.status !== "paid" || created < from || created > to) continue;
+      const lines = order.order_items.filter(
+        (line) => line.item.id === offer.ml_id,
+      );
+      if (!lines.length) continue;
+      if (order.currency_id !== "BRL")
+        throw new HttpError(
+          422,
+          "Há pedidos em outra moeda; confira antes de calcular a receita",
+        );
+      orders++;
+      for (const line of lines) {
+        units += line.quantity;
+        gross = gross.plus(new Decimal(line.unit_price).mul(line.quantity));
+      }
+    }
+    offset += page.results.length;
+    if (!page.results.length && offset < total)
+      throw new HttpError(
+        502,
+        "A API de pedidos retornou um período incompleto; nenhuma métrica parcial foi salva",
+      );
+  } while (offset < total);
+  let unanswered: number | null = null;
+  try {
+    unanswered = z.object({ total: z.number().int().nonnegative() }).parse(
+      await api(
+        c,
+        "/questions/search?" +
+          new URLSearchParams({
+            seller_id: c.external_account,
+            item: offer.ml_id,
+            status: "UNANSWERED",
+            api_version: "4",
+          }),
+      ),
+    ).total;
+  } catch {}
+  const metrics = {
+    store_id: offer.store_id,
+    offer_id: offerId,
+    seller_id: c.external_account,
+    connection_id: c.id,
+    auth_version: c.auth_version,
+    from: new Date(from).toISOString(),
+    to: new Date(to).toISOString(),
+    visits: visit.total_visits,
+    paidOrders: orders,
+    units,
+    grossRevenue: gross.toFixed(2),
+    orderVisitRate:
+      visit.total_visits > 0
+        ? new Decimal(orders).div(visit.total_visits).mul(100).toFixed(2)
+        : null,
+    unansweredQuestions: unanswered,
+    observed_at: now(),
+    source: "Mercado Livre · visitas e pedidos pagos criados no período",
+  };
+  await transaction(async () => {
+    const current = await get("offers", offerId),
+      currentConnection = await connection(actor, c.id);
+    if (
+      current?.ml_id !== offer.ml_id ||
+      currentConnection.auth_version !== c.auth_version
+    )
+      throw new HttpError(
+        409,
+        "A oferta ou a conexão mudou durante a consulta de métricas",
+      );
+    await put("ml_metrics", offerId, metrics);
+  });
+  return metrics;
+}
+export async function createQualityTask(
+  actor: Actor,
+  offerId: string,
+  payload: unknown,
+) {
+  canWrite(actor);
+  const p = z.object({ issueKey: z.string().min(1).max(200) }).parse(payload);
+  return transaction(async () => {
+    const offer = await get("offers", offerId);
+    if (!offer) throw new HttpError(404, "Anúncio não encontrado");
+    authorizeStore(actor, offer.store_id);
+    const product = await get("products", offer.product_id),
+      brand = product?.brand_id ? await get("brands", product.brand_id) : null;
+    const issue = listingQuality({ ...offer, brand: brand?.name }).find(
+      (i) => i.key === p.issueKey,
+    );
+    if (!issue)
+      throw new HttpError(
+        409,
+        "Esta pendência já não existe; atualize a ficha",
+      );
+    const taskId = key("ml.quality", offerId, p.issueKey),
+      existing = await get("tasks", taskId);
+    if (existing && !["done", "cancelled"].includes(existing.status))
+      return existing;
+    const task = {
+      source_quality_key: p.issueKey,
+      organization_id: actor.organization_id,
+      store_id: offer.store_id,
+      offer_id: offerId,
+      title: issue.title,
+      description: issue.action,
+      type: "qualidade",
+      priority: issue.priority,
+      status: "todo",
+      assignee: actor.name,
+      due_date: null,
+      reason: "Checklist de qualidade do anúncio",
+      result: "",
+      evidence: "",
+      version: (existing?.version || 0) + 1,
+      created_at: existing?.created_at || now(),
+      updated_at: now(),
+    };
+    await put("tasks", taskId, task);
+    await audit(
+      actor,
+      offer.store_id,
+      offerId,
+      "task.quality",
+      existing || null,
+      task,
+      "Pendência convertida em ação",
+    );
+    return { ...task, id: taskId };
+  });
+}

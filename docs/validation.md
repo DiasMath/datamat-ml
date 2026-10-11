@@ -5,9 +5,9 @@ Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta r
 | Verificação              | Resultado                                                                                                                                                 |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                               |
-| Domínio e serviços       | `npm test`: **77 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **92 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                   |
-| Navegador Chromium       | `npm run test:e2e`: **27 passaram**, nenhuma falha ou teste ignorado                                                                                      |
+| Navegador Chromium       | `npm run test:e2e`: **32 passaram**, nenhuma falha ou teste ignorado                                                                                      |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                 |
 | Responsividade           | 15 telas/abas × 6 larguras: **90 combinações**, sem transbordamento horizontal do documento                                                               |
@@ -60,3 +60,17 @@ Fórmulas e limites comerciais: [pricing.md](pricing.md). Pesquisa e fontes: [re
 - `vercel.json` sem erros de configuração segundo o schema oficial. Node.js 24.x fixado. Validador passou com o JSON administrativo e rejeitou origem localhost e falta do JSON para a hospedagem. Segredos não foram exibidos nem adicionados ao repositório.
 
 Os testes Chromium da integração usam contratos controlados: consulta após pausa, respostas obsoletas descartadas, snapshot oficial preservado, modo manual explícito em falha, checklist/tarefa, publicidade ao digitar e responsividade em 320/390 pixels. Esse conjunto complementa a revisão de 90 combinações das telas existentes.
+
+## Análises e favicon
+
+- Favicon SVG com o logotipo enviado, servido por `/icon.svg` e declarado automaticamente pelo Next.js.
+- Data/hora de Brasília, limites de datas, comparação com o mesmo tempo transcorrido, pedidos pagos/cancelados, deduplicação entre pedidos e isolamento entre lojas.
+- Precisão decimal da receita/tarifas, preço efetivamente vendido na contribuição, custos ausentes/desatualizados e cobertura da parcela estimada.
+- Cache e reserva de consulta por vendedor, troca de autorização ocultando o retrato antigo, identidade de outros vendedores rejeitada e dados pessoais de compradores/tokens fora dos retratos.
+- Falhas opcionais não impedem vendas; páginas incompletas geram erro, mais de 1.000 pedidos gera relatório parcial e atualização com falha preserva o retrato sem comparação enganosa.
+- Navegação nas sete áreas, troca do indicador do gráfico, ranking de 25 produtos paginado, exportação CSV e publicidade recalculada ao digitar.
+- Tela ao vivo consulta automaticamente, pausa/retoma, atualiza após 60 segundos e entra em tela cheia.
+- Responsividade adicional em 320/390/768/1024/1440 pixels; capturas desktop/celular inspecionadas visualmente. O gráfico não preenche horários futuros com zero, e a última consulta informa segundos.
+- A rota de análise valida loja, período e origem das mutações. Testes API usam emulador isolado; os dados dos gráficos dos testes são respostas controladas.
+
+Permissões e contratos do ML real ainda precisam ser conferidos com a conta autorizada. Publicidade automática, conciliação, reclamações/devoluções e concorrência permanecem pendentes. Veja [analytics.md](analytics.md).

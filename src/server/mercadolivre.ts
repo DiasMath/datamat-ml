@@ -514,6 +514,37 @@ async function api(c: Row, path: string) {
     });
   }
 }
+// Analytics uses the same authorized seller, token renewal and request deadline.
+// Never expose the token or accept a seller selected by the browser.
+export async function withSellerData<T>(
+  actor: Actor,
+  connectionId: string,
+  read: (
+    request: (path: string) => Promise<unknown>,
+    account: Row,
+  ) => Promise<T>,
+  deadline = Date.now() + 220000,
+): Promise<T> {
+  const account = await connection(actor, connectionId);
+  if (!account.external_account || account.status !== "connected")
+    throw new HttpError(
+      409,
+      "Conecte esta loja ao Mercado Livre para consultar as análises",
+    );
+  const result = await requestDeadline.run(deadline, () =>
+    read((path) => api(account, path), account),
+  );
+  const current = await connection(actor, connectionId);
+  if (
+    current.auth_version !== account.auth_version ||
+    current.external_account !== account.external_account
+  )
+    throw new HttpError(
+      409,
+      "A conta mudou durante a consulta; atualize novamente",
+    );
+  return result;
+}
 const itemSchema = z.object({
   id: z.string().regex(/^MLB\d+$/),
   seller_id: z.number().int().positive(),

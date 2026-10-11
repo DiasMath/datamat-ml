@@ -5,6 +5,7 @@ import { initializeDatabase, DatabaseConfigurationError } from "@/server/db";
 import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
 import { receiveNotification } from "@/server/ml-notifications";
+import { analyticsReport, refreshAnalytics } from "@/server/analytics";
 import { csvCell } from "@/domain/csv";
 import {
   offersWorkbook,
@@ -107,6 +108,8 @@ async function handle(req: NextRequest, context: Context) {
         ),
       );
     if (req.method === "GET") {
+      if (resource === "analytics" && !key)
+        return response(await analyticsReport(actor, req.nextUrl.searchParams));
       if (resource === "workspace")
         return response(
           await service.workspace(actor, req.nextUrl.searchParams),
@@ -179,6 +182,15 @@ async function handle(req: NextRequest, context: Context) {
       }
     }
     if (req.method === "POST" || req.method === "PATCH") {
+      if (
+        resource === "analytics" &&
+        key === "refresh" &&
+        !action &&
+        req.method === "POST"
+      )
+        return response(
+          await refreshAnalytics(actor, req.nextUrl.searchParams),
+        );
       if (
         resource === "connections" &&
         action === "authorize" &&

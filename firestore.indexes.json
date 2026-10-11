@@ -55,6 +55,11 @@
       "collectionGroup": "offers",
       "fieldPath": "ml",
       "indexes": []
+    },
+    {
+      "collectionGroup": "ml_analytics",
+      "fieldPath": "data_json",
+      "indexes": []
     }
   ]
 }

@@ -52,6 +52,12 @@ Preços aceitam `100.50` ou `100,50`; vazio continua pendente. SKUs textuais pre
 
 **Exportar Excel** baixa todos os anúncios da consulta filtrada, incluindo páginas não exibidas. O arquivo contém identificadores e versões para atualização posterior, preço numérico e contribuição quando calculável. Configurações → Sincronização e dados também oferece CSV e JSON. JSON para BI inclui ofertas, tarefas, notas, propostas e histórico das lojas disponíveis, com retratos financeiros; não inclui usuários, sessões ou credenciais.
 
+## Análises e tela ao vivo
+
+O menu **Análises** inclui visão geral, vendas, produtos, tráfego, financeiro, operação e publicidade. Consulte hoje, ontem, 7/30/90 dias ou um período personalizado; compare lojas e o intervalo anterior. Rankings têm busca, paginação e rolagem, os gráficos têm tabela alternativa e os dados diários podem ser exportados para Excel em CSV.
+
+**Análise ao vivo** acompanha o dia por hora, últimos pedidos e prioridades, com consulta a cada 60 segundos, pausa e tela cheia. As telas mostram a hora da consulta, cobertura e falhas. A contribuição é estimada com custos atuais, publicidade é conferida manualmente e recursos sem resposta do ML ficam indisponíveis. [Indicadores, origens e limites](docs/analytics.md).
+
 ## Validar
 
 ```bash

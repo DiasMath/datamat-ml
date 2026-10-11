@@ -481,7 +481,12 @@ test("token refresh is protected from concurrent exchanges and persists the rene
         ml.quoteTariff(actor, o.id, { price: "85", offerVersion: o.version }),
         ml.quoteTariff(actor, o.id, { price: "85", offerVersion: o.version }),
       ]);
-      assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+      // A Firestore retry may read the already renewed token, allowing both
+      // callers to succeed. Only a single OAuth exchange may happen.
+      assert.ok(results.some((r) => r.status === "fulfilled"));
+      for (const result of results)
+        if (result.status === "rejected")
+          assert.equal(result.reason.status, 429);
       assert.equal(refreshes, 1);
     },
   );

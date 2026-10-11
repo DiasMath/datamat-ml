@@ -1,5 +1,6 @@
 "use client";
 import { ListingChecklist, MarketplacePerformance } from "./marketplace-panels";
+import Analytics from "./analytics";
 import { operationalAttention } from "@/domain/marketplace";
 import { useEffect, useMemo, useState, useRef, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -59,6 +60,7 @@ const navigation = [
   { path: "", title: "Hoje", icon: LayoutDashboard },
   { path: "anuncios", title: "Anúncios", icon: Tags },
   { path: "precificacao", title: "Precificação", icon: Calculator },
+  { path: "analises", title: "Análises", icon: Activity },
   { path: "acoes", title: "Ações", icon: ListTodo },
   { path: "historico", title: "Histórico", icon: History },
   { path: "estudos", title: "Estudos e notas", icon: NotebookPen },
@@ -68,6 +70,7 @@ const descriptions: Record<string, string> = {
   "": "O que precisa da sua atenção. Um passo de cada vez.",
   anuncios: "Organize suas ofertas e acompanhe o que precisa evoluir.",
   precificacao: "Conheça os custos. Compare cenários. Prepare decisões.",
+  analises: "Entenda as vendas. Encontre prioridades. Acompanhe o dia a dia.",
   acoes: "Transforme decisões em trabalho com prazo e responsável.",
   historico: "Uma trilha clara das decisões e mudanças da operação.",
   estudos: "Guarde o aprendizado e conecte ideias ao trabalho.",
@@ -138,6 +141,8 @@ export default function Workspace({ view }: { view: string[] }) {
     "logSize",
     "importPage",
     "importSize",
+    "analyticsProductsPage",
+    "analyticsProductsSize",
     "tab",
     "configTab",
     "returnTo",
@@ -151,6 +156,17 @@ export default function Workspace({ view }: { view: string[] }) {
     "to",
   ])
     dataQuery.delete(key);
+  if (section === "analises")
+    for (const key of [
+      "q",
+      "brand",
+      "category",
+      "status",
+      "type",
+      "pending",
+      "stale",
+    ])
+      dataQuery.delete(key);
   const dataKey = dataQuery.toString();
   useEffect(() => {
     let active = true;
@@ -320,8 +336,10 @@ export default function Workspace({ view }: { view: string[] }) {
   const canWrite = !!data && data.user.role !== "viewer";
   const title = offerId
     ? "Ficha do anúncio"
-    : navigation.find((n) => n.path === section)?.title ||
-      "Página não encontrada";
+    : section === "analises" && view[1] === "ao-vivo"
+      ? "Análise ao vivo"
+      : navigation.find((n) => n.path === section)?.title ||
+        "Página não encontrada";
   return (
     <div className="app-shell">
       <aside
@@ -496,7 +514,11 @@ export default function Workspace({ view }: { view: string[] }) {
                           "")}
                 </div>
                 <h1>{title}</h1>
-                <p>{descriptions[section]}</p>
+                <p>
+                  {section === "analises" && view[1] === "ao-vivo"
+                    ? "O ritmo das vendas de hoje e o que precisa de atenção agora."
+                    : descriptions[section]}
+                </p>
               </div>
               <div className="heading-actions">
                 {section === "" && canWrite && (
@@ -846,6 +868,16 @@ export default function Workspace({ view }: { view: string[] }) {
                   change={changeParam}
                   onTask={(t) => open("task", t)}
                   canWrite={canWrite}
+                  onOpen={openOffer}
+                />
+              )}
+              {section === "analises" && (
+                <Analytics
+                  key={route}
+                  data={data}
+                  store={store}
+                  live={view[1] === "ao-vivo"}
+                  navigate={navigate}
                   onOpen={openOffer}
                 />
               )}

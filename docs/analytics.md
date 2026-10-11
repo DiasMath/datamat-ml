@@ -1,6 +1,6 @@
 # Análises e operação ao vivo
 
-O menu **Análises** reúne sete áreas. Conecte as lojas em Configurações → Integrações, sincronize os anúncios e use **Atualizar ML**. Selecione uma loja específica para não incluir contas ainda desconectadas no comparativo. O favicon SVG é o logotipo enviado pelo responsável.
+O menu **Análises** reúne oito áreas. Conecte as lojas em Configurações → Integrações, sincronize os anúncios e use **Atualizar ML**. Selecione uma loja específica para não incluir contas ainda desconectadas no comparativo. O favicon SVG é o logotipo enviado pelo responsável.
 
 | Área        | Indicadores e decisões                                                                                                 |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -10,7 +10,11 @@ O menu **Análises** reúne sete áreas. Conecte as lojas em Configurações →
 | Tráfego     | Visitas por dia, razão pedidos/visitas e unidades por pedido, sem atribuição individual de visitantes                  |
 | Financeiro  | Receita, tarifa por item retornada no pedido, cobertura das tarifas e contribuição estimada com custos atuais          |
 | Operação    | Perguntas sem resposta, estoque publicado, custos pendentes, qualidade, ações em atraso, reputação e amostra de envios |
-| Publicidade | Conferência manual do relatório: ROAS, ACOS, TACOS, CTR, CPC e razão pedidos/cliques recalculados ao digitar           |
+| Publicidade | Relatórios salvos/importados por campanha, ROAS/ACOS/CTR/CPC/CPO, contribuição e tarefas; simulação ao digitar         |
+
+| Diagnóstico | Crescimento/queda por anúncio, margem, qualidade oficial e próximos ajustes, com amostra e critérios explícitos |
+
+Campanhas, competição no catálogo, mídia, termos de títulos e atualização: [intelligence.md](intelligence.md).
 
 ## Períodos e cálculos
 

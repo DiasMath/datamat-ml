@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import Decimal from "decimal.js";
+import { useToastMessage } from "./toasts";
 import { advertisingIndicators, type QualityIssue } from "@/domain/marketplace";
 import { Field, money, percent, date } from "./ui";
 type Row = Record<string, any>;
@@ -9,18 +11,31 @@ export function ListingChecklist({
   busy,
   canWrite,
   onTask,
+  onRefresh,
 }: {
   detail: Row;
   busy: boolean;
   canWrite: boolean;
   onTask: (key: string) => void;
+  onRefresh: () => void;
 }) {
   const issues = (detail.quality || []) as QualityIssue[];
   return (
     <section className="panel">
       <div className="panel-heading">
         <h2>Próximas melhorias do anúncio</h2>
-        <span className="count-pill">{issues.length}</span>
+        <div className="heading-actions">
+          <span className="count-pill">{issues.length}</span>
+          {detail.mlConnection?.status === "connected" && canWrite && (
+            <button
+              className="button compact"
+              disabled={busy}
+              onClick={onRefresh}
+            >
+              Consultar anúncio no ML
+            </button>
+          )}
+        </div>
       </div>
       {issues.length ? (
         <div className="bounded-list">
@@ -69,6 +84,79 @@ export function ListingChecklist({
           {(detail.offer.ml.unavailable || []).join(" · ")}
         </p>
       )}
+      {detail.offer.ml && (
+        <details className="expand">
+          <summary>Mídia e ficha técnica da última consulta</summary>
+          <p className="small muted">
+            Estado oficial observado em {date(detail.offer.ml.observedAt)}.
+            Qualidade ML:{" "}
+            {detail.offer.ml.health == null
+              ? "não fornecida"
+              : `${Math.round(detail.offer.ml.health * 100)} / 100`}
+            . {(detail.offer.ml.subStatus || []).join(" · ")}
+          </p>
+          <div className="ml-media-grid">
+            {(detail.offer.ml.pictures || []).map((p: Row, i: number) =>
+              p.url ? (
+                <a
+                  key={p.id || i}
+                  href={p.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={p.url}
+                    alt={`Foto ${i + 1} de ${detail.offer.title}`}
+                    loading="lazy"
+                  />
+                </a>
+              ) : (
+                <span className="small muted" key={p.id || i}>
+                  Foto {i + 1}: {p.id || "URL indisponível"}
+                </span>
+              ),
+            )}
+          </div>
+          <p className="small muted">
+            Vídeo legado na API de anúncios:{" "}
+            {detail.offer.ml.videoAvailable
+              ? detail.offer.ml.videoId || "não informado"
+              : "indisponível"}
+            . Clips e campanhas possuem recursos separados; não presumimos que
+            este retorno inclua todos os vídeos.
+          </p>
+          <dl className="ml-attributes">
+            {(detail.offer.ml.attributes || []).map((a: Row) => (
+              <div key={a.id}>
+                <dt>{a.name}</dt>
+                <dd>{a.value || "Não informado"}</dd>
+              </div>
+            ))}
+          </dl>
+          {!!detail.offer.ml.variationDetails?.length && (
+            <details>
+              <summary>Variações publicadas</summary>
+              <div className="bounded-list">
+                {detail.offer.ml.variationDetails.map((v: Row) => (
+                  <div className="list-item" key={v.id}>
+                    <div>
+                      <strong>
+                        {v.attributes
+                          .map((a: Row) => `${a.name}: ${a.value_name || "—"}`)
+                          .join(" · ") || v.id}
+                      </strong>
+                      <small>
+                        Preço: {money(v.price)} · estoque:{" "}
+                        {v.stock ?? "não informado"}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </details>
+      )}
     </section>
   );
 }
@@ -78,13 +166,25 @@ export function MarketplacePerformance({
   data,
   busy,
   onRefresh,
+  onCompetition,
 }: {
   detail: Row;
   data: Row;
   busy: boolean;
   onRefresh: () => void;
+  onCompetition: () => void;
 }) {
-  const m = detail.mlMetrics;
+  const snapshot = detail.mlMetrics;
+  const matching =
+    snapshot?.seller_id === detail.mlConnection?.external_account &&
+    snapshot?.auth_version === detail.mlConnection?.auth_version;
+  const m = matching ? snapshot : null;
+  useToastMessage(
+    snapshot && !matching
+      ? "As métricas anteriores pertencem a outra autorização; consulte os dados da conta atual."
+      : "",
+    "warning",
+  );
   const connected =
     detail.mlConnection?.status === "connected" &&
     detail.mlConnection?.configured;
@@ -103,35 +203,31 @@ export function MarketplacePerformance({
             </button>
           )}
         </div>
-        <div className="detail-stats">
-          {[
-            ["Pedidos pagos", m?.paidOrders],
-            ["Unidades vendidas", m?.units],
-            ["Visitas", m?.visits],
-            [
-              "Pedidos / visitas",
-              m?.orderVisitRate == null ? null : percent(m.orderVisitRate),
-            ],
-            ["Receita bruta de produtos", m ? money(m.grossRevenue) : null],
-            ["Perguntas sem resposta", m?.unansweredQuestions],
-          ].map(([label, value]) => (
-            <div className="unavailable-metric" key={String(label)}>
-              <span>{label}</span>
-              <strong>{value ?? "Indisponível"}</strong>
-            </div>
-          ))}
-        </div>
+        {m && (
+          <div className="detail-stats compact-metrics">
+            {[
+              ["Pedidos pagos", m?.paidOrders],
+              ["Unidades vendidas", m?.units],
+              ["Visitas", m?.visits],
+              [
+                "Pedidos / visitas",
+                m?.orderVisitRate == null ? null : percent(m.orderVisitRate),
+              ],
+              ["Receita bruta de produtos", m ? money(m.grossRevenue) : null],
+              ["Perguntas sem resposta", m?.unansweredQuestions],
+            ].map(([label, value]) => (
+              <div className="compact-metric" key={String(label)}>
+                <span>{label}</span>
+                <strong>{value ?? "Indisponível"}</strong>
+              </div>
+            ))}
+          </div>
+        )}
         <p className="small muted">
           {m
             ? `${date(m.from)} a ${date(m.to)} · consulta ${date(m.observed_at)}. ${m.source}. Receita antes de tarifas, frete, impostos e devoluções posteriores. Pedidos/visitas é um indicador do período, sem atribuição de visitantes às compras.`
-            : "Conecte a conta, sincronize o anúncio e consulte as métricas. As vendas acumuladas do anúncio não são usadas como vendas do período."}
+            : "Consulte as métricas da conta autorizada para este anúncio. Vendas acumuladas não são usadas como vendas do período."}
         </p>
-        {m && detail.mlConnection?.external_account !== m.seller_id && (
-          <div className="alert">
-            Este histórico pertence à conta anteriormente conectada; atualize as
-            métricas da conta atual.
-          </div>
-        )}
         {data.powerBiUrl && (
           <a
             className="button"
@@ -143,8 +239,105 @@ export function MarketplacePerformance({
           </a>
         )}
       </section>
+      {detail.offer.ml?.catalogListing && (
+        <CatalogCompetition
+          detail={detail}
+          busy={busy}
+          onRefresh={onCompetition}
+        />
+      )}
       <AdvertisingCalculator />
     </>
+  );
+}
+
+function CatalogCompetition({
+  detail,
+  busy,
+  onRefresh,
+}: {
+  detail: Row;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  const raw = detail.mlCompetition,
+    c = detail.mlConnection;
+  const snapshot =
+    raw &&
+    raw.seller_id === c?.external_account &&
+    raw.auth_version === c?.auth_version &&
+    raw.offer_version === detail.offer.version
+      ? raw
+      : null;
+  const names: Record<string, string> = {
+    winning: "Ganhando a disputa",
+    losing: "Perdendo a disputa",
+    sharing_first_place: "Compartilhando a primeira posição",
+    listed: "Listado",
+    not_listed: "Fora da disputa",
+    challenging: "Disputando",
+  };
+  const belowFloor =
+    snapshot?.priceToWin != null &&
+    detail.calculation.minPrice != null &&
+    new Decimal(snapshot.priceToWin).lt(detail.calculation.minPrice);
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <h2>Competição no catálogo</h2>
+        <button
+          className="button compact"
+          disabled={busy || c?.status !== "connected"}
+          onClick={onRefresh}
+        >
+          Consultar competição no ML
+        </button>
+      </div>
+      {snapshot ? (
+        <>
+          <div className="detail-stats compact-metrics">
+            <div>
+              <span>Situação retornada pelo ML</span>
+              <strong>
+                {names[snapshot.status] ||
+                  "Situação a conferir: " + snapshot.status}
+              </strong>
+            </div>
+            <div>
+              <span>Preço indicativo para competir</span>
+              <strong>{money(snapshot.priceToWin)}</strong>
+            </div>
+            <div>
+              <span>Preço na consulta de competição</span>
+              <strong>{money(snapshot.currentPrice)}</strong>
+            </div>
+          </div>
+          <p className="small muted">
+            Consulta {date(snapshot.observed_at)}.{" "}
+            {snapshot.consistent === false
+              ? "O ML sinalizou condições inconsistentes; confira antes de decidir."
+              : ""}
+          </p>
+          {belowFloor && (
+            <p className="small orange">
+              O preço indicativo está abaixo do piso estimado com seus custos
+              atuais. Revise a margem e as condições antes de preparar uma
+              proposta.
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="muted">
+          Consulte a situação oficial deste anúncio de catálogo. Falta de
+          permissão ou recurso não fornecido permanece indisponível.
+        </p>
+      )}
+      <p className="small muted">
+        A consulta mostra a disputa observada pelo ML. O preço indicativo pode
+        mudar com a logística e as condições da oferta; não garante a primeira
+        posição. Confira custos e tarifas antes de preparar uma proposta.
+      </p>
+    </section>
   );
 }
 
@@ -186,7 +379,7 @@ function AdvertisingCalculator() {
           </Field>
         ))}
       </div>
-      <div className="detail-stats" aria-live="polite">
+      <div className="detail-stats compact-metrics" aria-live="polite">
         {[
           ["ROAS", indicators.roas == null ? null : indicators.roas + "×"],
           ["ACOS", indicators.acos == null ? null : percent(indicators.acos)],

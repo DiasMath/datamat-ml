@@ -120,7 +120,8 @@ textarea {
 }
 select {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--text);
+  color-scheme: dark;
 }
 select option {
   background: var(--surface);
@@ -422,7 +423,7 @@ tbody tr:hover {
   width: calc(100% - 232px);
 }
 .topbar {
-  height: 70px;
+  height: 48px;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -438,7 +439,7 @@ tbody tr:hover {
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 8px;
   font-size: 10px;
   color: var(--dim);
 }
@@ -466,11 +467,11 @@ tbody tr:hover {
 .content {
   max-width: 1720px;
   margin: auto;
-  padding: 32px 35px 20px;
-  min-height: calc(100vh - 70px);
+  padding: 20px 35px 20px;
+  min-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
-  gap: 23px;
+  gap: 18px;
 }
 .page-heading {
   display: flex;
@@ -479,7 +480,7 @@ tbody tr:hover {
   align-items: center;
 }
 .page-heading .eyebrow {
-  margin-bottom: 9px;
+  margin-bottom: 4px;
 }
 .page-heading p {
   font-size: 12px;
@@ -1646,7 +1647,7 @@ fieldset.form-grid {
 }
 .detail-heading {
   position: sticky;
-  top: 70px;
+  top: 48px;
   z-index: 20;
   background: var(--bg);
   margin: -15px -3px 0;
@@ -2219,7 +2220,7 @@ fieldset.form-grid {
 }
 @media (min-width: 1600px) {
   .content {
-    padding: 38px 48px 24px;
+    padding: 24px 48px 24px;
   }
   .topbar {
     padding: 0 48px;
@@ -2243,7 +2244,7 @@ fieldset.form-grid {
     width: calc(100% - 205px);
   }
   .content {
-    padding: 25px 22px 20px;
+    padding: 20px 22px 20px;
   }
   .topbar {
     padding: 0 22px;
@@ -2302,16 +2303,16 @@ fieldset.form-grid {
     grid-template-columns: 1fr 1fr;
   }
   .topbar {
-    height: 61px;
+    height: 52px;
   }
   .detail-heading {
-    top: 61px;
+    top: 52px;
   }
   .breadcrumb > span {
     display: none;
   }
   .content {
-    min-height: calc(100vh - 61px);
+    min-height: calc(100vh - 52px);
   }
   .login-grid {
     gap: 35px;
@@ -2325,8 +2326,8 @@ fieldset.form-grid {
 }
 @media (max-width: 620px) {
   .content {
-    padding: 23px 15px 16px;
-    gap: 20px;
+    padding: 16px 15px 16px;
+    gap: 16px;
   }
   .topbar {
     padding: 0 15px;
@@ -3251,4 +3252,152 @@ h3,
 }
 .bulk-results .list-item {
   gap: 14px;
+}
+
+/* Native keyboard, form and screen-reader behavior, with a styled picker on
+   supporting browsers. Others keep the operating system's native picker. */
+@supports (appearance: base-select) {
+  select,
+  select::picker(select) {
+    appearance: base-select;
+  }
+  select {
+    align-items: center;
+    gap: 12px;
+  }
+  select::picker-icon {
+    color: var(--muted);
+    transition: transform 120ms ease;
+  }
+  select:open::picker-icon {
+    transform: rotate(180deg);
+  }
+  select::picker(select) {
+    color: var(--text);
+    background: #232326;
+    border: 1px solid #45454c;
+    border-radius: 9px;
+    box-shadow: 0 12px 32px #0008;
+    padding: 5px;
+    margin-block: 5px;
+    max-block-size: min(360px, 65dvh);
+    max-inline-size: calc(100vw - 24px);
+    overflow: auto;
+  }
+  select option {
+    background: transparent;
+    border-radius: 5px;
+    padding: 9px 12px;
+    min-block-size: 36px;
+    gap: 10px;
+    overflow-wrap: anywhere;
+  }
+  select option:hover,
+  select option:focus-visible {
+    background: #333339;
+  }
+  select option:checked {
+    background: #ffad2817;
+    color: var(--orange);
+    font-weight: 600;
+  }
+  select option:disabled {
+    opacity: 0.45;
+  }
+  select option::checkmark {
+    color: var(--orange);
+  }
+}
+@media (max-width: 850px) {
+  .topbar .global-store select {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  select::picker-icon {
+    transition: none;
+  }
+}
+.campaign-panel .panel-heading {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.campaign-panel .panel-heading > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.cell-sub {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.keyword-terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.keyword-terms > span {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.keyword-terms small {
+  color: var(--muted);
+}
+.ml-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+.ml-media-grid img {
+  width: 100%;
+  height: 130px;
+  object-fit: contain;
+  background: white;
+  border-radius: 6px;
+}
+.ml-media-grid a {
+  min-width: 0;
+}
+.ml-attributes {
+  max-height: 300px;
+  overflow: auto;
+}
+.ml-attributes > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 15px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ml-attributes dd {
+  color: var(--muted);
+  margin: 0;
+}
+.compact-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+.compact-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.compact-metrics span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.compact-metrics strong {
+  font-size: 16px;
+  line-height: 1.4;
 }

@@ -48,6 +48,10 @@ A aplicação de preço elegível usa o DATAMAT após aprovação e confirmaçã
 
 **IA:** permanece pendente. Checklist e prioridades atuais são regras determinísticas. Não enviam dados a um provedor de IA, nem criam características técnicas presumidas ou alegações de causalidade.
 
-**Publicidade:** calculadora manual de ROAS, ACOS e TACOS ao digitar, usando dados do mesmo período. Os valores servem para análise; não são somados aos custos automaticamente. API de Ads, custo atribuído por pedido e orçamento sustentável continuam no roadmap.
+**Publicidade:** relatórios locais salvos/importados por campanha e período, indicadores de retorno/contribuição e tarefa de revisão; simulação manual permanece recolhida. Não altera orçamento/situação da campanha nem soma os valores aos custos. Product Ads automático continua pendente. Ver [campanhas e diagnóstico](intelligence.md).
 
 **Power BI:** exportações CSV/JSON/Excel e URL HTTPS opcional. Refresh automático exige pipeline com autenticação própria. A primeira extensão DATAMAT e o endpoint de processamento agendado foram implementados. IA, tendências, testes A/B e pipeline BI continuam pendentes.
+
+## Conteúdo e competição
+
+Fotos/atributos/variações/estoque/qualidade/vídeo legado retornados pelo ML compõem o retrato oficial e sua trilha de mudanças. Consulta opcional de catálogo usa `price_to_win` e não altera preços. Lotes periódicos enquanto o site está visível complementam notificações; edição/diálogos e aba em segundo plano pausam a atualização visual. Clips e Product Ads exigem integração específica. [Detalhes](intelligence.md).

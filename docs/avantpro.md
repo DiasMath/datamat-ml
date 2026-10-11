@@ -56,3 +56,13 @@ A intenção é reproduzir as capacidades úteis em uma implementação própria
 | 6     | Conferência de paridade Free/Pro na versão do cliente                              | Lista de recursos observados e acesso autorizado à experiência correspondente |
 
 A primeira extensão foi implementada com captura assistida, pareamento por loja e motor de precificação compartilhado; instalação em [extension/README.md](../extension/README.md). Não está publicada na loja Chrome e não anuncia paridade completa. O escopo final pode incluir todos os recursos funcionais relevantes, mas a disponibilidade de dados e as APIs precisam ser confirmadas. Valores de visitas, vendas, conversão ou ganho potencial não serão inventados para preencher uma tela.
+
+## Revisão funcional de 11/10/2026
+
+A [página atual para ML](https://avantpro.com.br/ml/) foi consultada novamente: anuncia análise/publicador com IA e créditos limitados, palavras-chave, concorrência, tendências, código de barras, desempenho, histórico e monitoramento. É uma análise funcional das fontes públicas; o executável pago, conta Pro e seus contratos privados não foram inspecionados. Não declaramos engenharia reversa do binário nem equivalência completa de planos.
+
+Nesta entrega, capacidades próprias adicionais: termos observados das referências vinculadas, rascunho de título/nota, diagnóstico de crescimento/queda com critérios explícitos, qualidade oficial quando retornada, consulta opcional de competição de catálogo, mídia/ficha observadas e relatórios de campanhas com alertas/tarefas. A captura da extensão alimenta a amostra do título no site. Ver [funcionamento e limites](intelligence.md).
+
+As páginas oficiais de [Nubimetrics](https://www.nubimetrics.com/br/) destacam análise de mercado, concorrência e negócio; [Magis5](https://magis5.com.br/) destaca estoque, expedição, finanças e centralização. Esses recursos reforçam prioridades de margem, estoque confiável, trilha de mudanças e ações úteis. A landing de Real Trends exige navegação dinâmica; a URL portuguesa consultada respondeu página não encontrada, então não foi usada para afirmar funcionalidades novas.
+
+A sequência restante segue necessidades concretas: Product Ads por API e por produto anunciado; Clips/mídia completa; registro de experimentos com hipótese e evidência; palavras-chave/ranking com fonte e coleta definida; editor com imagens próprias; criação/publicação revisada e IA com provedor configurado. Conciliar repasses/devoluções e integrar estoque do ERP são projetos separados. Experimentos antes/depois não são testes A/B aleatórios nem provas de causalidade.

@@ -390,6 +390,15 @@ export async function offerDetail(actor: Actor, offerId: string) {
     calculation: calculate(offer.ml?.variablePrices ? null : offer.price, c, p),
     quality: listingQuality(offer),
     mlMetrics: (await get("ml_metrics", offerId)) || null,
+    mlCompetition: (await get("ml_competition", offerId)) || null,
+    competitorTitles: (await find("competitors", { offer_id: offerId }))
+      .filter(
+        (r) =>
+          r.store_id === offer.store_id &&
+          r.organization_id === actor.organization_id,
+      )
+      .slice(0, 40)
+      .map((r) => ({ title: r.title, observedAt: r.observed_at })),
     mlConnection: ((connection) =>
       connection ? publicConnection(connection) : null)(
       await get("connections", key(offer.store_id, "mercadolivre")),
@@ -1032,6 +1041,17 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
         category = categoryMap.get(p.category_id) || null;
       return {
         ...o,
+        // Full media and technical attributes are loaded in the individual ficha.
+        ...(o.ml
+          ? {
+              ml: (({
+                pictures,
+                attributes,
+                variationDetails,
+                ...summary
+              }: Row) => summary)(o.ml),
+            }
+          : {}),
         product_name: p.name,
         model: p.model,
         brand,

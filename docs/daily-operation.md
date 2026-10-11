@@ -43,3 +43,7 @@ Instalação: [extension/README.md](../extension/README.md). Sem publicação na
 ## Tabelas e ações em lote
 
 Cabeçalhos ordenam antes de paginar, com ajuste de largura por arraste e restauração por duplo clique. Anúncios permite edição/exclusão local em lote e ativação/pausa real no ML, mediante confirmação e verificação por anúncio. Ver [fluxos, limites e retomada](tables-and-bulk.md).
+
+## Atualização de conteúdo, diagnóstico e campanhas
+
+A ficha registra mudanças em fotos, atributos, variações, estoque, qualidade/subsituação e vídeo legado retornado pela API; esses eventos também entram no histórico. Consulta automática enquanto o site está visível, com rascunhos/diálogos protegidos, e botão para conferir o anúncio. Análises → Diagnóstico separa crescimento, margem e catálogo; Publicidade salva/importa relatórios por campanha com ações úteis. Detalhes e APIs ainda pendentes: [intelligence.md](intelligence.md).

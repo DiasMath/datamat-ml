@@ -130,6 +130,9 @@ test("analytics navigation, charts, pagination, live advertising calculations an
     page.getByText("Margem na parcela coberta", { exact: true }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Publicidade", exact: true }).click();
+  await page
+    .getByText("Simular indicadores sem salvar", { exact: true })
+    .click();
   await page.getByLabel("Investimento em anúncios (R$)").fill("100");
   await page.getByLabel("Receita atribuída (R$)").fill("500");
   await page.getByLabel("Impressões", { exact: true }).fill("1000");

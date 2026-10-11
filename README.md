@@ -124,3 +124,7 @@ Precificação ao digitar, fórmulas auditadas e limites: [docs/pricing.md](docs
 Configuração pronta em `vercel.json`, com Node.js 24, build Next.js e Firestore no servidor. Variáveis obrigatórias/opcionais, importação privada, diagnóstico e URLs OAuth/notificações estão em [docs/vercel.md](docs/vercel.md). No endereço atual `https://datamat-ml.vercel.app`, use `APP_URL` com essa origem e `FIREBASE_SERVICE_ACCOUNT_JSON` como segredo completo; o caminho da credencial deste ambiente não existe na hospedagem. Salvar variáveis exige Redeploy para atualizar a aplicação publicada.
 
 Melhorias adicionais: prioridades explicáveis para margem negativa/estoque/custos, checklist que cria tarefas sem duplicação, métricas com origem e intervalo, ROAS/ACOS/TACOS manuais ao digitar e saúde das conexões por loja.
+
+## Campanhas e diagnóstico dos anúncios
+
+Análises → Publicidade salva/importa relatórios reais por campanha/período com ROAS, ACOS, CTR, CPC, CPO e contribuição estimada. Análises → Diagnóstico compara vendas, margem e ajustes, sem inferir vitória de catálogo. A ficha consulta competição opcional, exibe mídia/ficha técnica observadas e analisa termos das referências vinculadas. Atualização ML em lotes de 60 segundos enquanto visível e sem edição, com datas, conflitos e preservação de rascunhos. Product Ads automático e Clips completos continuam pendentes. Ver [uso e limites](docs/intelligence.md).

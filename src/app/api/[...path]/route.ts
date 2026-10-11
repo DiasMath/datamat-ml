@@ -16,6 +16,8 @@ import * as competitors from "@/server/competitors";
 import * as extension from "@/server/extension";
 import { applyApprovedPrice } from "@/server/ml-price-application";
 import { batchListingStatus } from "@/server/ml-status";
+import * as campaign from "@/server/campaigns";
+import { refreshCatalog } from "@/server/catalog-refresh";
 import { csvCell } from "@/domain/csv";
 import {
   offersWorkbook,
@@ -89,6 +91,41 @@ async function handle(req: NextRequest, context: Context) {
         "Login e usuários locais foram removidos; o acesso será integrado ao portal",
       );
     const actor = await workspaceActor();
+    if (
+      resource === "offers" &&
+      key &&
+      action === "ml-competition" &&
+      path.length === 3 &&
+      req.method === "POST"
+    )
+      return response(await ml.refreshCompetition(actor, key));
+    if (
+      resource === "catalog" &&
+      key === "refresh" &&
+      path.length === 2 &&
+      req.method === "POST"
+    )
+      return response(
+        await refreshCatalog(actor, req.nextUrl.searchParams, body),
+      );
+    if (resource === "campaigns") {
+      if (req.method === "GET" && path.length === 1)
+        return response(
+          await campaign.campaigns(actor, req.nextUrl.searchParams),
+        );
+      if (req.method === "POST" && path.length === 1)
+        return response(await campaign.saveCampaigns(actor, body));
+      if (
+        req.method === "POST" &&
+        key &&
+        action === "task" &&
+        path.length === 3
+      )
+        return response(await campaign.campaignTask(actor, key));
+      if (req.method === "DELETE" && key && path.length === 2)
+        return response(await campaign.deleteCampaign(actor, key, body));
+      throw new HttpError(404, "Operação de campanha não encontrada");
+    }
     if (extensionRequest) {
       const extensionId = req.headers.get("x-datamat-extension");
       const origin =

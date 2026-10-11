@@ -62,6 +62,8 @@ import Skeleton from "./skeleton";
 import RoutineToday from "./routine-today";
 import Competitors from "./competitors";
 import ExtensionSettings from "./extension-settings";
+import { TitleWorkbench } from "./listing-diagnostics";
+import useCatalogPolling from "./use-catalog-polling";
 
 type Row = Record<string, any>;
 const navigation = [
@@ -251,6 +253,20 @@ export default function Workspace({ view }: { view: string[] }) {
       active = false;
     };
   }, [dataKey, offerId, refresh]);
+  useCatalogPolling({
+    store,
+    offerId,
+    enabled:
+      data?.user.role === "admin" &&
+      !!data?.connections.some(
+        (c: Row) =>
+          c.provider === "mercadolivre" &&
+          c.status === "connected" &&
+          (store === "all" || c.store_id === store),
+      ),
+    blocked: loading || busy || dirty || !!modal,
+    onReload: setRefresh,
+  });
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (dirty) {
@@ -771,8 +787,15 @@ export default function Workspace({ view }: { view: string[] }) {
                       />
                       <ListingChecklist
                         detail={detail}
-                        busy={busy}
+                        busy={busy || dirty}
                         canWrite={canWrite}
+                        onRefresh={() =>
+                          mutate(
+                            `/api/catalog/refresh?store=${detail.offer.store_id}`,
+                            { offerId },
+                            "Estado do anúncio consultado no Mercado Livre.",
+                          )
+                        }
                         onTask={(issueKey) =>
                           mutate(
                             `/api/offers/${offerId}/quality-task`,
@@ -780,6 +803,13 @@ export default function Workspace({ view }: { view: string[] }) {
                             "Pendência adicionada às tarefas.",
                           )
                         }
+                      />
+                      <TitleWorkbench
+                        key={detail.offer.id + ":" + detail.offer.version}
+                        detail={detail}
+                        canWrite={canWrite}
+                        onDirty={setDirty}
+                        onSaved={() => setRefresh((n) => n + 1)}
                       />
                     </>
                   )}
@@ -849,6 +879,13 @@ export default function Workspace({ view }: { view: string[] }) {
                       detail={detail}
                       data={data}
                       busy={busy}
+                      onCompetition={() =>
+                        mutate(
+                          `/api/offers/${offerId}/ml-competition`,
+                          {},
+                          "Competição consultada no Mercado Livre.",
+                        )
+                      }
                       onRefresh={() =>
                         mutate(
                           `/api/offers/${offerId}/ml-metrics`,
@@ -960,6 +997,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   live={view[1] === "ao-vivo"}
                   navigate={navigate}
                   onOpen={openOffer}
+                  onChanged={() => setRefresh((n) => n + 1)}
                 />
               )}
               {section === "historico" && (

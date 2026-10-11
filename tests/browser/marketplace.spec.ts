@@ -231,6 +231,7 @@ test("performance uses the imported period and advertising ratios update live wi
     seller_id: "111",
     offer_id: o.id,
     visits: 100,
+    auth_version: 77,
     paidOrders: 3,
     units: 5,
     grossRevenue: "400",

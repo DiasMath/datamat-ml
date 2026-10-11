@@ -83,3 +83,11 @@ Essa ordem protege a proposta de minimalismo: dados confiáveis primeiro, uma pr
 ## Implementação posterior à pesquisa
 
 Além do cálculo live e autocomplete, foram implementados: autorização ML por loja, catálogo em lotes, consulta de tarifas por preço/categoria/modalidade, métricas de visitas/pedidos pagos do mesmo intervalo, caixa de notificações, checklist de qualidade que vira tarefa, prioridades explicáveis em Hoje, saúde da conexão e calculadora manual de ROAS/ACOS/TACOS. A comparação com fornecedores não implica acesso aos seus dados privados ou algoritmos. A integração real espera domínio Vercel, credenciais e autorização; frete/promoções, Ads via API, conciliação, IA, comparação de concorrentes, A/B e extensão continuam nas etapas posteriores.
+
+## Pesquisa adicional — 11/10/2026
+
+Fontes públicas consultadas: [Avantpro ML](https://avantpro.com.br/ml/), [Nubimetrics Brasil](https://www.nubimetrics.com/br/) e [Magis5](https://magis5.com.br/). Revisitamos monitoramento/termos/desempenho do Avantpro, análise de concorrência e negócio da Nubimetrics e problemas operacionais de estoque/expedição/finanças do Magis5. As páginas comerciais não expõem seus algoritmos internos; não copiamos estimativas proprietárias como fatos.
+
+Prioridades implementadas: comparação por anúncio com amostra mínima, margem separada de crescimento, retratos de mídia/ficha com origem e data, campanhas registradas por janela sem dupla contagem, alertas transformados em tarefa e títulos analisados por termos efetivamente capturados. Uso detalhado em [intelligence.md](intelligence.md).
+
+A [documentação de Product Ads](https://developers.mercadolivre.com.br/pt_br/product-ads) devolveu uma página de erro nesta consulta; coleta automática de campanhas não foi implementada com endpoints presumidos. Competição de catálogo usa o recurso conhecido `price_to_win`, com validação da identidade, resposta controlada nos testes e leitura real ainda pendente. O sistema não transforma “ganhando vendas” em “ganhando catálogo”, nem contagem de termos em volume de pesquisa. APIs de Clips e janelas de atribuição de Ads exigem validação específica.

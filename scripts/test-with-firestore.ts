@@ -91,6 +91,7 @@ async function main() {
             "tests/connection-settings.test.ts",
             "tests/operations.test.ts",
             "tests/bulk-operations.test.ts",
+            "tests/intelligence.test.ts",
           ]
         : ["playwright", "test", ...process.argv.slice(3)];
     const child = spawn("npx", command, { stdio: "inherit", env });

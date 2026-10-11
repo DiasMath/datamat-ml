@@ -25,6 +25,8 @@ import { money, percent, Field, Empty } from "./ui";
 import Collection from "./collection";
 import { useToastMessage } from "./toasts";
 import Skeleton from "./skeleton";
+import Campaigns from "./campaigns";
+import ListingDiagnostics from "./listing-diagnostics";
 
 type Row = Record<string, any>;
 type Navigate = (path: string, params?: URLSearchParams) => void;
@@ -42,6 +44,7 @@ const tabs = [
   "Financeiro",
   "Operação",
   "Publicidade",
+  "Diagnóstico",
 ];
 export default function Analytics({
   data,
@@ -49,12 +52,14 @@ export default function Analytics({
   live,
   navigate,
   onOpen,
+  onChanged,
 }: {
   data: Row;
   store: string;
   live: boolean;
   navigate: Navigate;
   onOpen: (id: string) => void;
+  onChanged: () => void;
 }) {
   const today = businessDay();
   const currentHour = Number(
@@ -755,7 +760,30 @@ export default function Analytics({
               />
             )}
             {!live && tab === "Publicidade" && (
-              <Advertising key={key} report={report} />
+              <>
+                <Campaigns
+                  data={data}
+                  store={store}
+                  from={requestFrom}
+                  to={requestTo}
+                  totalRevenue={
+                    report?.complete ? report.current.revenue : null
+                  }
+                  onChanged={onChanged}
+                />
+                <details className="panel expand">
+                  <summary>Simular indicadores sem salvar</summary>
+                  <Advertising key={key} report={report} />
+                </details>
+              </>
+            )}
+            {!live && tab === "Diagnóstico" && (
+              <ListingDiagnostics
+                data={data}
+                offers={relevantOffers}
+                report={report}
+                onOpen={onOpen}
+              />
             )}
           </>
         )}

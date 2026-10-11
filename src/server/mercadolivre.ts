@@ -228,6 +228,7 @@ export function publicConnection(c: Row) {
     redirect_uri: urls?.redirectUri || null,
     notification_uri: urls?.notificationUri || null,
     external_account: c.external_account || null,
+    auth_version: c.auth_version || 0,
     nickname: c.nickname || null,
     last_sync_at: c.last_sync_at || null,
     has_more: Boolean(c.has_more || c.pending_batch),
@@ -805,6 +806,20 @@ export async function writeSellerStatus(
     body: JSON.stringify({ status }),
   });
 }
+export function safePictureUrl(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      /(^|\.)mlstatic\.com$/.test(url.hostname)
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
 const itemSchema = z.object({
   id: z.string().regex(/^MLB\d+$/),
   seller_id: z.number().int().positive(),
@@ -823,10 +838,23 @@ const itemSchema = z.object({
   available_quantity: z.number().int().nonnegative(),
   sold_quantity: z.number().int().nonnegative(),
   catalog_listing: z.boolean().optional(),
-  pictures: z.array(z.object({ id: z.string().optional() })),
+  pictures: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        secure_url: z.string().nullable().optional(),
+        url: z.string().nullable().optional(),
+      }),
+    )
+    .max(100),
+  video_id: z.string().nullable().optional(),
+  health: z.number().min(0).max(1).nullable().optional(),
+  sub_status: z.array(z.string()).optional(),
+  permalink: z.string().optional(),
   attributes: z.array(
     z.object({
       id: z.string(),
+      name: z.string().optional(),
       value_name: z.string().nullable().optional(),
       value_id: z.string().nullable().optional(),
     }),
@@ -842,6 +870,7 @@ const itemSchema = z.object({
         id: z.number(),
         price: z.number().optional(),
         seller_custom_field: z.string().nullable().optional(),
+        available_quantity: z.number().int().nonnegative().optional(),
         attribute_combinations: z
           .array(
             z.object({
@@ -979,7 +1008,24 @@ async function importItem(
         (field) => existing.ml?.[field] !== observation[field],
       ),
     );
+    const contentFields = [
+      "pictures",
+      "videoId",
+      "attributes",
+      "variationDetails",
+      "subStatus",
+      "health",
+      "availableQuantity",
+    ];
+    const contentChanged =
+      !!existing &&
+      contentFields.some(
+        (field) =>
+          JSON.stringify(existing.ml?.[field] ?? null) !==
+          JSON.stringify(observation[field] ?? null),
+      );
     const changed =
+      contentChanged ||
       pricingChanged ||
       !existing ||
       Object.entries(next).some(([k, v]) => existing[k] !== v);
@@ -1017,10 +1063,19 @@ async function importItem(
               status: existing.status,
               description: existing.description,
               sku: existing.sku,
+              mlContent: Object.fromEntries(
+                contentFields.map((field) => [
+                  field,
+                  existing.ml?.[field] ?? null,
+                ]),
+              ),
             }
           : null,
         {
           ...next,
+          mlContent: Object.fromEntries(
+            contentFields.map((field) => [field, observation[field] ?? null]),
+          ),
           mlConditions: Object.fromEntries(
             contextFields.map((field) => [field, observation[field]]),
           ),
@@ -1207,6 +1262,25 @@ async function syncListingsInside(
         soldQuantityLifetime: item.sold_quantity,
         catalogListing: item.catalog_listing || false,
         photoCount: item.pictures.length,
+        pictures: item.pictures.map((p) => ({
+          id: p.id || null,
+          url: safePictureUrl(p.secure_url || p.url),
+        })),
+        videoId: item.video_id ?? null,
+        videoAvailable: item.video_id !== undefined,
+        health: item.health ?? null,
+        subStatus: item.sub_status || [],
+        attributes: item.attributes.map((a) => ({
+          id: a.id,
+          name: a.name || a.id,
+          value: a.value_name || a.value_id || null,
+        })),
+        variationDetails: item.variations.slice(0, 100).map((v) => ({
+          id: String(v.id),
+          price: v.price == null ? null : String(v.price),
+          stock: v.available_quantity ?? null,
+          attributes: v.attribute_combinations || [],
+        })),
         variationCount: item.variations.length,
         variablePrices: item.variations.some(
           (v) => v.price !== undefined && !new Decimal(v.price).eq(item.price),
@@ -1666,5 +1740,79 @@ export async function createQualityTask(
       "Pendência convertida em ação",
     );
     return { ...task, id: taskId };
+  });
+}
+
+// Optional catalogue competition is a separate official resource. Never infer
+// winning/losing the catalogue from sales trends or set price from this response.
+export async function refreshCompetition(actor: Actor, offerId: string) {
+  canWrite(actor);
+  return requestDeadline.run(Date.now() + 45000, async () => {
+    const { offer, c } = await connectedOffer(actor, offerId);
+    const item = itemSchema.parse(await api(c, "/items/" + offer.ml_id));
+    if (
+      item.id !== offer.ml_id ||
+      String(item.seller_id) !== c.external_account
+    )
+      throw new HttpError(403, "Anúncio de outro vendedor");
+    if (!item.catalog_listing || item.currency_id !== "BRL")
+      throw new HttpError(
+        422,
+        "A competição está disponível para anúncios próprios de catálogo em BRL",
+      );
+    const price = z.number().finite().positive();
+    const result = z
+      .object({
+        item_id: z.string(),
+        status: z.string().min(1).max(100),
+        price_to_win: price.nullable().optional(),
+        current_price: price.nullable().optional(),
+        consistent: z.boolean().optional(),
+      })
+      .parse(
+        await api(
+          c,
+          `/items/${offer.ml_id}/price_to_win?siteId=MLB&version=v2`,
+        ),
+      );
+    if (result.item_id !== offer.ml_id)
+      throw new HttpError(
+        502,
+        "A competição retornada não corresponde ao anúncio",
+      );
+    const snapshot = {
+      offer_id: offerId,
+      store_id: offer.store_id,
+      seller_id: c.external_account,
+      auth_version: c.auth_version,
+      offer_version: offer.version,
+      status: result.status,
+      priceToWin:
+        result.price_to_win == null
+          ? null
+          : new Decimal(result.price_to_win).toFixed(2),
+      currentPrice:
+        result.current_price == null
+          ? null
+          : new Decimal(result.current_price).toFixed(2),
+      consistent: result.consistent ?? null,
+      observed_at: now(),
+      source: "Mercado Livre · price_to_win",
+    };
+    return transaction(async () => {
+      const current = await get("offers", offerId),
+        account = await connection(actor, c.id);
+      if (
+        current?.version !== offer.version ||
+        current?.ml_id !== offer.ml_id ||
+        account.auth_version !== c.auth_version ||
+        account.external_account !== c.external_account
+      )
+        throw new HttpError(
+          409,
+          "O contexto mudou; consulte novamente a competição",
+        );
+      return put("ml_competition", offerId, snapshot);
+    });
   });
 }

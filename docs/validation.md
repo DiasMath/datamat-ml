@@ -5,9 +5,9 @@ Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta r
 | Verificação              | Resultado                                                                                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                                |
-| Domínio e serviços       | `npm test`: **135 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **150 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                    |
-| Navegador Chromium       | `npm run test:e2e`: **46 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Navegador Chromium       | `npm run test:e2e`: **51 passaram**, nenhuma falha ou teste ignorado                                                                                       |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
 | Responsividade           | 17 telas/abas × 6 larguras: **102 combinações**, sem transbordamento horizontal do documento                                                               |
@@ -115,3 +115,14 @@ Fontes, limites financeiros e operação: [daily-operation.md](daily-operation.m
 - O fluxo de navegador de ativação/pausa usa respostas controladas e os testes de serviço simulam a API oficial. Nenhum anúncio real foi ativado, pausado ou teve preço alterado. Na última leitura de produção, juntos.data permanece `unauthorized` e juntos.com `unconfigured`; é necessário autorizar o vendedor pelo site.
 
 Uso, limites e diferenças entre cadastro local e marketplace: [tables-and-bulk.md](tables-and-bulk.md).
+
+## Campanhas, interface compacta e inteligência dos anúncios
+
+- Quinze novos testes de domínio/serviço: precisão decimal dos indicadores e contribuição antes/depois de Ads, desconhecido versus zero, planilha/aliases, lote atômico/idempotência/versões, sobreposição e filtros sem rateio, permissão e loja, tarefa deduplicada/exclusão auditada, termos normalizados por título distinto, comparação com amostra/base/autorização, URLs de mídia seguras, mudanças de fotos/vídeo/estoque sem alterar custos, competição somente por leitura e rejeição de contexto divergente.
+- Cinco novos cenários Chromium: topo 48 px no desktop/52 px no celular, picker estilizado com clique/teclado/escape e alvo de toque; campanha ao digitar, persistência/recarga/edição/tarefa/exclusão; Excel com prévia e CSV exportado atualizando o mesmo registro; diagnóstico de queda e margem negativa, fotos/ficha e competição abaixo do piso; polling refletindo alteração externa sem sobrescrever rascunhos, interrompido durante diálogo e aba oculta.
+- Suíte completa: 150 testes de negócio e 51 cenários de navegador, sem falhas/ignorados. TypeScript e build de produção passaram. Mantidas as 102 combinações anteriores e acrescentadas quatro larguras para campanhas, diagnóstico e competição, além do diálogo e dropdown em 320 px.
+- A revisão corrigiu o vínculo de autorização na projeção pública: a versão numérica passou a ser retornada, sem tokens, para os controles de métricas/competição/lotes. Dados de outra autorização não aparecem como atuais. Mídia/atributos detalhados são carregados na ficha e omitidos da lista recorrente.
+- Capturas novas: `test-results/dropdown-options-mobile.png`, `campaign-report-mobile.png`, `campaigns-mobile.png` e `listing-competition-mobile.png`. A inspeção levou à remoção de cartões vazios, métricas compactas e campos adicionais recolhidos. Depois desse ajuste, os nove cenários de inteligência/marketplace, TypeScript e build foram conferidos novamente.
+- Os relatórios locais de campanhas usam Firestore real no emulador. Consulta de competição, mudança oficial de mídia e polling usam respostas controladas; nenhuma campanha, preço ou anúncio real foi alterado. Product Ads automático e Clips completos continuam pendentes; recursos públicos do Avantpro foram pesquisados, sem instalação/inspeção da versão paga ou alegação de paridade completa.
+
+Operação e limites: [intelligence.md](intelligence.md). Pesquisa: [avantpro.md](avantpro.md) e [research-mercado-livre.md](research-mercado-livre.md).

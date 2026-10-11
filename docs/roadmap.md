@@ -44,3 +44,7 @@ Skeletons, toasts com relógio único, Hoje com vendas/margens/estoque/tarefas, 
 ## Tabelas e ações em lote entregues
 
 Ordenação por cabeçalho, largura ajustável/restaurável, edição local e exclusão elegível em lote e ativação/pausa de anúncios próprios por API com conferência. Inserção continua pelo Excel. Publicar novos anúncios, enviar conteúdo/estoque e excluir anúncios reais por API permanecem pendentes. Ver [tabelas e operações em lote](tables-and-bulk.md).
+
+## Diagnóstico e interface compacta entregues
+
+Topo menor, opções de dropdown estilizadas com comportamento nativo e fallback, campanhas registradas/importadas com análise e tarefas, crescimento/queda de anúncios, competição opcional do catálogo, análise de termos/rascunhos e retrato de mídia/ficha atualizado. Product Ads automático, todos os Clips, causalidade/experimentos, ranking e publicação/IA/editor permanecem no roteiro descrito em [intelligence.md](intelligence.md) e [avantpro.md](avantpro.md).

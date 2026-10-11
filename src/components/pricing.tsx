@@ -8,6 +8,7 @@ import {
 } from "@/domain/finance";
 import { Calculator, ArrowRight, Save, Info } from "lucide-react";
 import { Field, money, percent } from "./ui";
+import { useToastMessage } from "./toasts";
 type Row = Record<string, any>;
 const breakdownLabels: Record<string, string> = {
   goods: "Mercadoria",
@@ -159,6 +160,8 @@ export default function Pricing({
       : !parsed.success
         ? parsed.error.issues.map((i) => i.message).join(" · ")
         : "";
+  useToastMessage(error);
+  useToastMessage(quoteError);
   const result =
     !error && parsed.success
       ? {
@@ -383,11 +386,6 @@ export default function Pricing({
           <h2>Atual × proposta</h2>
           <span className="muted small">Por venda · ao digitar</span>
         </div>
-        {error && (
-          <div role="alert" className="alert danger-text">
-            {error}
-          </div>
-        )}
         {result ? (
           <>
             <div className="price-comparison">
@@ -470,36 +468,36 @@ export default function Pricing({
                 <strong>{percent(result.proposed.maxDiscount, 4)}</strong>
               </div>
             </div>
-            <p className="small muted">
-              Bases: impostos — {basis(result.proposed.bases.tax)}; comissão —{" "}
-              {basis(result.proposed.bases.management)}.
-            </p>
-            {result.input.costOverrides && (
+            <details className="expand calculation-conditions">
+              <summary>
+                <Info size={14} />
+                Condições e limites
+              </summary>
               <p className="small muted">
-                Os custos digitados estão incluídos nesta proposta. O cadastro
-                atual só muda ao salvar custos ou confirmar a aplicação
-                aprovada.
+                Bases: impostos — {basis(result.proposed.bases.tax)}; comissão —{" "}
+                {basis(result.proposed.bases.management)}.
               </p>
-            )}
-            {result.proposed.pending.length > 0 && (
-              <div className="alert">
-                Resultado incompleto. Dados necessários:{" "}
-                {result.proposed.pending.join(", ")}.
-              </div>
-            )}
-            {result.proposed.warnings.length > 0 && (
-              <details className="expand" open>
-                <summary>
-                  <Info size={14} />
-                  Condições e limites
-                </summary>
+              {result.input.costOverrides && (
+                <p className="small muted">
+                  Os custos digitados estão incluídos nesta proposta. O cadastro
+                  atual só muda ao salvar custos ou confirmar a aplicação
+                  aprovada.
+                </p>
+              )}
+              {result.proposed.pending.length > 0 && (
+                <p className="small muted">
+                  Resultado incompleto. Dados necessários:{" "}
+                  {result.proposed.pending.join(", ")}.
+                </p>
+              )}
+              {result.proposed.warnings.length > 0 && (
                 <ul className="small muted">
                   {result.proposed.warnings.map((w: string) => (
                     <li key={w}>{w}</li>
                   ))}
                 </ul>
-              </details>
-            )}
+              )}
+            </details>
             <form
               className="stack"
               onSubmit={async (e) => {

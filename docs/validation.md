@@ -5,9 +5,9 @@ Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta r
 | Verificação              | Resultado                                                                                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                                |
-| Domínio e serviços       | `npm test`: **101 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **110 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                    |
-| Navegador Chromium       | `npm run test:e2e`: **32 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Navegador Chromium       | `npm run test:e2e`: **37 passaram**, nenhuma falha ou teste ignorado                                                                                       |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
 | Responsividade           | 15 telas/abas × 6 larguras: **90 combinações**, sem transbordamento horizontal do documento                                                                |
@@ -80,7 +80,15 @@ Permissões e contratos do ML real ainda precisam ser conferidos com a conta aut
 
 - Nove testes adicionais cobrem JSON normal/codificado como string, aspas externas, BOM, espaços e quebras de linha da chave; campos ausentes, projeto/e-mail divergentes e chave inválida recebem mensagens específicas sem expor entradas.
 - A Vercel exige o JSON completo e rejeita emulador; caminhos locais nunca são lidos na hospedagem. Fora dela, arquivo local e ADC continuam disponíveis. Um JSON inválido não é ignorado em favor de outra credencial.
-- Validador de deploy e servidor compartilham as mesmas regras. Aplicação ML exige ID numérico, segredo, callback da mesma origem e chave canônica base64 de 32 bytes; chaves existentes não são substituídas.
+- Validador de deploy e servidor compartilham as mesmas regras. Aplicação ML exige ID numérico, segredo e callback da mesma origem. A proteção usa a chave canônica base64 de 32 bytes já existente ou, nas instalações com conta administrativa Firebase, uma chave derivada dessa identidade; valores existentes não são substituídos.
 - O arquivo privado com cinco variáveis foi carregado pelo parser dotenv do Next.js e passou no validador com valores reais. O Firebase Admin realizou uma leitura autenticada usando exatamente esse JSON, sem escrita e sem imprimir segredos.
-- Os 101 testes, o build, a verificação TypeScript e os 32 testes Chromium passaram depois das alterações. Testes de tela cobrem CRUD, persistência, Excel, cálculos ao digitar, análises e responsividade.
+- Os 110 testes, o build, a verificação TypeScript e os 37 testes Chromium passaram depois das alterações. Testes de tela cobrem CRUD, persistência, Excel, cálculos ao digitar, análises e responsividade.
 - A publicação inicialmente respondeu 503 e passou a responder **200** em `/api/workspace` na conferência final. O painel Vercel não está autenticado neste ambiente para inspecionar os valores ou identificar a ação que corrigiu o deploy. Importação em **Production**, remoção de variáveis locais e **Redeploy**, quando necessários, devem ser feitos no painel; salvar variáveis não atualiza uma publicação existente. Veja [passo a passo](vercel.md).
+
+## Toasts e aplicações configuradas pelo site
+
+- Nove testes de serviço adicionais: aplicativos distintos por loja sem variáveis individuais, segredo cifrado e ausente das projeções, OAuth/refresh com a aplicação correta, edição sem mudança preservando tokens, rotação invalidando state e token somente da loja, edição concorrente, notificações por aplicativo/vendedor, permissões/isolamento/AAD e derivação de chave a partir da identidade Firebase.
+- Cinco novos testes Chromium: posição da página antes/depois dos avisos, barra de tempo restante, pausa por mouse/teclado, desaparecimento automático, erro no modal sem deslocar campos ou tirar foco, alvos de toque e largura móvel, recarga sem substituir a página, nova loja e credenciais cadastradas/editadas pela interface, segredo omitido após recarga e rejeição de outra origem.
+- A revisão corrigiu uma corrida entre digitação e recarga após salvar: o conteúdo permanece visível, com controles temporariamente desabilitados até receber a versão atualizada. O fluxo completo de preço/custos/proposta/aprovação/aplicação passou novamente. Condições e limites da precificação ficam em uma seção recolhida, sem expansão automática causada por avisos.
+- A captura móvel de toast dentro do modal foi inspecionada visualmente. As telas existentes também foram revisadas em seis larguras, sem transbordamento horizontal.
+- A integração real ainda depende da autorização do vendedor pelo botão Conectar conta ML. Cadastrar uma aplicação não consulta anúncios privados nem aplica preços no Mercado Livre.

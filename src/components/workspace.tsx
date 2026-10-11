@@ -1,6 +1,8 @@
 "use client";
 import { ListingChecklist, MarketplacePerformance } from "./marketplace-panels";
 import Analytics from "./analytics";
+import { useToast, useToastMessage } from "./toasts";
+import IntegrationForm from "./integration-form";
 import { operationalAttention } from "@/domain/marketplace";
 import { useEffect, useMemo, useState, useRef, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -77,6 +79,12 @@ const descriptions: Record<string, string> = {
   configuracoes: "Lojas, regras financeiras e conexões.",
 };
 export default function Workspace({ view }: { view: string[] }) {
+  const { notify, clear: clearToasts } = useToast();
+  const setToast = useMemo(
+    () => (message: { text: string; error?: boolean }) =>
+      notify(message.text, message.error ? "error" : "success"),
+    [notify],
+  );
   const [transitioning, startTransition] = useTransition();
   const router = useRouter(),
     search = useSearchParams(),
@@ -89,9 +97,6 @@ export default function Workspace({ view }: { view: string[] }) {
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [refresh, setRefresh] = useState(0),
-    [toast, setToast] = useState<{ text: string; error?: boolean } | null>(
-      null,
-    ),
     [modal, setModal] = useState<{ type: string; record?: Row } | null>(null),
     [dirty, setDirty] = useState(false),
     [menu, setMenu] = useState(false),
@@ -102,6 +107,32 @@ export default function Workspace({ view }: { view: string[] }) {
     revision: number;
     data: Row;
   } | null>(null);
+  const loadedContext = useRef("");
+  const authorizationResult = search.get("mlAuthorization");
+  const authorizationMessage = search.get("mlMessage");
+  const handledAuthorization = useRef("");
+  useEffect(() => {
+    if (!authorizationResult) {
+      handledAuthorization.current = "";
+      return;
+    }
+    const resultKey = authorizationResult + ":" + (authorizationMessage || "");
+    if (handledAuthorization.current === resultKey) return;
+    handledAuthorization.current = resultKey;
+    notify(
+      authorizationResult === "connected"
+        ? "Conta Mercado Livre autorizada. Sincronize os anúncios para começar."
+        : authorizationMessage ||
+            "Não foi possível conectar a conta. Tente novamente.",
+      authorizationResult === "connected" ? "success" : "error",
+    );
+    const params = new URLSearchParams(query);
+    params.delete("mlAuthorization");
+    params.delete("mlMessage");
+    router.replace("/" + route + (params.size ? "?" + params : ""), {
+      scroll: false,
+    });
+  }, [authorizationResult, authorizationMessage, notify, query, route, router]);
   useEffect(() => {
     const media = window.matchMedia("(max-width:850px)");
     const update = () => setMobile(media.matches);
@@ -171,7 +202,11 @@ export default function Workspace({ view }: { view: string[] }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setDetail(null);
+    const contextKey = dataKey + ":" + (offerId || "");
+    if (loadedContext.current !== contextKey) {
+      setData(null);
+      setDetail(null);
+    }
     Promise.all([
       workspaceCache.current?.key === dataKey &&
       workspaceCache.current.revision === refresh
@@ -181,6 +216,7 @@ export default function Workspace({ view }: { view: string[] }) {
     ])
       .then(([d, o]) => {
         if (active) {
+          loadedContext.current = contextKey;
           workspaceCache.current = { key: dataKey, revision: refresh, data: d };
           setData(d);
           setDetail(o);
@@ -282,8 +318,14 @@ export default function Workspace({ view }: { view: string[] }) {
       setToast({ text: success });
       setDirty(false);
       if (close) setModal(null);
-      if (!(method === "DELETE" && offerId && url === "/api/offers/" + offerId))
+      if (!(
+        method === "DELETE" &&
+        offerId &&
+        url === "/api/offers/" + offerId
+      )) {
+        setLoading(true);
         setRefresh((v) => v + 1);
+      }
       return true;
     } catch (e) {
       setToast({ text: (e as Error).message, error: true });
@@ -295,7 +337,7 @@ export default function Workspace({ view }: { view: string[] }) {
   function open(type: string, record?: Row) {
     if (!guard()) return;
     setDirty(false);
-    setToast(null);
+    clearToasts();
     setModal({
       type,
       record:
@@ -477,23 +519,7 @@ export default function Workspace({ view }: { view: string[] }) {
             </select>
           </label>
         </header>
-        <main className="content">
-          {toast && !(modal && toast.error) && (
-            <div
-              className={`toast ${toast.error ? "error" : ""}`}
-              role={toast.error ? "alert" : "status"}
-            >
-              {toast.error ? <AlertCircle size={17} /> : <Check size={17} />}
-              <span>{toast.text}</span>
-              <button
-                className="icon-button"
-                aria-label="Fechar aviso"
-                onClick={() => setToast(null)}
-              >
-                <X size={16} />
-              </button>
-            </div>
-          )}
+        <main className="content" aria-busy={loading || busy}>
           {!offerId && (
             <div className="page-heading">
               <div>
@@ -580,7 +606,7 @@ export default function Workspace({ view }: { view: string[] }) {
               </div>
             </div>
           )}
-          {loading ? (
+          {loading && !data ? (
             <div className="loading-state">
               <span className="loading-dot" />
               Carregando dados da operação…
@@ -599,7 +625,7 @@ export default function Workspace({ view }: { view: string[] }) {
               }
             />
           ) : (
-            <>
+            <fieldset className="workspace-data" disabled={loading}>
               {section === "" && (
                 <Today
                   data={data}
@@ -948,8 +974,7 @@ export default function Workspace({ view }: { view: string[] }) {
                       "Conta desconectada; cadastros e histórico preservados.",
                     )
                   }
-                  authorizationResult={search.get("mlAuthorization")}
-                  authorizationMessage={search.get("mlMessage")}
+                  onApplication={(c) => open("integration", c)}
                   busy={busy}
                   query={query}
                 />
@@ -960,7 +985,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   body="Use a navegação lateral para continuar."
                 />
               )}
-            </>
+            </fieldset>
           )}
           <footer className="page-footer">
             <span>DATAMAT · Gestão de marketplace</span>
@@ -981,10 +1006,20 @@ export default function Workspace({ view }: { view: string[] }) {
           }
           onClose={close}
         >
-          {toast?.error && (
-            <div className="alert error" role="alert">
-              {toast.text}
-            </div>
+          {modal.type === "integration" && (
+            <IntegrationForm
+              connection={modal.record!}
+              busy={busy}
+              onDirty={() => setDirty(true)}
+              onSave={(p) =>
+                mutate(
+                  `/api/connections/${modal.record!.id}/application`,
+                  p,
+                  "Credenciais salvas para esta loja. Autorize a conta para começar.",
+                  true,
+                )
+              }
+            />
           )}
           {modal.type === "delete" && (
             <div className="stack">
@@ -1286,6 +1321,7 @@ function modalTitle(modal: { type: string; record?: Row }) {
       store: modal.record ? "Editar loja" : "Adicionar loja",
       delete: "Confirmar exclusão",
       access: "Permissões de acesso",
+      integration: "Credenciais do Mercado Livre",
     }[modal.type] || ""
   );
 }
@@ -2321,8 +2357,10 @@ function PricingPage({
               }
             />
           ) : (
-            <div className="alert" role={error ? "alert" : "status"}>
-              {error || "Carregando custos da oferta…"}
+            <div className="pricing-placeholder" role="status">
+              {error
+                ? "Custos indisponíveis. Selecione novamente a oferta para tentar."
+                : "Carregando custos da oferta…"}
             </div>
           )
         ) : (
@@ -2956,8 +2994,7 @@ function Configuration({
   onSync,
   onAuthorize,
   onDisconnect,
-  authorizationResult,
-  authorizationMessage,
+  onApplication,
   busy,
   query,
 }: {
@@ -2969,8 +3006,7 @@ function Configuration({
   onSync: (c: Row) => void;
   onAuthorize: (c: Row) => void;
   onDisconnect: (c: Row) => void;
-  authorizationResult: string | null;
-  authorizationMessage: string | null;
+  onApplication: (c: Row) => void;
   busy: boolean;
   query: string;
 }) {
@@ -3080,14 +3116,6 @@ function Configuration({
       )}
       {selected === "integrations" && (
         <>
-          {authorizationResult && (
-            <div className="alert" role="status">
-              {authorizationResult === "connected"
-                ? "Conta Mercado Livre autorizada. Sincronize os anúncios para começar."
-                : authorizationMessage ||
-                  "Não foi possível conectar a conta. Tente novamente."}
-            </div>
-          )}
           <div className="alert">
             Conecte cada conta à sua loja e importe os anúncios em lotes de até
             20. Os custos internos ficam preservados. A consulta traz o estado
@@ -3108,16 +3136,16 @@ function Configuration({
                     ? `${c.nickname || "Vendedor"} · conta ${c.external_account}`
                     : c.configured
                       ? "Credenciais de aplicação presentes. A conta ainda não foi autorizada."
-                      : "Credenciais não configuradas no servidor."}
+                      : "Integração ainda não configurada."}
                 </p>
                 <p className="small muted">
                   {c.provider === "mercadolivre"
                     ? c.configured
                       ? "Autorize a conta no Mercado Livre para consultar anúncios, tarifas e desempenho."
-                      : "A aplicação precisa ser configurada no servidor antes de conectar as contas."
+                      : "Cadastre o ID e a chave da aplicação pelo botão abaixo."
                     : c.provider === "bling"
-                      ? "Necessários: BLING_CLIENT_ID, BLING_CLIENT_SECRET, BLING_REDIRECT_URI e autorização por conta."
-                      : "Necessário: AI_API_KEY e implementação do provedor. As verificações atuais são regras determinísticas."}
+                      ? "A conexão de produtos e estoque com o Bling está em desenvolvimento."
+                      : "Sugestões com IA estão em desenvolvimento."}
                 </p>
                 {c.provider === "mercadolivre" && (
                   <>
@@ -3142,6 +3170,15 @@ function Configuration({
                 )}
                 {isAdmin && c.provider === "mercadolivre" && (
                   <div className="heading-actions">
+                    <button
+                      className="button compact"
+                      disabled={busy}
+                      onClick={() => onApplication(c)}
+                    >
+                      {c.application_source === "store"
+                        ? "Editar credenciais"
+                        : "Configurar integração"}
+                    </button>
                     <button
                       className="button compact"
                       disabled={busy || !c.configured}

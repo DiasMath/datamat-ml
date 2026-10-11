@@ -91,7 +91,9 @@ O usuário publicou em `https://datamat-ml.vercel.app`. A configuração segura 
 - **IA:** indisponível. Faltam provedor, adapter e `AI_API_KEY`. Verificações internas são regras determinísticas e informam dados usados, data e limitações. Cálculos financeiros não são delegados à IA.
 - **Power BI:** exportação CSV/JSON funciona; o botão do relatório depende de `POWER_BI_REPORT_URL` HTTPS. Não há push automático para o Power BI.
 
-Credenciais externas são configuradas no servidor, nunca no navegador. Sua presença não significa autorização de uma conta. A tela diferencia sem configuração e sem autorização e registra tentativas indisponíveis com fidelidade. Consulte [integrações](docs/integrations.md).
+Credenciais ML são cadastradas por loja em **Configurações → Integrações**, cifradas no Firestore e nunca devolvidas à interface ou exportações. Adicionar lojas/aplicações não exige código nem novas variáveis na Vercel. Sua presença não significa autorização de uma conta: depois de salvar, use **Conectar conta ML**. Consulte [integrações](docs/integrations.md).
+
+Avisos temporários aparecem em toasts sobrepostos com uma barra superior de tempo restante, fechamento manual e pausa ao passar o mouse, focar pelo teclado ou sair da aba. Eles não deslocam o conteúdo nem tomam o foco. Ao salvar, a página permanece visível durante a atualização; erros dentro de modais usam a mesma experiência.
 
 Fora do escopo concluído: validação da integração com contas reais, escrita externa, gestão de outras organizações pela interface, identidade/permissões do portal, extensão Chrome e consultas de grandes volumes com paginação Firestore. A separação por organização existe no banco e nas validações; novas lojas podem ser adicionadas na organização atual.
 

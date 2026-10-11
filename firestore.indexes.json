@@ -2,6 +2,11 @@
   "indexes": [],
   "fieldOverrides": [
     {
+      "collectionGroup": "ml_applications",
+      "fieldPath": "encrypted",
+      "indexes": []
+    },
+    {
       "collectionGroup": "history",
       "fieldPath": "snapshot_json",
       "indexes": []

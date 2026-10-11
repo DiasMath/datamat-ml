@@ -67,6 +67,7 @@ async function main() {
             "tests/mercadolivre.test.ts",
             "tests/analytics.test.ts",
             "tests/firebase-configuration.test.ts",
+            "tests/connection-settings.test.ts",
           ]
         : ["playwright", "test", ...process.argv.slice(3)];
     const child = spawn("npx", command, { stdio: "inherit", env });

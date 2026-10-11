@@ -11,6 +11,7 @@ import {
 } from "@/domain/spreadsheet";
 import { Field, Submit, jsonRequest, money } from "./ui";
 import Collection from "./collection";
+import { useToastMessage } from "./toasts";
 type Row = Record<string, any>;
 const fields: Record<string, string> = {
   name: "Produto *",
@@ -78,6 +79,7 @@ export default function Importer({
     [body, setBody] = useState<Row | null>(null),
     [completed, setCompleted] = useState(0),
     [error, setError] = useState("");
+  useToastMessage(error);
   const position = useRef(0),
     keys = useRef<string[]>([]);
   function reset() {
@@ -202,11 +204,6 @@ export default function Importer({
         Excel .xlsx ou CSV, até {MAX_IMPORT_ROWS} linhas e 2 MB. Confira a
         prévia antes de confirmar. Kits e variações são editados pela ficha.
       </div>
-      {error && (
-        <div role="alert" className="alert danger-text">
-          {error}
-        </div>
-      )}
       <form onSubmit={check} className="stack">
         <div className="form-grid">
           <Field label="Loja de destino">

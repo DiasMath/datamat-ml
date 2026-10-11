@@ -38,7 +38,7 @@ if (
   !mlConfigured()
 )
   errors.push(
-    "Complete ML_CLIENT_ID, ML_CLIENT_SECRET, ML_REDIRECT_URI e ML_TOKEN_ENCRYPTION_KEY; o callback deve corresponder a APP_URL.",
+    "Confira as credenciais legadas ML_CLIENT_ID, ML_CLIENT_SECRET e ML_REDIRECT_URI (callback da mesma origem de APP_URL), e a chave de proteção existente. Para novas lojas, cadastre as aplicações pelo site sem essas três variáveis.",
   );
 if (errors.length) {
   errors.forEach((e) => console.error(e));
@@ -48,5 +48,5 @@ if (errors.length) {
     "Configuração de publicação validada. Credenciais não foram exibidas. Mercado Livre: " +
       (mlConfigured()
         ? "aplicação configurada; autorização por loja será feita pela interface."
-        : "pode ser ativado após definir a URL e configurar a aplicação."),
+        : "cadastre as aplicações por loja em Configurações → Integrações, no site."),
   );

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastProvider } from "@/components/toasts";
 export const metadata: Metadata = {
   title: "DATAMAT · Gestão de anúncios",
   description:
@@ -15,7 +16,9 @@ export default function RootLayout({
       <head>
         <link rel="stylesheet" href="/fonts/fonts.css" />
       </head>
-      <body>{children}</body>
+      <body>
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

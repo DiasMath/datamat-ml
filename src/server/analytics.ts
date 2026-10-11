@@ -80,7 +80,7 @@ function blank(store: Row, connection?: Row): StoreAnalysis {
     connected:
       !!connection?.external_account &&
       connection.status === "connected" &&
-      mlConfigured(),
+      mlConfigured(connection),
     sellerId: connection?.external_account || null,
     authVersion: connection?.auth_version ?? null,
     observedAt: null,

@@ -183,6 +183,13 @@ async function handle(req: NextRequest, context: Context) {
     }
     if (req.method === "POST" || req.method === "PATCH") {
       if (
+        resource === "connections" &&
+        action === "application" &&
+        path.length === 3 &&
+        req.method === "POST"
+      )
+        return response(await ml.saveApplication(actor, key, body));
+      if (
         resource === "analytics" &&
         key === "refresh" &&
         !action &&

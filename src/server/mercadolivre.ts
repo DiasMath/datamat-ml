@@ -4,6 +4,8 @@ import {
   createHash,
   randomBytes,
   randomUUID,
+  createPrivateKey,
+  hkdfSync,
 } from "node:crypto";
 import Decimal from "decimal.js";
 import { z } from "zod";
@@ -29,6 +31,7 @@ import {
 } from "./db";
 import { emptyCosts, priceAmount } from "../domain/finance";
 import { normalizeTariff, listingQuality } from "../domain/marketplace";
+import { readFirebaseConfiguration } from "./firebase-configuration";
 
 const API = "https://api.mercadolibre.com";
 const requestDeadline = new AsyncLocalStorage<number>();
@@ -37,6 +40,31 @@ const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 function encryptionKey() {
   const encoded = process.env.ML_TOKEN_ENCRYPTION_KEY?.trim() || "";
+  // Preserve existing installations' keys. New installations can use their
+  // existing server identity, without per-store hosting configuration.
+  if (!encoded) {
+    try {
+      const configuration = readFirebaseConfiguration();
+      if (configuration.account) {
+        const privateKey = createPrivateKey(
+          configuration.account.privateKey,
+        ).export({ type: "pkcs8", format: "der" });
+        return Buffer.from(
+          hkdfSync(
+            "sha256",
+            privateKey,
+            configuration.projectId,
+            "datamat-integrations-v1",
+            32,
+          ),
+        );
+      }
+    } catch {}
+    throw new HttpError(
+      503,
+      "O armazenamento protegido das integrações precisa de uma credencial administrativa válida no servidor",
+    );
+  }
   const value = Buffer.from(encoded, "base64");
   if (value.length !== 32 || value.toString("base64") !== encoded)
     throw new HttpError(
@@ -45,9 +73,10 @@ function encryptionKey() {
     );
   return value;
 }
-export function encryptSecret(value: unknown) {
+export function encryptSecret(value: unknown, context = "") {
   const iv = randomBytes(12),
     cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  cipher.setAAD(Buffer.from(context));
   const data = Buffer.concat([
     cipher.update(JSON.stringify(value)),
     cipher.final(),
@@ -56,12 +85,13 @@ export function encryptSecret(value: unknown) {
     .map((b) => b.toString("base64"))
     .join(".");
 }
-export function decryptSecret(value: string): any {
+export function decryptSecret(value: string, context = ""): any {
   try {
     const [iv, tag, data] = value
       .split(".")
       .map((v) => Buffer.from(v, "base64"));
     const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), iv);
+    decipher.setAAD(Buffer.from(context));
     decipher.setAuthTag(tag);
     return JSON.parse(
       Buffer.concat([decipher.update(data), decipher.final()]).toString(),
@@ -73,6 +103,50 @@ export function decryptSecret(value: string): any {
     );
   }
 }
+function appOrigin() {
+  let app: URL;
+  try {
+    app = new URL(process.env.APP_URL || "http://localhost:3000");
+  } catch {
+    throw new HttpError(
+      503,
+      "Confira o endereço público do sistema no servidor",
+    );
+  }
+  if (
+    app.username ||
+    app.password ||
+    app.search ||
+    app.hash ||
+    app.pathname !== "/" ||
+    (app.protocol !== "https:" &&
+      !(
+        app.protocol === "http:" &&
+        ["localhost", "127.0.0.1"].includes(app.hostname)
+      ))
+  )
+    throw new HttpError(
+      503,
+      "O endereço do sistema deve ser uma origem HTTPS válida",
+    );
+  return app;
+}
+export function integrationUrls() {
+  const app = appOrigin();
+  return {
+    redirectUri: new URL("/api/mercadolivre/callback", app).toString(),
+    notificationUri: new URL("/api/mercadolivre/notifications", app).toString(),
+  };
+}
+export function secretStorageReady() {
+  try {
+    encryptionKey();
+    return true;
+  } catch {
+    return false;
+  }
+}
+// Compatibility for accounts configured before the per-store settings screen.
 function config() {
   const clientId = process.env.ML_CLIENT_ID?.trim(),
     clientSecret = process.env.ML_CLIENT_SECRET?.trim(),
@@ -114,25 +188,44 @@ function config() {
     );
   return { clientId, clientSecret, redirectUri, app };
 }
-export function mlConfigured() {
+export function mlConfigured(connection?: Row) {
   try {
-    config();
+    if (connection?.application_configured) {
+      encryptionKey();
+      appOrigin();
+    } else config();
     return true;
   } catch {
     return false;
   }
 }
 export function publicConnection(c: Row) {
+  const configured = mlConfigured(c);
+  let urls: ReturnType<typeof integrationUrls> | null = null;
+  try {
+    urls = integrationUrls();
+  } catch {}
   return {
     id: c.id,
     store_id: c.store_id,
     provider: c.provider,
-    status: mlConfigured()
+    status: configured
       ? c.status === "unconfigured"
         ? "unauthorized"
         : c.status
       : "unconfigured",
-    configured: mlConfigured(),
+    configured,
+    application_id:
+      c.application_id || process.env.ML_CLIENT_ID?.trim() || null,
+    application_version: c.application_version || 0,
+    application_source: c.application_configured
+      ? "store"
+      : configured
+        ? "legacy"
+        : null,
+    secret_storage_ready: secretStorageReady(),
+    redirect_uri: urls?.redirectUri || null,
+    notification_uri: urls?.notificationUri || null,
     external_account: c.external_account || null,
     nickname: c.nickname || null,
     last_sync_at: c.last_sync_at || null,
@@ -148,6 +241,116 @@ async function connection(actor: Actor, connectionId: string) {
     throw new HttpError(404, "Conexão Mercado Livre não encontrada");
   authorizeStore(actor, c.store_id);
   return c;
+}
+async function applicationConfig(c: Row) {
+  if (!c.application_configured) return config();
+  const row = await get("ml_applications", c.id);
+  if (
+    !row ||
+    row.version !== c.application_version ||
+    row.client_id !== c.application_id
+  )
+    throw new HttpError(
+      409,
+      "As credenciais da loja mudaram; atualize a tela e tente novamente",
+    );
+  const secret = decryptSecret(row.encrypted, "application:" + c.id);
+  if (typeof secret.clientSecret !== "string" || !secret.clientSecret)
+    throw new HttpError(503, "Edite as credenciais da integração desta loja");
+  return {
+    clientId: row.client_id as string,
+    clientSecret: secret.clientSecret,
+    redirectUri: integrationUrls().redirectUri,
+    app: appOrigin(),
+  };
+}
+const applicationSchema = z
+  .object({
+    clientId: z
+      .string()
+      .trim()
+      .regex(/^[1-9]\d{0,31}$/, "Informe o ID numérico da aplicação"),
+    clientSecret: z.string().trim().max(512).default(""),
+    version: z.number().int().nonnegative(),
+  })
+  .strict();
+export async function saveApplication(
+  actor: Actor,
+  connectionId: string,
+  payload: unknown,
+) {
+  admin(actor);
+  const p = applicationSchema.parse(payload);
+  encryptionKey();
+  appOrigin();
+  return transaction(async () => {
+    const c = await connection(actor, connectionId);
+    if ((c.application_version || 0) !== p.version)
+      throw new HttpError(
+        409,
+        "As credenciais foram editadas em outra tela. Atualize antes de salvar",
+      );
+    const previous = await get("ml_applications", c.id);
+    let oldSecret: string | null = null;
+    if (previous) {
+      try {
+        oldSecret = decryptSecret(
+          previous.encrypted,
+          "application:" + c.id,
+        ).clientSecret;
+      } catch (e) {
+        if (!p.clientSecret) throw e;
+      }
+    }
+    if (!p.clientSecret && (!previous || previous.client_id !== p.clientId))
+      throw new HttpError(422, "Informe a chave secreta desta aplicação");
+    const clientSecret = p.clientSecret || oldSecret;
+    if (previous?.client_id === p.clientId && oldSecret === clientSecret)
+      return publicConnection(c);
+    if (c.external_account)
+      await release(
+        "ml.seller." + actor.organization_id,
+        c.external_account,
+        c.id,
+      );
+    await remove("ml_tokens", c.id);
+    await remove("ml_sync_pages", c.id);
+    const version = p.version + 1;
+    await put("ml_applications", c.id, {
+      store_id: c.store_id,
+      organization_id: actor.organization_id,
+      client_id: p.clientId,
+      encrypted: encryptSecret({ clientSecret }, "application:" + c.id),
+      version,
+      updated_at: now(),
+    });
+    const updated = await put("connections", c.id, {
+      ...c,
+      application_id: p.clientId,
+      application_version: version,
+      application_configured: true,
+      status: "unauthorized",
+      external_account: null,
+      nickname: null,
+      auth_version: (c.auth_version || 0) + 1,
+      sync_cursor: null,
+      pending_batch: false,
+      sync_lease: null,
+      has_more: false,
+      last_error: null,
+      updated_at: now(),
+    });
+    await audit(
+      actor,
+      c.store_id,
+      "",
+      "integration.application",
+      c.application_id || null,
+      p.clientId,
+      "Credenciais da aplicação atualizadas; nova autorização necessária",
+    );
+    return publicConnection(updated);
+  });
 }
 async function http(
   path: string,
@@ -217,8 +420,8 @@ const tokenSchema = z.object({
   user_id: z.number().int().positive(),
   scope: z.string().optional(),
 });
-async function exchange(values: Record<string, string>) {
-  const c = config();
+async function exchange(connection: Row, values: Record<string, string>) {
+  const c = await applicationConfig(connection);
   const raw = await http("/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -239,7 +442,7 @@ async function exchange(values: Record<string, string>) {
 export async function startAuthorization(actor: Actor, connectionId: string) {
   admin(actor);
   const c = await connection(actor, connectionId),
-    cfg = config(),
+    cfg = await applicationConfig(c),
     state = randomBytes(32).toString("base64url"),
     verifier = randomBytes(48).toString("base64url");
   await put("ml_oauth_states", digest(state), {
@@ -312,10 +515,17 @@ export async function finishAuthorization(
     const code = params.get("code");
     if (!code || code.length > 2000)
       throw new HttpError(400, "Código de autorização ausente ou inválido");
-    const tokens = await exchange({
+    const current = await connection(actor, pending.connection_id);
+    if ((current.auth_version || 0) !== pending.auth_version)
+      throw new HttpError(
+        409,
+        "A conexão foi alterada; inicie uma nova autorização",
+      );
+    const cfg = await applicationConfig(current);
+    const tokens = await exchange(current, {
       grant_type: "authorization_code",
       code,
-      redirect_uri: config().redirectUri,
+      redirect_uri: cfg.redirectUri,
       code_verifier: decryptSecret(pending.secret),
     });
     const user = z
@@ -412,7 +622,7 @@ export async function disconnect(actor: Actor, connectionId: string) {
   });
 }
 async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
-  config();
+  await applicationConfig(c);
   const lease = randomUUID();
   const token = await transaction(async () => {
     const current = await get("connections", c.id),
@@ -447,7 +657,7 @@ async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
   });
   if (token.access) return token.access;
   try {
-    const tokens = await exchange({
+    const tokens = await exchange(c, {
       grant_type: "refresh_token",
       refresh_token: token.refresh!,
     });
@@ -815,7 +1025,7 @@ async function syncListingsInside(
   });
   if (prior) return prior;
   try {
-    config();
+    await applicationConfig(c);
     if (!c.external_account)
       throw new HttpError(401, "Autorize esta conta antes de sincronizar");
     const query = new URLSearchParams({ search_type: "scan", limit: "20" });

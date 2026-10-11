@@ -95,7 +95,9 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
     panel.getByRole("button", { name: "Salvar para revisão" }),
   ).toBeDisabled();
   await price.fill("101.001");
-  await expect(panel.getByRole("alert")).toContainText("2 casas decimais");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "2 casas decimais" }),
+  ).toBeVisible();
   await price.fill("90");
   await page
     .getByRole("button", { name: "Percentual de desconto", exact: true })

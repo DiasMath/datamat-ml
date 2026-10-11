@@ -18,9 +18,12 @@ export async function receiveNotification(payload: unknown) {
       sent: z.iso.datetime({ offset: true }),
     })
     .parse(payload);
-  if (!process.env.ML_CLIENT_ID)
-    throw new HttpError(503, "Aplicação Mercado Livre não configurada");
-  if (String(body.application_id) !== process.env.ML_CLIENT_ID?.trim())
+  const applicationId = String(body.application_id);
+  const configured = await find("connections", {
+    provider: "mercadolivre",
+    application_id: applicationId,
+  });
+  if (!configured.length && applicationId !== process.env.ML_CLIENT_ID?.trim())
     throw new HttpError(403, "Notificação de outra aplicação");
   const patterns: Record<string, RegExp> = {
     items: /^\/items\/MLB\d{1,20}$/,
@@ -35,10 +38,19 @@ export async function receiveNotification(payload: unknown) {
     provider: "mercadolivre",
     external_account: String(body.user_id),
   });
-  for (const c of connections)
+  for (const c of connections.filter(
+    (c) =>
+      (c.application_id || process.env.ML_CLIENT_ID?.trim()) === applicationId,
+  ))
     await transaction(async () => {
       const current = await get("connections", c.id);
-      if (!current || current.external_account !== String(body.user_id)) return;
+      if (
+        !current ||
+        current.external_account !== String(body.user_id) ||
+        (current.application_id || process.env.ML_CLIENT_ID?.trim()) !==
+          applicationId
+      )
+        return;
       const old = await get("ml_notification_inbox", c.id);
       const eventId = key(
         body._id || body.sent,

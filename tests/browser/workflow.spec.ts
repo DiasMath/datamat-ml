@@ -64,7 +64,9 @@ test("complete persisted offer → costs → proposal → approval → manual ap
     .getByLabel("Base da comissão", { exact: true })
     .selectOption("price");
   await page.getByRole("button", { name: "Salvar custos" }).click();
-  await expect(page.getByRole("status")).toContainText("Custos salvos");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Custos salvos" }),
+  ).toBeVisible();
   await page.getByLabel("Preço proposto (R$)").fill("90");
   await page.getByLabel("Conferi as tarifas").check();
   await expect(page.getByText("R$ 25,60", { exact: false })).toBeVisible();
@@ -72,7 +74,9 @@ test("complete persisted offer → costs → proposal → approval → manual ap
     .getByLabel("Motivo da proposta *")
     .fill("Condição de teste validada com o cliente");
   await page.getByRole("button", { name: "Salvar para revisão" }).click();
-  await expect(page.getByRole("status")).toContainText("Proposta salva");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Proposta salva" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Visão geral", exact: true }).click();
   await expect(page.locator(".metric").first()).toContainText("100,00");
   await page.getByRole("button", { name: "Revisar / avançar etapa" }).click();

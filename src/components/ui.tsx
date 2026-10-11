@@ -9,6 +9,7 @@ import {
 } from "react";
 import { X, ArrowUpRight, Inbox, LoaderCircle } from "lucide-react";
 import { displayDate } from "../domain/dates";
+import { useToast } from "./toasts";
 
 export const money = (value: unknown) =>
   value === null || value === undefined
@@ -156,6 +157,7 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const { setHost } = useToast();
   useEffect(() => {
     ref.current?.showModal();
   }, []);
@@ -180,6 +182,7 @@ export function Modal({
         </button>
       </div>
       {children}
+      <div ref={setHost} className="toast-dialog-host" />
     </dialog>
   );
 }

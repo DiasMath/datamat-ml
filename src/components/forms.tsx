@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import AutocompleteInput from "./autocomplete";
+import { useToastMessage } from "./toasts";
 import { Plus, Trash2 } from "lucide-react";
 import { Field, Submit, labels, string, nullable, money, percent } from "./ui";
 import {
@@ -364,6 +365,7 @@ export function CostsForm({
 }) {
   const [draft, setDraft] = useState<Costs | null>(initial as Costs);
   const [error, setError] = useState("");
+  useToastMessage(error);
   function read(form: HTMLFormElement) {
     const f = new FormData(form);
     const result: Row = { otherDescription: string(f, "otherDescription") };
@@ -432,11 +434,6 @@ export function CostsForm({
           />
         ))}
       </div>
-      {error && (
-        <div role="alert" className="alert danger-text">
-          {error}
-        </div>
-      )}
       <div
         className="live-cost-summary"
         role="region"

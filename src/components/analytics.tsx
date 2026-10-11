@@ -22,6 +22,7 @@ import {
 import { csvCell } from "@/domain/csv";
 import { money, percent, Field, Empty } from "./ui";
 import Collection from "./collection";
+import { useToastMessage } from "./toasts";
 
 type Row = Record<string, any>;
 type Navigate = (path: string, params?: URLSearchParams) => void;
@@ -71,6 +72,23 @@ export default function Analytics({
     [paused, setPaused] = useState(false),
     [hidden, setHidden] = useState(false),
     [metric, setMetric] = useState<"revenue" | "orders">("revenue");
+  useToastMessage(
+    error
+      ? `${error} Os últimos dados disponíveis são preservados quando a atualização falha.`
+      : "",
+  );
+  useToastMessage(
+    report?.stores
+      .filter((s) => s.error)
+      .map((s) => `${s.storeName}: ${s.error}`)
+      .join(" · "),
+  );
+  useToastMessage(
+    report?.available && !report.complete
+      ? "Análise parcial: os totais usam apenas os pedidos disponíveis; a comparação entre períodos foi suspensa."
+      : "",
+    "warning",
+  );
   const viewport = useRef<HTMLElement>(null),
     trigger = useRef<(() => void) | null>(null);
   const lastKey = useRef("");
@@ -359,21 +377,6 @@ export default function Analytics({
         {live &&
           " A API pode apresentar atraso; a tela consulta periodicamente."}
       </div>
-      {error && (
-        <div className="alert error" role="alert">
-          {error} Os últimos dados disponíveis são preservados quando a
-          atualização falha.
-        </div>
-      )}
-      {report?.stores.some((s) => s.error) && (
-        <div className="alert error" role="alert">
-          {report.stores
-            .filter((s) => s.error)
-            .map((s) => `${s.storeName}: ${s.error}`)
-            .join(" · ")}{" "}
-          Confira a data da consulta antes de tomar decisões.
-        </div>
-      )}
       {!authorizedConnections.length && (
         <Empty
           title="Conecte sua conta para analisar as vendas"
@@ -392,13 +395,6 @@ export default function Analytics({
       {!!authorizedConnections.length && !available && !loading && (
         <div className="alert">
           Clique em Atualizar ML para consultar as vendas deste período.
-        </div>
-      )}
-      {available && !report?.complete && (
-        <div className="alert">
-          Análise parcial: há lojas sem dados completos ou uma consulta anterior
-          com erro. Totais exibidos são apenas dos pedidos disponíveis; a
-          variação entre períodos foi suspensa.
         </div>
       )}
       {!live && (

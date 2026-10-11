@@ -14,6 +14,7 @@ import {
   admin,
   authorizeStore,
   canWrite,
+  canApprove,
   HttpError,
   type Actor,
 } from "./access";
@@ -756,6 +757,30 @@ export async function withSellerData<T>(
     );
   return result;
 }
+export async function writeSellerPrice(
+  actor: Actor,
+  connectionId: string,
+  itemId: string,
+  price: string,
+) {
+  canApprove(actor);
+  const c = await connection(actor, connectionId);
+  if (
+    c.status !== "connected" ||
+    !c.external_account ||
+    !/^MLB\d+$/.test(itemId)
+  )
+    throw new HttpError(409, "Conta ou anúncio indisponível para aplicação");
+  // No automatic retry for writes, including timeouts and authentication failures.
+  await http(`/items/${itemId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${await accessToken(c)}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ price: Number(price) }),
+  });
+}
 const itemSchema = z.object({
   id: z.string().regex(/^MLB\d+$/),
   seller_id: z.number().int().positive(),
@@ -838,6 +863,7 @@ async function importItem(
   observation: Row,
   description: string | null,
   lease: string,
+  markPage = true,
 ) {
   return transaction(async () => {
     const current = await connection(actor, c.id);
@@ -846,6 +872,11 @@ async function importItem(
     const existing = (
       await find("offers", { store_id: c.store_id, ml_id: item.id })
     )[0];
+    if (existing?.ml_apply_until > Date.now())
+      throw new HttpError(
+        409,
+        "Uma aplicação de preço está em andamento; tente novamente em instantes",
+      );
     if (existing?.origin === "reference")
       throw new HttpError(
         409,
@@ -944,7 +975,7 @@ async function importItem(
     };
     await put("offers", offerId, row);
     const page = await get("ml_sync_pages", c.id);
-    if (page && page.auth_version === c.auth_version)
+    if (markPage && page && page.auth_version === c.auth_version)
       await put("ml_sync_pages", c.id, {
         ...page,
         processed_ids: [...new Set([...(page.processed_ids || []), item.id])],
@@ -979,8 +1010,9 @@ export async function syncListings(
   actor: Actor,
   connectionId: string,
   payload: unknown,
+  deadline = Date.now() + 240000,
 ) {
-  return requestDeadline.run(Date.now() + 240000, () =>
+  return requestDeadline.run(deadline, () =>
     syncListingsInside(actor, connectionId, payload),
   );
 }
@@ -991,7 +1023,15 @@ async function syncListingsInside(
 ) {
   admin(actor);
   const p = z
-    .object({ requestId: z.uuid(), restart: z.boolean().default(false) })
+    .object({
+      requestId: z.uuid(),
+      restart: z.boolean().default(false),
+      itemIds: z
+        .array(z.string().regex(/^MLB\d{1,20}$/))
+        .min(1)
+        .max(20)
+        .optional(),
+    })
     .parse(payload);
   let c = await connection(actor, connectionId);
   const logId = key("sync", p.requestId),
@@ -1036,30 +1076,40 @@ async function syncListingsInside(
       scroll_id: z.string().optional(),
       paging: z.object({ total: z.number().int().nonnegative() }),
     });
-    const pending = !p.restart ? await get("ml_sync_pages", c.id) : null;
-    const page =
-      pending && pending.auth_version === c.auth_version
+    const pending =
+      !p.itemIds && !p.restart ? await get("ml_sync_pages", c.id) : null;
+    const page = p.itemIds
+      ? {
+          results: [...new Set(p.itemIds)],
+          paging: { total: p.itemIds.length },
+          scroll_id: undefined,
+        }
+      : pending && pending.auth_version === c.auth_version
         ? schema.parse(pending.page)
         : schema.parse(
             await api(c, `/users/${c.external_account}/items/search?${query}`),
           );
-    await transaction(async () => {
-      const current = await connection(actor, c.id);
-      if (
-        current.sync_lease !== lease ||
-        current.auth_version !== c.auth_version
-      )
-        throw new HttpError(409, "A conexão mudou durante a consulta do lote");
-      await put("ml_sync_pages", c.id, {
-        auth_version: c.auth_version,
-        page,
-        processed_ids:
-          pending && pending.auth_version === c.auth_version
-            ? pending.processed_ids || []
-            : [],
+    if (!p.itemIds)
+      await transaction(async () => {
+        const current = await connection(actor, c.id);
+        if (
+          current.sync_lease !== lease ||
+          current.auth_version !== c.auth_version
+        )
+          throw new HttpError(
+            409,
+            "A conexão mudou durante a consulta do lote",
+          );
+        await put("ml_sync_pages", c.id, {
+          auth_version: c.auth_version,
+          page,
+          processed_ids:
+            pending && pending.auth_version === c.auth_version
+              ? pending.processed_ids || []
+              : [],
+        });
+        await put("connections", c.id, { ...current, pending_batch: true });
       });
-      await put("connections", c.id, { ...current, pending_batch: true });
-    });
     let created = 0,
       updated = 0;
     const categoryCache = new Map<string, Row[] | null>();
@@ -1164,6 +1214,7 @@ async function syncListingsInside(
         observation,
         description,
         lease,
+        !p.itemIds,
       );
       if (result.created) created++;
       else if (result.changed) updated++;
@@ -1181,14 +1232,19 @@ async function syncListingsInside(
         status: "connected",
         sync_lease: null,
         sync_until: 0,
-        sync_cursor: hasMore ? page.scroll_id : null,
-        pending_batch: false,
-        has_more: hasMore,
+        ...(!p.itemIds
+          ? {
+              sync_cursor: hasMore ? page.scroll_id : null,
+              pending_batch: false,
+              has_more: hasMore,
+            }
+          : {}),
         last_sync_at: now(),
+        ...(!p.itemIds ? { last_catalog_sync_at: now() } : {}),
         last_error: null,
         updated_at: now(),
       });
-      await remove("ml_sync_pages", c.id);
+      if (!p.itemIds) await remove("ml_sync_pages", c.id);
       return put("sync_logs", logId, {
         connection_id: c.id,
         operation: "sync",
@@ -1215,7 +1271,8 @@ async function syncListingsInside(
           ...current,
           sync_lease: null,
           sync_until: 0,
-          ...(!savedPage || savedPage.auth_version !== c.auth_version
+          ...(!p.itemIds &&
+          (!savedPage || savedPage.auth_version !== c.auth_version)
             ? { sync_cursor: null, has_more: false }
             : {}),
           last_error: message,

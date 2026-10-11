@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DATAMAT</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header><strong>DATAMAT</strong><span>Mercado Livre</span></header>
+    <p id="status" role="status">Pareie este navegador com sua loja.</p>
+    <section id="pairing">
+      <h1>Sua rotina, no ML</h1>
+      <p>Abra o site, escolha a loja e gere um código para este navegador.</p>
+      <a id="pair-link" target="_blank" rel="noopener noreferrer"
+        >Parear pelo site</a
+      ><label
+        >Código de pareamento<input
+          id="token"
+          type="password"
+          autocomplete="off" /></label
+      ><button id="pair">Conectar extensão</button>
+    </section>
+    <div id="connected" hidden>
+      <section>
+        <div class="section-heading">
+          <h2 id="store">Sua loja</h2>
+          <button id="disconnect" class="secondary">Desconectar</button>
+        </div>
+        <label for="offers">Sua oferta</label>
+        <select id="offers">
+          <option value="">Selecione sua oferta</option></select
+        ><label
+          >Preço para simular (R$)<input
+            id="price"
+            type="number"
+            min="0.01"
+            step="0.01"
+            inputmode="decimal"
+        /></label>
+        <div class="metrics">
+          <div>Contribuição estimada<strong id="margin">—</strong></div>
+          <div>Preço mínimo estimado<strong id="minimum">—</strong></div>
+        </div>
+        <p id="pending" class="muted"></p>
+        <a id="open-offer" target="_blank" rel="noopener noreferrer"
+          >Abrir precificação no site</a
+        >
+      </section>
+      <section>
+        <h2>Concorrência</h2>
+        <p>
+          Capture a oferta aberta ou as ofertas individuais disponíveis na
+          pesquisa.
+        </p>
+        <button id="capture">Capturar página atual</button>
+        <div id="capture-form" hidden>
+          <label for="references">Referência</label
+          ><select id="references"></select
+          ><label
+            >Preço observado (R$)<input
+              id="capture-price"
+              type="number"
+              min="0.01"
+              step="0.01" /></label
+          ><button id="save-capture">Salvar referência</button
+          ><a id="open-references" target="_blank" rel="noopener noreferrer"
+            >Abrir concorrência no site</a
+          >
+        </div>
+      </section>
+    </div>
+    <footer>
+      Simulação local. Confira tarifa e frete antes de aplicar um preço.
+    </footer>
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

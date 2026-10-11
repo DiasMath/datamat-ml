@@ -4,6 +4,7 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "regions": ["gru1"],
+  "crons": [{ "path": "/api/routine/scheduled", "schedule": "0 9 * * *" }],
   "functions": {
     "src/app/api/**/*.ts": { "maxDuration": 300 }
   }

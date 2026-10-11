@@ -1,16 +1,16 @@
 # Validação da versão atual
 
-Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta revisão inclui integração ML no código, checklist/prioridades, métricas/indicadores de publicidade e preparação Vercel, além de cálculo ao digitar, autocomplete, login removido e Excel. Testes de negócio usam projetos aleatórios `demo-*` no emulador Firestore e não escrevem cadastros na base operacional `datamat-ml`.
+Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta revisão inclui rotina conectada do dia, aplicação elegível de preço aprovado, concorrência e primeira extensão própria, skeletons e contagem regressiva corrigida, além dos módulos existentes. Testes de negócio usam projetos aleatórios `demo-*` no emulador Firestore e não escrevem cadastros na base operacional `datamat-ml`.
 
 | Verificação              | Resultado                                                                                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                                |
-| Domínio e serviços       | `npm test`: **110 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **126 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                    |
-| Navegador Chromium       | `npm run test:e2e`: **37 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Navegador Chromium       | `npm run test:e2e`: **43 passaram**, nenhuma falha ou teste ignorado                                                                                       |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
-| Responsividade           | 15 telas/abas × 6 larguras: **90 combinações**, sem transbordamento horizontal do documento                                                                |
+| Responsividade           | 17 telas/abas × 6 larguras: **102 combinações**, sem transbordamento horizontal do documento                                                               |
 | Firestore real           | CRUD técnico isolado confirmado na revisão anterior; JSON privado preparado para Vercel validado com leitura autenticada, sem alterar documentos           |
 | Publicação do usuário    | `https://datamat-ml.vercel.app/api/workspace`: inicialmente 503; conferência final **200**, sem acesso autenticado ao painel para conferir/alterar valores |
 
@@ -47,7 +47,7 @@ As fontes públicas do Avantpro foram pesquisadas, mas a experiência Free/Pro e
 - Alterar taxas/frete com preço inalterado exige revalidação; voltar de alíquota específica zero à herança da loja funciona no cálculo, proposta e aplicação.
 - Proposta global com custos não salvos tem snapshot recalculado no servidor e não modifica custo/preço atuais; aplicação aprovada persiste os custos propostos.
 - Autocomplete reutiliza marca, modelo, categoria, produto/SKU, busca, tarefas/responsáveis e títulos de notas; aceita texto novo e preserva zeros em SKUs. Motor de sugestões verifica acentos, caixa, deduplicação e limite de opções.
-- Precificação global verificada em 320/390/768/1440 pixels, além da revisão das 15 telas/abas em seis larguras. Capturas em `test-results/pricing-live-desktop.png` e `test-results/pricing-live-mobile.png`. No desktop, a contribuição permanece no viewport ao editar custos; no celular, o resumo acompanha a digitação.
+- Precificação global verificada em 320/390/768/1440 pixels, além da revisão das 17 telas/abas em seis larguras. Capturas em `test-results/pricing-live-desktop.png` e `test-results/pricing-live-mobile.png`. No desktop, a contribuição permanece no viewport ao editar custos; no celular, o resumo acompanha a digitação.
 
 Fórmulas e limites comerciais: [pricing.md](pricing.md). Pesquisa e fontes: [research-mercado-livre.md](research-mercado-livre.md).
 
@@ -60,7 +60,7 @@ Fórmulas e limites comerciais: [pricing.md](pricing.md). Pesquisa e fontes: [re
 - Notificações deduplicadas em caixa limitada, rejeição de outra aplicação, recursos arbitrários descartados e nenhum preço alterado por payload.
 - `vercel.json` sem erros de configuração segundo o schema oficial. Node.js 24.x fixado. Validador passou com o JSON administrativo e rejeitou origem localhost e falta do JSON para a hospedagem. Segredos não foram exibidos nem adicionados ao repositório.
 
-Os testes Chromium da integração usam contratos controlados: consulta após pausa, respostas obsoletas descartadas, snapshot oficial preservado, modo manual explícito em falha, checklist/tarefa, publicidade ao digitar e responsividade em 320/390 pixels. Esse conjunto complementa a revisão de 90 combinações das telas existentes.
+Os testes Chromium da integração usam contratos controlados: consulta após pausa, respostas obsoletas descartadas, snapshot oficial preservado, modo manual explícito em falha, checklist/tarefa, publicidade ao digitar e responsividade em 320/390 pixels. Esse conjunto complementa a revisão de 102 combinações das telas.
 
 ## Análises e favicon
 
@@ -74,7 +74,7 @@ Os testes Chromium da integração usam contratos controlados: consulta após pa
 - Responsividade adicional em 320/390/768/1024/1440 pixels; capturas desktop/celular inspecionadas visualmente. O gráfico não preenche horários futuros com zero, e a última consulta informa segundos.
 - A rota de análise valida loja, período e origem das mutações. Testes API usam emulador isolado; os dados dos gráficos dos testes são respostas controladas.
 
-Permissões e contratos do ML real ainda precisam ser conferidos com a conta autorizada. Publicidade automática, conciliação, reclamações/devoluções e concorrência permanecem pendentes. Veja [analytics.md](analytics.md).
+Permissões e contratos do ML real ainda precisam ser conferidos com a conta autorizada. Publicidade automática, conciliação e reclamações/devoluções permanecem pendentes. Concorrência assistida está implementada; coleta recorrente continua pendente. Veja [analytics.md](analytics.md).
 
 ## Revisão das variáveis de ambiente
 
@@ -92,3 +92,16 @@ Permissões e contratos do ML real ainda precisam ser conferidos com a conta aut
 - A revisão corrigiu uma corrida entre digitação e recarga após salvar: o conteúdo permanece visível, com controles temporariamente desabilitados até receber a versão atualizada. O fluxo completo de preço/custos/proposta/aprovação/aplicação passou novamente. Condições e limites da precificação ficam em uma seção recolhida, sem expansão automática causada por avisos.
 - A captura móvel de toast dentro do modal foi inspecionada visualmente. As telas existentes também foram revisadas em seis larguras, sem transbordamento horizontal.
 - A integração real ainda depende da autorização do vendedor pelo botão Conectar conta ML. Cadastrar uma aplicação não consulta anúncios privados nem aplica preços no Mercado Livre.
+
+## Rotina diária, carregamento e primeira extensão
+
+- Dezesseis novos testes de negócio: contribuição prevista/ajustada, ausência de custos e cobertura, demanda de sete dias/estoque atual, dados parciais/antigos/conta divergente, CRUD/histórico/alertas de concorrentes, permissões/URL/versão/tarefa idempotente, token de extensão com hash/escopo/origem/revogação, recaptura preservando limiar, processamento oficial de sinais/leases/cache/backoff, descarte de outro vendedor e autenticação do cron.
+- Aplicação de preço aprovado: um único PUT seguido de leitura, proposta/loja/permissão/tarifa conferidas e auditoria idempotente. Resposta incerta não causa novo envio; teste inclui notificação observando o novo preço antes da conferência. Custos modificados depois não são substituídos pela proposta antiga.
+- Seis novos testes de navegador: barra de toast em movimento reduzido, pausa simultânea de relógio e largura, skeletons nas consultas iniciais em 320 px, CRUD/histórico/tarefa de concorrência, Hoje com skeleton até receber vendas, preservando dados/paginação/pausa e captura assistida de DOM suportado.
+- Chrome for Testing carrega a extensão Manifest V3 real, pareia com o servidor/emulador isolado, consulta custos, simula preço ao digitar, grava a referência pela API e desconecta. A leitura de páginas do ML usa HTML de teste; o retorno de captura no teste do painel é controlado. Captura em conta/página real ainda precisa de conferência, sem alegação de paridade completa com Avantpro.
+- `public/datamat-extension.zip` contém somente cinco arquivos públicos; integridade CRC verificada. É gerado no build, sem credenciais. Pacote ainda não publicado na Chrome Web Store.
+- Depois da suíte completa de 43 testes, 15 cenários de operações/revisão passaram novamente com os ajustes móveis e 102 combinações de telas/larguras; os quatro cenários de operações passaram uma última vez após o ajuste de skeleton da primeira consulta. Build e TypeScript também passaram novamente.
+- Código e arquivos versionáveis verificados contra segredos locais; dependências de produção sem vulnerabilidades reportadas nesta revisão.
+- Conta juntos.data foi consultada em produção e ainda aparece **unauthorized**; juntos.com, **unconfigured**. Uso de dados reais exige Conectar conta ML. Nenhum preço real foi enviado durante os testes. Cron diário exige configurar CRON_SECRET uma vez na infraestrutura e republicar; credenciais de novas lojas continuam pelo site.
+
+Fontes, limites financeiros e operação: [daily-operation.md](daily-operation.md).

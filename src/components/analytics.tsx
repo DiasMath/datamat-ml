@@ -23,6 +23,7 @@ import { csvCell } from "@/domain/csv";
 import { money, percent, Field, Empty } from "./ui";
 import Collection from "./collection";
 import { useToastMessage } from "./toasts";
+import Skeleton from "./skeleton";
 
 type Row = Record<string, any>;
 type Navigate = (path: string, params?: URLSearchParams) => void;
@@ -67,7 +68,7 @@ export default function Analytics({
     [to, setTo] = useState(today);
   const [report, setReport] = useState<AnalyticsReport | null>(null),
     [error, setError] = useState(""),
-    [loading, setLoading] = useState(false),
+    [loading, setLoading] = useState(true),
     [tab, setTab] = useState(tabs[0]),
     [paused, setPaused] = useState(false),
     [hidden, setHidden] = useState(false),
@@ -442,275 +443,297 @@ export default function Analytics({
           live ? undefined : `analytics-tab-${tabs.indexOf(tab)}`
         }
         className="stack"
+        aria-busy={loading}
       >
-        {(live || tab === "Visão geral" || tab === "Vendas") && (
+        {loading && !report ? (
+          <Skeleton variant="analytics" label="Carregando análises" />
+        ) : (
           <>
-            <div className="analytics-kpis">
-              {[
-                [
-                  "Receita bruta",
-                  available ? money(current?.revenue) : "—",
-                  report?.changes?.revenue,
-                  "Produtos de pedidos atualmente pagos",
-                ],
-                [
-                  "Pedidos pagos",
-                  available ? current?.paidOrders : "—",
-                  report?.changes?.orders,
-                  "Pedidos, sem agrupar por carrinho",
-                ],
-                [
-                  "Unidades vendidas",
-                  available ? current?.units : "—",
-                  null,
-                  "Quantidade de produtos",
-                ],
-                [
-                  "Ticket por pedido",
-                  available ? money(current?.ticket) : "—",
-                  report?.changes?.ticket,
-                  "Receita bruta ÷ pedidos pagos",
-                ],
-              ].map(([label, value, delta, hint]) => (
-                <Metric
-                  key={String(label)}
-                  label={String(label)}
-                  value={value}
-                  change={delta as string | null | undefined}
-                  hint={String(hint)}
-                />
-              ))}
-            </div>
-            <div className="analytics-grid">
-              <section className="panel">
-                <div className="panel-heading">
-                  <div>
-                    <h2>
-                      {live ? "Ritmo de vendas de hoje" : "Evolução das vendas"}
-                    </h2>
-                    <small className="muted">
-                      {live
-                        ? "Hora de criação dos pedidos pagos · Brasília"
-                        : "Período anterior com a mesma duração e horário de corte"}
-                    </small>
-                  </div>
-                  <select
-                    aria-label="Indicador do gráfico"
-                    value={metric}
-                    onChange={(e) => setMetric(e.target.value as typeof metric)}
-                  >
-                    <option value="revenue">Receita</option>
-                    <option value="orders">Pedidos</option>
-                  </select>
+            {(live || tab === "Visão geral" || tab === "Vendas") && (
+              <>
+                <div className="analytics-kpis">
+                  {[
+                    [
+                      "Receita bruta",
+                      available ? money(current?.revenue) : "—",
+                      report?.changes?.revenue,
+                      "Produtos de pedidos atualmente pagos",
+                    ],
+                    [
+                      "Pedidos pagos",
+                      available ? current?.paidOrders : "—",
+                      report?.changes?.orders,
+                      "Pedidos, sem agrupar por carrinho",
+                    ],
+                    [
+                      "Unidades vendidas",
+                      available ? current?.units : "—",
+                      null,
+                      "Quantidade de produtos",
+                    ],
+                    [
+                      "Ticket por pedido",
+                      available ? money(current?.ticket) : "—",
+                      report?.changes?.ticket,
+                      "Receita bruta ÷ pedidos pagos",
+                    ],
+                  ].map(([label, value, delta, hint]) => (
+                    <Metric
+                      key={String(label)}
+                      label={String(label)}
+                      value={value}
+                      change={delta as string | null | undefined}
+                      hint={String(hint)}
+                    />
+                  ))}
                 </div>
-                {available && report ? (
-                  <SalesChart
-                    label={live ? "Vendas por hora" : "Evolução das vendas"}
-                    rows={
-                      live
-                        ? current!.hourly.map((h) => ({
-                            label: `${String(h.hour).padStart(2, "0")}h`,
-                            value:
-                              h.hour <= currentHour ? Number(h[metric]) : null,
-                            previous:
-                              h.hour > currentHour
-                                ? null
-                                : metric === "revenue"
-                                  ? Number(
-                                      report.previous.hourly[h.hour].revenue,
-                                    )
-                                  : report.previous.hourly[h.hour].orders,
-                          }))
-                        : report.daily.map((d) => ({
-                            label: d.day.slice(8) + "/" + d.day.slice(5, 7),
-                            value: Number(d[metric]),
-                            previous:
-                              metric === "revenue"
-                                ? Number(d.previousRevenue)
-                                : d.previousOrders,
-                          }))
-                    }
-                    currency={metric === "revenue"}
-                    comparison={report.complete}
-                  />
-                ) : (
-                  <ChartEmpty />
-                )}
-              </section>
-              <section className="panel">
-                <h2>{live ? "Últimos pedidos pagos" : "Leitura rápida"}</h2>
-                {live ? (
-                  <RecentOrders report={report} stores={data.stores} />
-                ) : (
-                  <>
-                    <div className="analytics-funnel">
-                      {[
-                        ["Visitas", report?.visits],
-                        [
-                          "Pedidos pagos",
-                          available ? current?.paidOrders : null,
-                        ],
-                        [
-                          "Pedidos / visitas",
-                          report?.orderVisitRate == null
-                            ? null
-                            : percent(report.orderVisitRate),
-                        ],
-                        [
-                          "Cancelados no período",
-                          available ? current?.cancelled : null,
-                        ],
-                      ].map(([l, v]) => (
-                        <div key={String(l)}>
-                          <span>{l}</span>
-                          <strong>{v ?? "Indisponível"}</strong>
-                        </div>
-                      ))}
+                <div className="analytics-grid">
+                  <section className="panel">
+                    <div className="panel-heading">
+                      <div>
+                        <h2>
+                          {live
+                            ? "Ritmo de vendas de hoje"
+                            : "Evolução das vendas"}
+                        </h2>
+                        <small className="muted">
+                          {live
+                            ? "Hora de criação dos pedidos pagos · Brasília"
+                            : "Período anterior com a mesma duração e horário de corte"}
+                        </small>
+                      </div>
+                      <select
+                        aria-label="Indicador do gráfico"
+                        value={metric}
+                        onChange={(e) =>
+                          setMetric(e.target.value as typeof metric)
+                        }
+                      >
+                        <option value="revenue">Receita</option>
+                        <option value="orders">Pedidos</option>
+                      </select>
                     </div>
-                    <p className="small muted">
-                      Pedidos/visitas é uma razão do período, sem atribuição de
-                      visitantes às compras. Cancelamentos consideram o status
-                      atual dos pedidos criados no período.
-                    </p>
+                    {available && report ? (
+                      <SalesChart
+                        label={live ? "Vendas por hora" : "Evolução das vendas"}
+                        rows={
+                          live
+                            ? current!.hourly.map((h) => ({
+                                label: `${String(h.hour).padStart(2, "0")}h`,
+                                value:
+                                  h.hour <= currentHour
+                                    ? Number(h[metric])
+                                    : null,
+                                previous:
+                                  h.hour > currentHour
+                                    ? null
+                                    : metric === "revenue"
+                                      ? Number(
+                                          report.previous.hourly[h.hour]
+                                            .revenue,
+                                        )
+                                      : report.previous.hourly[h.hour].orders,
+                              }))
+                            : report.daily.map((d) => ({
+                                label: d.day.slice(8) + "/" + d.day.slice(5, 7),
+                                value: Number(d[metric]),
+                                previous:
+                                  metric === "revenue"
+                                    ? Number(d.previousRevenue)
+                                    : d.previousOrders,
+                              }))
+                        }
+                        currency={metric === "revenue"}
+                        comparison={report.complete}
+                      />
+                    ) : (
+                      <ChartEmpty />
+                    )}
+                  </section>
+                  <section className="panel">
+                    <h2>{live ? "Últimos pedidos pagos" : "Leitura rápida"}</h2>
+                    {live ? (
+                      <RecentOrders report={report} stores={data.stores} />
+                    ) : (
+                      <>
+                        <div className="analytics-funnel">
+                          {[
+                            ["Visitas", report?.visits],
+                            [
+                              "Pedidos pagos",
+                              available ? current?.paidOrders : null,
+                            ],
+                            [
+                              "Pedidos / visitas",
+                              report?.orderVisitRate == null
+                                ? null
+                                : percent(report.orderVisitRate),
+                            ],
+                            [
+                              "Cancelados no período",
+                              available ? current?.cancelled : null,
+                            ],
+                          ].map(([l, v]) => (
+                            <div key={String(l)}>
+                              <span>{l}</span>
+                              <strong>{v ?? "Indisponível"}</strong>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="small muted">
+                          Pedidos/visitas é uma razão do período, sem atribuição
+                          de visitantes às compras. Cancelamentos consideram o
+                          status atual dos pedidos criados no período.
+                        </p>
+                      </>
+                    )}
+                  </section>
+                </div>
+                <div className="analytics-grid">
+                  <Insights
+                    report={report}
+                    attention={attention}
+                    onOpen={onOpen}
+                  />
+                  <Operations
+                    data={data}
+                    report={report}
+                    offers={relevantOffers}
+                    tasks={relevantTasks}
+                    compact
+                    navigate={navigate}
+                    store={store}
+                  />
+                </div>
+                {tab === "Vendas" && !live && (
+                  <>
+                    <section className="panel">
+                      <h2>Horários com mais vendas</h2>
+                      {available && current ? (
+                        <SalesChart
+                          label="Receita por hora do dia"
+                          rows={current.hourly.map((h) => ({
+                            label: `${h.hour}h`,
+                            value: Number(h.revenue),
+                          }))}
+                          currency
+                        />
+                      ) : (
+                        <ChartEmpty />
+                      )}
+                    </section>
+                    <section className="panel">
+                      <h2>Comparativo entre lojas</h2>
+                      <div className="analytics-table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Loja</th>
+                              <th>Receita</th>
+                              <th>Pedidos</th>
+                              <th>Ticket</th>
+                              <th>Consulta</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {report?.stores.map((s) => (
+                              <tr key={s.storeId}>
+                                <td>{s.storeName}</td>
+                                <td>
+                                  {s.observedAt
+                                    ? money(s.summary.revenue)
+                                    : "Indisponível"}
+                                </td>
+                                <td>
+                                  {s.observedAt ? s.summary.paidOrders : "—"}
+                                </td>
+                                <td>
+                                  {s.observedAt ? money(s.summary.ticket) : "—"}
+                                </td>
+                                <td>
+                                  {s.observedAt
+                                    ? observedTime(s.observedAt)
+                                    : "Não consultada"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
                   </>
                 )}
+              </>
+            )}
+            {!live && tab === "Produtos" && (
+              <Products report={report} stores={data.stores} onOpen={onOpen} />
+            )}
+            {!live && tab === "Tráfego" && <Traffic report={report} />}
+            {!live && tab === "Financeiro" && (
+              <section className="panel">
+                <h2>Receita, tarifas e contribuição</h2>
+                <div className="analytics-kpis">
+                  <Metric
+                    label="Receita bruta de produtos"
+                    value={available ? money(current?.revenue) : "—"}
+                    hint="Antes de tarifas, frete, impostos e devoluções"
+                  />
+                  <Metric
+                    label="Tarifas dos itens vendidos"
+                    value={available ? money(current?.fees) : "—"}
+                    hint={`Cobertura: ${percent(current?.feeCoverage)} da receita consultada`}
+                  />
+                  <Metric
+                    label="Contribuição estimada"
+                    value={available ? money(current?.contribution) : "—"}
+                    hint={`Custos atuais completos: ${percent(current?.contributionCoverage)} da receita`}
+                  />
+                  <Metric
+                    label="Margem na parcela coberta"
+                    value={
+                      available ? percent(current?.contributionPercent) : "—"
+                    }
+                    hint="Contribuição estimada ÷ receita com custos disponíveis"
+                  />
+                </div>
+                <div className="alert">
+                  A contribuição usa o preço vendido e os custos atuais
+                  cadastrados, incluindo os custos estimados de tarifa, frete e
+                  publicidade. Não representa lucro realizado nem conciliação de
+                  pagamentos. Custos desatualizados, incompletos ou variações
+                  sem vínculo ficam fora da estimativa.
+                </div>
+                <p className="muted">
+                  Devoluções, estornos, descontos financiados, parcelas,
+                  retenções e repasses exigem conciliação financeira específica.
+                  Receita atribuída à publicidade já faz parte da receita total
+                  e não deve ser somada novamente.
+                </p>
+                <button
+                  className="button"
+                  onClick={() =>
+                    navigate("precificacao", new URLSearchParams({ store }))
+                  }
+                >
+                  Revisar precificação
+                  <ArrowUpRight size={15} />
+                </button>
               </section>
-            </div>
-            <div className="analytics-grid">
-              <Insights report={report} attention={attention} onOpen={onOpen} />
+            )}
+            {!live && tab === "Operação" && (
               <Operations
                 data={data}
                 report={report}
                 offers={relevantOffers}
                 tasks={relevantTasks}
-                compact
                 navigate={navigate}
                 store={store}
               />
-            </div>
-            {tab === "Vendas" && !live && (
-              <>
-                <section className="panel">
-                  <h2>Horários com mais vendas</h2>
-                  {available && current ? (
-                    <SalesChart
-                      label="Receita por hora do dia"
-                      rows={current.hourly.map((h) => ({
-                        label: `${h.hour}h`,
-                        value: Number(h.revenue),
-                      }))}
-                      currency
-                    />
-                  ) : (
-                    <ChartEmpty />
-                  )}
-                </section>
-                <section className="panel">
-                  <h2>Comparativo entre lojas</h2>
-                  <div className="analytics-table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Loja</th>
-                          <th>Receita</th>
-                          <th>Pedidos</th>
-                          <th>Ticket</th>
-                          <th>Consulta</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report?.stores.map((s) => (
-                          <tr key={s.storeId}>
-                            <td>{s.storeName}</td>
-                            <td>
-                              {s.observedAt
-                                ? money(s.summary.revenue)
-                                : "Indisponível"}
-                            </td>
-                            <td>{s.observedAt ? s.summary.paidOrders : "—"}</td>
-                            <td>
-                              {s.observedAt ? money(s.summary.ticket) : "—"}
-                            </td>
-                            <td>
-                              {s.observedAt
-                                ? observedTime(s.observedAt)
-                                : "Não consultada"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              </>
+            )}
+            {!live && tab === "Publicidade" && (
+              <Advertising key={key} report={report} />
             )}
           </>
-        )}
-        {!live && tab === "Produtos" && (
-          <Products report={report} stores={data.stores} onOpen={onOpen} />
-        )}
-        {!live && tab === "Tráfego" && <Traffic report={report} />}
-        {!live && tab === "Financeiro" && (
-          <section className="panel">
-            <h2>Receita, tarifas e contribuição</h2>
-            <div className="analytics-kpis">
-              <Metric
-                label="Receita bruta de produtos"
-                value={available ? money(current?.revenue) : "—"}
-                hint="Antes de tarifas, frete, impostos e devoluções"
-              />
-              <Metric
-                label="Tarifas dos itens vendidos"
-                value={available ? money(current?.fees) : "—"}
-                hint={`Cobertura: ${percent(current?.feeCoverage)} da receita consultada`}
-              />
-              <Metric
-                label="Contribuição estimada"
-                value={available ? money(current?.contribution) : "—"}
-                hint={`Custos atuais completos: ${percent(current?.contributionCoverage)} da receita`}
-              />
-              <Metric
-                label="Margem na parcela coberta"
-                value={available ? percent(current?.contributionPercent) : "—"}
-                hint="Contribuição estimada ÷ receita com custos disponíveis"
-              />
-            </div>
-            <div className="alert">
-              A contribuição usa o preço vendido e os custos atuais cadastrados,
-              incluindo os custos estimados de tarifa, frete e publicidade. Não
-              representa lucro realizado nem conciliação de pagamentos. Custos
-              desatualizados, incompletos ou variações sem vínculo ficam fora da
-              estimativa.
-            </div>
-            <p className="muted">
-              Devoluções, estornos, descontos financiados, parcelas, retenções e
-              repasses exigem conciliação financeira específica. Receita
-              atribuída à publicidade já faz parte da receita total e não deve
-              ser somada novamente.
-            </p>
-            <button
-              className="button"
-              onClick={() =>
-                navigate("precificacao", new URLSearchParams({ store }))
-              }
-            >
-              Revisar precificação
-              <ArrowUpRight size={15} />
-            </button>
-          </section>
-        )}
-        {!live && tab === "Operação" && (
-          <Operations
-            data={data}
-            report={report}
-            offers={relevantOffers}
-            tasks={relevantTasks}
-            navigate={navigate}
-            store={store}
-          />
-        )}
-        {!live && tab === "Publicidade" && (
-          <Advertising key={key} report={report} />
         )}
       </div>
       <details className="panel expand">

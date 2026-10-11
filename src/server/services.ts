@@ -264,6 +264,11 @@ async function saveOfferInside(
   offerId?: string,
 ) {
   const old = offerId ? await getOffer(actor, offerId) : undefined;
+  if (old?.ml_apply_until > Date.now())
+    throw new HttpError(
+      409,
+      "Aplicação de preço em andamento; aguarde a conferência",
+    );
   if (old && old.store_id !== p.storeId)
     throw new HttpError(409, "O anúncio não pode ser transferido entre lojas");
   if (old && old.version !== p.version)
@@ -417,6 +422,11 @@ export async function saveCosts(
   return transaction(async () => {
     const o = await getOffer(actor, offerId),
       before = await costs(offerId);
+    if (o.ml_apply_until > Date.now())
+      throw new HttpError(
+        409,
+        "Aplicação de preço em andamento; aguarde a conferência",
+      );
     if (offerVersion !== undefined && offerVersion !== o.version)
       throw new HttpError(
         409,
@@ -456,6 +466,15 @@ export async function saveParameters(
   return transaction(async () => {
     const row = await get("parameters", storeId),
       before = await params(storeId);
+    if (
+      (await find("offers", { store_id: storeId })).some(
+        (o) => o.ml_apply_until > Date.now(),
+      )
+    )
+      throw new HttpError(
+        409,
+        "Uma aplicação de preço está em andamento nesta loja; tente novamente em instantes",
+      );
     await put("parameters", storeId, {
       store_id: storeId,
       data_json: JSON.stringify(p),
@@ -630,6 +649,11 @@ export async function decideProposal(
     const proposal = await get("proposals", proposalId);
     if (!proposal) throw new HttpError(404, "Proposta não encontrada");
     authorizeStore(actor, proposal.store_id);
+    if (["applying_ml", "application_uncertain"].includes(proposal.status))
+      throw new HttpError(
+        409,
+        "Confira a aplicação no ML antes de alterar a etapa",
+      );
     const op = await operation(actor, "decision", p.requestId, {
       proposalId,
       action: p.action,
@@ -653,7 +677,11 @@ export async function decideProposal(
       });
     } else if (p.action === "cancel") {
       if (proposal.author_id !== actor.id) canApprove(actor);
-      if (["applied_manual", "rejected", "cancelled"].includes(proposal.status))
+      if (
+        ["applied_manual", "applied_ml", "rejected", "cancelled"].includes(
+          proposal.status,
+        )
+      )
         throw new HttpError(409, "Esta proposta já está encerrada");
       status = "cancelled";
     } else if (p.action === "request") {

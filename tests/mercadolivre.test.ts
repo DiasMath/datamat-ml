@@ -541,9 +541,12 @@ test("metrics use the visits interval and paid orders, never lifetime sales or d
       assert.equal(m.unansweredQuestions, 5);
     },
   );
-  const stored = JSON.stringify(await get("ml_metrics", o.id));
+  const storedRow = (await get("ml_metrics", o.id))!;
+  const stored = JSON.stringify(storedRow);
   assert.ok(!stored.includes("private-buyer"));
-  assert.ok(!stored.includes("999"));
+  // A timestamp can contain 999 milliseconds; inspect the metric, not all serialized text.
+  assert.equal(storedRow.units, 2);
+  assert.equal("soldQuantityLifetime" in storedRow, false);
   const before = await get("ml_metrics", o.id);
   await mocked(
     (url, init) => {

@@ -56,6 +56,10 @@ import FinancialEditor from "./financial-editor";
 import AutocompleteInput from "./autocomplete";
 import Importer from "./importer";
 import Collection, { pageSize } from "./collection";
+import Skeleton from "./skeleton";
+import RoutineToday from "./routine-today";
+import Competitors from "./competitors";
+import ExtensionSettings from "./extension-settings";
 
 type Row = Record<string, any>;
 const navigation = [
@@ -63,6 +67,7 @@ const navigation = [
   { path: "anuncios", title: "Anúncios", icon: Tags },
   { path: "precificacao", title: "Precificação", icon: Calculator },
   { path: "analises", title: "Análises", icon: Activity },
+  { path: "concorrencia", title: "Concorrência", icon: Search },
   { path: "acoes", title: "Ações", icon: ListTodo },
   { path: "historico", title: "Histórico", icon: History },
   { path: "estudos", title: "Estudos e notas", icon: NotebookPen },
@@ -73,6 +78,8 @@ const descriptions: Record<string, string> = {
   anuncios: "Organize suas ofertas e acompanhe o que precisa evoluir.",
   precificacao: "Conheça os custos. Compare cenários. Prepare decisões.",
   analises: "Entenda as vendas. Encontre prioridades. Acompanhe o dia a dia.",
+  concorrencia:
+    "Acompanhe ofertas comparáveis e transforme mudanças em decisões.",
   acoes: "Transforme decisões em trabalho com prazo e responsável.",
   historico: "Uma trilha clara das decisões e mudanças da operação.",
   estudos: "Guarde o aprendizado e conecte ideias ao trabalho.",
@@ -174,6 +181,13 @@ export default function Workspace({ view }: { view: string[] }) {
     "importSize",
     "analyticsProductsPage",
     "analyticsProductsSize",
+    "routineSalesPage",
+    "routineSalesSize",
+    "routineStockPage",
+    "routineStockSize",
+    "competitorsPage",
+    "competitorsSize",
+    "extensionId",
     "tab",
     "configTab",
     "returnTo",
@@ -607,10 +621,21 @@ export default function Workspace({ view }: { view: string[] }) {
             </div>
           )}
           {loading && !data ? (
-            <div className="loading-state">
-              <span className="loading-dot" />
-              Carregando dados da operação…
-            </div>
+            <Skeleton
+              variant={
+                offerId
+                  ? "detail"
+                  : section === ""
+                    ? "today"
+                    : section === "analises"
+                      ? "analytics"
+                      : section === "configuracoes"
+                        ? "settings"
+                        : section === "precificacao"
+                          ? "pricing"
+                          : "list"
+              }
+            />
           ) : !data ? (
             <Empty
               title="Não foi possível carregar"
@@ -628,6 +653,8 @@ export default function Workspace({ view }: { view: string[] }) {
             <fieldset className="workspace-data" disabled={loading}>
               {section === "" && (
                 <Today
+                  store={store}
+                  onChanged={() => setRefresh((v) => v + 1)}
                   data={data}
                   onOpen={openOffer}
                   onTask={(t: Row) => open("task", t)}
@@ -915,6 +942,14 @@ export default function Workspace({ view }: { view: string[] }) {
                   onOpen={openOffer}
                 />
               )}
+              {section === "concorrencia" && (
+                <Competitors
+                  data={data}
+                  store={store}
+                  onOpen={openOffer}
+                  onChanged={() => setRefresh((v) => v + 1)}
+                />
+              )}
               {section === "estudos" && (
                 <Notes
                   data={data}
@@ -932,7 +967,7 @@ export default function Workspace({ view }: { view: string[] }) {
                 <Configuration
                   data={data}
                   selected={
-                    ["stores", "integrations", "sync"].includes(
+                    ["stores", "integrations", "sync", "extension"].includes(
                       search.get("configTab") || "",
                     )
                       ? search.get("configTab")!
@@ -1180,6 +1215,20 @@ export default function Workspace({ view }: { view: string[] }) {
           {modal.type === "decision" && (
             <Decision
               proposal={modal.record!}
+              onApplyML={() =>
+                mutate(
+                  `/api/proposals/${modal.record!.id}/apply-ml`,
+                  { confirmed: true },
+                  "Preço confirmado na API do Mercado Livre.",
+                  true,
+                ).then((ok) => {
+                  if (!ok) {
+                    setModal(null);
+                    setDirty(false);
+                    setRefresh((v) => v + 1);
+                  }
+                })
+              }
               data={data}
               busy={busy}
               onDirty={() => setDirty(true)}
@@ -1326,6 +1375,8 @@ function modalTitle(modal: { type: string; record?: Row }) {
   );
 }
 function Today({
+  store,
+  onChanged,
   data,
   onOpen,
   onTask,
@@ -1333,6 +1384,8 @@ function Today({
   canWrite,
   onNew,
 }: {
+  store: string;
+  onChanged: () => void;
   data: Row;
   onOpen: (id: string) => void;
   onTask: (t: Row) => void;
@@ -1357,7 +1410,20 @@ function Today({
   ).length;
   return (
     <>
-      <div className="stats-grid">
+      {data.connections.some(
+        (c: Row) => c.provider === "mercadolivre" && c.status === "connected",
+      ) && (
+        <RoutineToday
+          onCreated={onChanged}
+          store={store}
+          canRefresh={canWrite}
+          onOpen={onOpen}
+          navigate={navigate}
+        />
+      )}
+      <div
+        className={`stats-grid ${data.connections.some((c: Row) => c.provider === "mercadolivre" && c.status === "connected") ? "routine-local-stats" : ""}`}
+      >
         {[
           {
             label: "Ações em aberto",
@@ -1474,6 +1540,8 @@ function Today({
                     "review",
                     "approved",
                     "pending_application",
+                    "application_uncertain",
+                    "applying_ml",
                     "failed",
                   ].includes(p.status),
                 ).length
@@ -1481,9 +1549,14 @@ function Today({
             </span>
           </div>
           {data.proposals.filter((p: Row) =>
-            ["review", "approved", "pending_application", "failed"].includes(
-              p.status,
-            ),
+            [
+              "review",
+              "approved",
+              "pending_application",
+              "application_uncertain",
+              "applying_ml",
+              "failed",
+            ].includes(p.status),
           ).length ? (
             data.proposals
               .filter((p: Row) =>
@@ -1491,6 +1564,8 @@ function Today({
                   "review",
                   "approved",
                   "pending_application",
+                  "application_uncertain",
+                  "applying_ml",
                   "failed",
                 ].includes(p.status),
               )
@@ -2222,9 +2297,12 @@ function Overview({
                   </p>
                 </details>
                 {canWrite &&
-                  !["applied_manual", "rejected", "cancelled"].includes(
-                    p.status,
-                  ) && (
+                  ![
+                    "applied_manual",
+                    "applied_ml",
+                    "rejected",
+                    "cancelled",
+                  ].includes(p.status) && (
                     <button
                       className="button compact"
                       onClick={() => onProposal(p)}
@@ -2356,12 +2434,13 @@ function PricingPage({
                 })
               }
             />
+          ) : error ? (
+            <Empty
+              title="Custos indisponíveis"
+              body="Selecione novamente a oferta para tentar."
+            />
           ) : (
-            <div className="pricing-placeholder" role="status">
-              {error
-                ? "Custos indisponíveis. Selecione novamente a oferta para tentar."
-                : "Carregando custos da oferta…"}
-            </div>
+            <Skeleton variant="pricing" label="Carregando custos da oferta" />
           )
         ) : (
           <div className="alert">
@@ -2875,15 +2954,20 @@ function Decision({
   busy,
   onDirty,
   onSave,
+  onApplyML,
 }: {
   proposal: Row;
   data: Row;
   busy: boolean;
   onDirty: () => void;
   onSave: (p: Row) => void;
+  onApplyML: () => void;
 }) {
   const allowed = ["admin", "approver"].includes(data.user.role);
   const canCancel = allowed || proposal.author_id === data.user.id;
+  const canStage = !["application_uncertain", "applying_ml"].includes(
+    proposal.status,
+  );
   const requestId = useRef<string>(null);
   const [action, setAction] = useState(
     proposal.status === "review"
@@ -2922,66 +3006,116 @@ function Decision({
       </div>
       <p>{proposal.reason}</p>
       <CostSummary result={proposal.snapshot.proposed} />
-      <Field label="Próxima etapa">
-        <select value={action} onChange={(e) => setAction(e.target.value)}>
-          {canCancel && <option value="cancel">Cancelar proposta</option>}
-          {proposal.status === "review" && allowed && (
-            <>
-              <option value="approve">Registrar aprovação</option>
-              <option value="reject">Rejeitar proposta</option>
-            </>
-          )}
-          {["approved", "failed"].includes(proposal.status) && (
-            <option value="request">Solicitar aplicação manual</option>
-          )}
-          {proposal.status === "pending_application" && (
-            <>
-              <option value="apply_manual">
-                Confirmar aplicação feita no ML/Bling
-              </option>
-              <option value="fail">Registrar falha</option>
-            </>
-          )}
-        </select>
-      </Field>
+      {canStage && (
+        <Field label="Próxima etapa">
+          <select value={action} onChange={(e) => setAction(e.target.value)}>
+            {canCancel && <option value="cancel">Cancelar proposta</option>}
+            {proposal.status === "review" && allowed && (
+              <>
+                <option value="approve">Registrar aprovação</option>
+                <option value="reject">Rejeitar proposta</option>
+              </>
+            )}
+            {["approved", "failed"].includes(proposal.status) && (
+              <option value="request">Solicitar aplicação manual</option>
+            )}
+            {proposal.status === "pending_application" && (
+              <>
+                <option value="apply_manual">
+                  Confirmar aplicação feita no ML/Bling
+                </option>
+                <option value="fail">Registrar falha</option>
+              </>
+            )}
+          </select>
+        </Field>
+      )}
       {proposal.status === "review" && !allowed && (
         <div className="alert">
           Seu perfil prepara propostas; a aprovação exige administrador ou
           aprovador.
         </div>
       )}
-      {action === "apply_manual" && (
+      {canStage && action === "apply_manual" && (
         <div className="alert">
           Confirme somente após executar e conferir a mudança no ML/Bling. O
           registro ficará identificado como <strong>confirmação manual</strong>.
-          Este sistema não envia alterações externas.
         </div>
       )}
-      <Field
-        label={
-          action === "apply_manual"
-            ? "Resultado e evidência da aplicação *"
-            : "Comentário / justificativa *"
-        }
-      >
-        <textarea
-          name="comment"
-          minLength={3}
-          required
-          rows={4}
-          placeholder="Registre responsável, motivo e evidências."
-        />
-      </Field>
-      <div className="form-footer">
-        <span>Uma etapa por vez, com histórico.</span>
-        <Submit
-          busy={
-            busy ||
-            (proposal.status === "review" && !allowed && action !== "cancel")
-          }
-          label="Registrar etapa"
-        />
-      </div>
+      {allowed &&
+        [
+          "approved",
+          "pending_application",
+          "application_uncertain",
+          "applying_ml",
+        ].includes(proposal.status) &&
+        data.connections.some(
+          (c: Row) =>
+            c.store_id === proposal.store_id &&
+            c.provider === "mercadolivre" &&
+            c.status === "connected",
+        ) && (
+          <div className="ml-application-action">
+            <p className="small muted">
+              Aplicação por API para preço de anúncio individual, sem catálogo,
+              variações, promoção ou mudança de conteúdo. Tarifa e preço atual
+              serão conferidos novamente.
+            </p>
+            <button
+              className="button primary"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  ["application_uncertain", "applying_ml"].includes(
+                    proposal.status,
+                  ) ||
+                  window.confirm(
+                    `Aplicar o preço ${money(proposal.snapshot.proposed.price)} no Mercado Livre?`,
+                  )
+                )
+                  onApplyML();
+              }}
+            >
+              {["application_uncertain", "applying_ml"].includes(
+                proposal.status,
+              )
+                ? "Conferir aplicação no ML"
+                : "Aplicar preço no ML"}
+            </button>
+          </div>
+        )}
+      {canStage && (
+        <>
+          <Field
+            label={
+              action === "apply_manual"
+                ? "Resultado e evidência da aplicação *"
+                : "Comentário / justificativa *"
+            }
+          >
+            <textarea
+              name="comment"
+              minLength={3}
+              required
+              rows={4}
+              placeholder="Registre responsável, motivo e evidências."
+            />
+          </Field>
+          <div className="form-footer">
+            <span>Uma etapa por vez, com histórico.</span>
+            <Submit
+              busy={
+                busy ||
+                (proposal.status === "review" &&
+                  !allowed &&
+                  action !== "cancel")
+              }
+              label="Registrar etapa"
+            />
+          </div>
+        </>
+      )}
     </form>
   );
 }
@@ -3018,6 +3152,7 @@ function Configuration({
           ["stores", "Lojas e parâmetros"],
           ["integrations", "Integrações"],
           ["sync", "Sincronização e dados"],
+          ["extension", "Extensão"],
         ].map(([v, l]) => (
           <button
             key={v}
@@ -3028,6 +3163,7 @@ function Configuration({
           </button>
         ))}
       </div>
+      {selected === "extension" && isAdmin && <ExtensionSettings data={data} />}
       {selected === "stores" && (
         <>
           <div className="section-heading">

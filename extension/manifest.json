@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "DATAMAT · Mercado Livre",
+  "version": "0.1.0",
+  "description": "Referências de concorrência e precificação integrada à sua loja DATAMAT.",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "host_permissions": ["https://datamat-ml.vercel.app/*"],
+  "optional_host_permissions": ["http://localhost:3100/*"],
+  "action": { "default_title": "Abrir DATAMAT" },
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "side_panel": { "default_path": "panel.html" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

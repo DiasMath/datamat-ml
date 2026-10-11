@@ -48,6 +48,8 @@ export type SaleLine = {
   fee: string | null;
   contribution: string | null;
   offerId: string | null;
+  actualFeeContribution?: string | null;
+  minMargin?: string | null;
 };
 export type SaleOrder = {
   id: string;
@@ -81,6 +83,13 @@ export type StoreAnalysis = {
     sampled: number;
     total: number;
     statuses: Record<string, number>;
+    entries?: Array<{
+      id: string;
+      status: string;
+      substatus: string | null;
+      handlingDeadline: string | null;
+      late: boolean;
+    }>;
   } | null;
   warnings: string[];
   error: string | null;

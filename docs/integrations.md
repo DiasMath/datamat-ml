@@ -20,11 +20,11 @@ OAuth por loja com `state` de uso único, expiração de dez minutos, cookie Htt
 | Precificação ao digitar | Cálculo local imediato, consulta oficial após pausa de 600 ms, cancelamento de respostas obsoletas e modo manual explícito se a API falhar. Uma consulta vale cinco minutos e fica vinculada a preço, oferta, versão e vendedor. O servidor verifica a consulta e substitui tarifas enviadas pelo navegador pelas consultadas.                                                         |
 | Desempenho              | Últimos 30 dias de visitas e pedidos pagos criados **no mesmo intervalo retornado pelas visitas**. Unidades, pedidos, receita bruta de produtos, pedidos/visitas e perguntas não respondidas. Não utiliza `sold_quantity` acumulado como vendas do período. Não salva dados de compradores. Acima de 1.000 pedidos ou resposta incompleta, não grava métricas parciais como completas. |
 | Qualidade               | Checklist de SKU/marca/descrição e dados observados: fotos, falta de estoque, atributos obrigatórios e preços de variação. Uma pendência vira tarefa sem duplicação; desconhecido não é tratado como zero. Não é um score oficial nem promessa de ranking.                                                                                                                             |
-| Notificações            | Endpoint recebe `items`, `orders_v2`, `questions`, valida app/recurso e deduplica metadados em caixa de até 100 recursos recentes. Retorna 202. Payloads são sinais não verificados; não atualizam registros financeiros. A interface inicia a consulta oficial, sem worker automático nesta etapa.                                                                                    |
+| Notificações            | Endpoint recebe `items`, `orders_v2`, `questions`, valida app/recurso e deduplica metadados em caixa de até 100 recursos recentes. Retorna 202. Payloads são sinais não verificados; não atualizam registros financeiros. O worker after() inicia consultas oficiais com reserva, retentativas e conferência de vendedor; a tela e o cron retomam pendências.                          |
 
 O limite de execução preserva checkpoints antes de atingir o limite da função Vercel. Requisições de leitura elegíveis podem repetir 429/5xx de forma limitada; a troca de token e o scan não são repetidos cegamente. Falhas retornam mensagens sanitizadas, sem tokens, códigos OAuth, segredo ou dados de compradores.
 
-**Frete, promoções e subsídios:** não são inferidos da tarifa de venda. O cenário continua exigindo conferência de frete e condições adicionais. Mínimo, preço desejado e desconto máximo extrapolam custos/tarifas constantes; são estimativas que precisam de nova consulta para outro preço. Tarifas consultadas entram no cenário/proposta, sem gravar custos ou preço atual a cada tecla. Não há escrita de preço, conteúdo ou estoque no ML; a execução continua no ML/Bling e a confirmação manual fica no histórico.
+**Frete, promoções e subsídios:** não são inferidos da tarifa de venda. O cenário continua exigindo conferência de frete e condições adicionais. Mínimo, preço desejado e desconto máximo extrapolam custos/tarifas constantes; são estimativas que precisam de nova consulta para outro preço. Tarifas consultadas entram no cenário/proposta, sem gravar custos ou preço atual a cada tecla. Propostas aprovadas podem aplicar preço de anúncio individual elegível após nova consulta e confirmação; escrita de conteúdo/estoque, variações e promoções permanece manual. Ver [rotina integrada](daily-operation.md).
 
 Ativação e URLs: [Publicar na Vercel](vercel.md).
 
@@ -38,7 +38,7 @@ Ativação e URLs: [Publicar na Vercel](vercel.md).
 | Custos, parâmetros, tarefas e notas | DATAMAT                             | Cadastro validado e histórico preservado                                                           |
 | Análises aprofundadas               | Power BI                            | Exportação autorizada → BI                                                                         |
 
-Não ativar dois escritores sobre preço/estoque/conteúdo. A integração Bling e a aplicação automática de propostas dependem de definir a autoridade por campo.
+A aplicação de preço elegível usa o DATAMAT após aprovação e confirmação. Integrar escrita pelo Bling exige definir a autoridade por campo para evitar alterações concorrentes.
 
 ## Demais integrações
 
@@ -48,4 +48,4 @@ Não ativar dois escritores sobre preço/estoque/conteúdo. A integração Bling
 
 **Publicidade:** calculadora manual de ROAS, ACOS e TACOS ao digitar, usando dados do mesmo período. Os valores servem para análise; não são somados aos custos automaticamente. API de Ads, custo atribuído por pedido e orçamento sustentável continuam no roadmap.
 
-**Power BI:** exportações CSV/JSON/Excel e URL HTTPS opcional. Refresh automático exige pipeline com autenticação própria. A extensão DATAMAT, IA, tendências, testes A/B e processamento agendado continuam nas etapas posteriores.
+**Power BI:** exportações CSV/JSON/Excel e URL HTTPS opcional. Refresh automático exige pipeline com autenticação própria. A primeira extensão DATAMAT e o endpoint de processamento agendado foram implementados. IA, tendências, testes A/B e pipeline BI continuam pendentes.

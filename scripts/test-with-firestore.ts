@@ -1,10 +1,31 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { prepareEmulator, jar } from "./firestore-emulator";
 async function main() {
   const mode = process.argv[2];
   if (!["unit", "browser"].includes(mode))
     throw new Error("Informe unit ou browser");
+  if (mode === "browser") {
+    process.env.PLAYWRIGHT_BROWSERS_PATH ||= resolve(".cache/playwright");
+    const { chromium } = await import("@playwright/test");
+    if (!existsSync(chromium.executablePath())) {
+      const installer = spawn(
+        "npx",
+        ["playwright", "install", "chromium", "--no-shell"],
+        { stdio: "inherit", env: process.env },
+      );
+      const code = await new Promise<number>((resolve) => {
+        installer.on("exit", (code) => resolve(code ?? 1));
+        installer.on("error", () => resolve(1));
+      });
+      if (code !== 0)
+        throw new Error(
+          "Não foi possível instalar Chrome for Testing; confira rede e certificados e execute npx playwright install chromium --no-shell",
+        );
+    }
+  }
   let emulator: ChildProcess | undefined;
   const host = process.env.FIRESTORE_EMULATOR_HOST || "127.0.0.1:9080";
   const endpoint = new URL("http://" + host);
@@ -68,6 +89,7 @@ async function main() {
             "tests/analytics.test.ts",
             "tests/firebase-configuration.test.ts",
             "tests/connection-settings.test.ts",
+            "tests/operations.test.ts",
           ]
         : ["playwright", "test", ...process.argv.slice(3)];
     const child = spawn("npx", command, { stdio: "inherit", env });

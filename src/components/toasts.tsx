@@ -6,7 +6,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -115,20 +114,34 @@ function Toast({
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const paused = hidden || hovered || focused;
-  const elapsed = useRef(message.duration - message.remaining.current);
+  const progress = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const paint = (remaining: number) => {
+      if (progress.current)
+        progress.current.style.transform = `scaleX(${Math.max(0, Math.min(1, remaining / message.duration))})`;
+    };
+    paint(message.remaining.current);
     if (paused) return;
     const started = performance.now();
+    const remaining = message.remaining.current;
+    let frame = 0;
+    const tick = () => {
+      paint(remaining - (performance.now() - started));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
     const timer = setTimeout(
       () => dismiss(message.id),
       message.remaining.current,
     );
     return () => {
       clearTimeout(timer);
+      cancelAnimationFrame(frame);
       message.remaining.current = Math.max(
         0,
-        message.remaining.current - (performance.now() - started),
+        remaining - (performance.now() - started),
       );
+      paint(message.remaining.current);
     };
   }, [message, paused, dismiss]);
   const Icon =
@@ -153,14 +166,8 @@ function Toast({
       onBlurCapture={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
       }}
-      style={
-        {
-          "--toast-duration": `${message.duration}ms`,
-          "--toast-elapsed": `${-elapsed.current}ms`,
-        } as CSSProperties
-      }
     >
-      <div className="toast-progress" aria-hidden="true" />
+      <div ref={progress} className="toast-progress" aria-hidden="true" />
       <Icon size={18} aria-hidden="true" />
       <span>{message.text}</span>
       <button

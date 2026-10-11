@@ -31,7 +31,7 @@ A aplicação não cria usuários nem sessões locais. Firebase Authentication, 
 2. Anúncios → Novo anúncio: selecionar loja, criar ou reutilizar um produto e informar a oferta. Produtos podem ter vários anúncios; o SKU não é uma chave única. Kits/variações exigem componentes de produtos já cadastrados.
 3. Ficha → Custos e preço: registrar cada custo, usando `0` somente quando o custo realmente for zero. Substituições específicas preservam zero; parâmetros não substituídos são herdados da loja.
 4. Precificação: preço, desconto e custos previstos recalculam ao digitar, sem Enter ou gravação. Os custos digitados podem entrar na proposta; Salvar para revisão faz o servidor recalcular, conferir versões e registrar o cenário sem alterar a condição atual.
-5. Visão geral → Revisar / avançar etapa: aprovação → solicitação → execução no ML/Bling → confirmação manual com evidência. O sistema não envia alterações externas. Dados ou parâmetros alterados após a proposta impedem sua aplicação; prepare uma nova proposta.
+5. Visão geral → Revisar / avançar etapa: aprovação → solicitação → execução no ML/Bling → confirmação manual com evidência. Para anúncio individual elegível, Aplicar preço no ML confere a tarifa, envia após confirmação e consulta o resultado. Outras mudanças seguem confirmação manual; dados ou parâmetros alterados exigem revisão.
 6. Histórico: consultar valores anteriores, novos valores, origem, responsável e retratos financeiros preservados. Atualizar custos não recalcula decisões passadas.
 
 Cadastros de tarefas e notas podem ser editados ou excluídos com confirmação e histórico preservado. Rascunhos sem vínculos também podem ser excluídos; anúncios em operação ou com propostas devem ser encerrados. A ficha permite corrigir nome, modelo, marca e categoria do produto compartilhado. Propostas que deixaram de fazer sentido podem ser canceladas com justificativa.
@@ -58,6 +58,10 @@ O menu **Análises** inclui visão geral, vendas, produtos, tráfego, financeiro
 
 **Análise ao vivo** acompanha o dia por hora, últimos pedidos e prioridades, com consulta a cada 60 segundos, pausa e tela cheia. As telas mostram a hora da consulta, cobertura e falhas. A contribuição é estimada com custos atuais, publicidade é conferida manualmente e recursos sem resposta do ML ficam indisponíveis. [Indicadores, origens e limites](docs/analytics.md).
 
+## Rotina integrada
+
+Hoje inclui vendas, contribuição prevista/ajustada com tarifa observada, tarefas operacionais e cobertura de estoque. Concorrência guarda referências, histórico observado, alertas e exportação. Webhooks acionam consultas verificadas em segundo plano; o cron diário exige uma única CRON_SECRET da infraestrutura. Fontes, limites e aplicação de preços: [docs/daily-operation.md](docs/daily-operation.md).
+
 ## Validar
 
 ```bash
@@ -67,7 +71,7 @@ npm run build
 npm run test:e2e
 ```
 
-Os comandos de teste iniciam e encerram o emulador na porta 9080 e verificam SHA-256 do artefato oficial. Um emulador existente pode ser informado por `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`. O teste de navegador inicia a build de produção na porta 3100 com projeto isolado no emulador. Usa Chromium em `/usr/bin/chromium`; em outra máquina, configure `PLAYWRIGHT_CHROMIUM_PATH` para seu executável. O teste cobre cadastro, filtros/retorno, custos, simulação, aprovação, confirmação, histórico, recarga, segunda sessão e layout móvel. Capturas e traces ficam em `test-results/`, ignorado pelo Git.
+Os comandos de teste iniciam e encerram o emulador na porta 9080 e verificam SHA-256 do artefato oficial. Um emulador existente pode ser informado por `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`. O teste de navegador inicia a build de produção na porta 3100 com projeto isolado no emulador. Usa Chromium em `/usr/bin/chromium`; em outra máquina, configure `PLAYWRIGHT_CHROMIUM_PATH` para seu executável. O teste real da extensão usa Chrome for Testing, instalado automaticamente pelo runner quando ausente; PLAYWRIGHT_BROWSERS_PATH permite reutilizar o cache. O teste cobre cadastro, filtros/retorno, custos, simulação, aprovação, confirmação, histórico, recarga, segunda sessão, skeletons, toasts, rotina e extensão. Capturas e traces ficam em `test-results/`, ignorado pelo Git.
 
 Os testes de domínio/serviço cobrem precisão decimal, campos vazios versus zero, bases de cálculo, limites inviáveis, isolamento de lojas, validação, produtos com vários anúncios, composição, idempotência, importação atômica, histórico imutável, CRUD e falhas externas. A revisão de layout percorre telas e abas em seis larguras, de 320 a 1440 pixels, incluindo formulários, navegação e filtros. Veja [validação](docs/validation.md) e [revisão funcional](docs/review.md) para os resultados e limites da implementação.
 
@@ -95,7 +99,7 @@ Credenciais ML são cadastradas por loja em **Configurações → Integrações*
 
 Avisos temporários aparecem em toasts sobrepostos com uma barra superior de tempo restante, fechamento manual e pausa ao passar o mouse, focar pelo teclado ou sair da aba. Eles não deslocam o conteúdo nem tomam o foco. Ao salvar, a página permanece visível durante a atualização; erros dentro de modais usam a mesma experiência.
 
-Fora do escopo concluído: validação da integração com contas reais, escrita externa, gestão de outras organizações pela interface, identidade/permissões do portal, extensão Chrome e consultas de grandes volumes com paginação Firestore. A separação por organização existe no banco e nas validações; novas lojas podem ser adicionadas na organização atual.
+Fora do escopo concluído: validação operacional com contas reais, escrita de conteúdo/estoque e variações individuais, gestão de outras organizações pela interface, identidade/permissões do portal e consultas de grandes volumes com paginação Firestore. A separação por organização existe no banco e nas validações; novas lojas podem ser adicionadas na organização atual.
 
 ## Organização do código
 
@@ -109,7 +113,7 @@ Fora do escopo concluído: validação da integração com contas reais, escrita
 
 Veja [arquitetura e modelo](docs/architecture.md). A logo oficial foi obtida de `https://www.datamat.com.br/assets/datamat-horizontal-Cnr-y6m5.svg`; a geometria foi preservada. A aplicação operacional é independente do site institucional.
 
-Referências funcionais do Avantpro e plano da futura extensão: [docs/avantpro.md](docs/avantpro.md). A extensão ainda não foi implementada.
+Referências funcionais do Avantpro e plano da futura extensão: [docs/avantpro.md](docs/avantpro.md). Primeira extensão implementada: download em Configurações → Extensão, pareamento por loja, precificação ao digitar e captura assistida de referências. Instalação em [extension/README.md](extension/README.md).
 
 Precificação ao digitar, fórmulas auditadas e limites: [docs/pricing.md](docs/pricing.md). Pesquisa de ferramentas e prioridades por módulo: [docs/research-mercado-livre.md](docs/research-mercado-livre.md).
 

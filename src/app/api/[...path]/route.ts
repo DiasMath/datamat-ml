@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { workspaceActor, HttpError } from "@/server/access";
 import { initializeDatabase, DatabaseConfigurationError } from "@/server/db";
@@ -6,6 +6,15 @@ import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
 import { receiveNotification } from "@/server/ml-notifications";
 import { analyticsReport, refreshAnalytics } from "@/server/analytics";
+import {
+  routineReport,
+  refreshRoutine,
+  routineTask,
+  authorizeCron,
+} from "@/server/routine";
+import * as competitors from "@/server/competitors";
+import * as extension from "@/server/extension";
+import { applyApprovedPrice } from "@/server/ml-price-application";
 import { csvCell } from "@/domain/csv";
 import {
   offersWorkbook,
@@ -29,12 +38,13 @@ async function handle(req: NextRequest, context: Context) {
   try {
     const { path } = await context.params;
     const [resource, key, action] = path;
+    const extensionRequest = resource === "extension";
     const notification =
       resource === "mercadolivre" &&
       key === "notifications" &&
       path.length === 2 &&
       req.method === "POST";
-    if (req.method !== "GET" && !notification) {
+    if (req.method !== "GET" && !notification && !extensionRequest) {
       const origin = req.headers.get("origin"),
         allowed = process.env.APP_URL || "http://localhost:3000";
       if (origin !== new URL(allowed).origin)
@@ -48,13 +58,70 @@ async function handle(req: NextRequest, context: Context) {
       body = text ? JSON.parse(text) : {};
     }
     await initializeDatabase();
-    if (notification) return response(await receiveNotification(body), 202);
+    if (notification) {
+      const queued = new Set<string>();
+      const result = await receiveNotification(body, (storeId) =>
+        queued.add(storeId),
+      );
+      if (queued.size)
+        after(async () => {
+          try {
+            const actor = await workspaceActor();
+            // The worker verifies official resources; webhook contents never update sales directly.
+            for (const store of queued)
+              await refreshRoutine(
+                actor,
+                new URLSearchParams({ store }),
+                120000 / queued.size,
+              );
+          } catch {
+            console.error(
+              "Falha no processamento da fila ML; a próxima atualização retomará as pendências",
+            );
+          }
+        });
+      return response(result, 202);
+    }
     if (resource === "auth" || resource === "users")
       throw new HttpError(
         404,
         "Login e usuários locais foram removidos; o acesso será integrado ao portal",
       );
     const actor = await workspaceActor();
+    if (extensionRequest) {
+      const extensionId = req.headers.get("x-datamat-extension");
+      const origin =
+        req.headers.get("origin") ||
+        (extensionId && /^[a-p]{32}$/.test(extensionId)
+          ? `chrome-extension://${extensionId}`
+          : null);
+      const deviceActor = await extension.extensionActor(
+        actor,
+        req.headers.get("authorization"),
+        origin,
+      );
+      if (req.method === "GET" && key === "offers" && path.length === 2)
+        return response(await extension.extensionOffers(deviceActor));
+      if (
+        req.method === "GET" &&
+        key === "offers" &&
+        action &&
+        path.length === 3
+      )
+        return response(await extension.extensionOffer(deviceActor, action));
+      if (req.method === "POST" && key === "captures" && path.length === 2)
+        return response(await extension.extensionCapture(deviceActor, body));
+      throw new HttpError(404, "Recurso não disponível para a extensão");
+    }
+    if (
+      req.method === "DELETE" &&
+      resource === "competitors" &&
+      key &&
+      path.length === 2
+    )
+      return response(
+        await competitors.changeCompetitor(actor, key, body, "delete"),
+      );
     if (
       resource === "mercadolivre" &&
       key === "callback" &&
@@ -108,6 +175,24 @@ async function handle(req: NextRequest, context: Context) {
         ),
       );
     if (req.method === "GET") {
+      if (resource === "competitors" && !key && path.length === 1)
+        return response(
+          await competitors.competitors(actor, req.nextUrl.searchParams),
+        );
+      if (resource === "extension-devices" && !key && path.length === 1)
+        return response(await extension.extensionDevices(actor));
+      if (resource === "routine" && !key && path.length === 1)
+        return response(await routineReport(actor, req.nextUrl.searchParams));
+      if (resource === "routine" && key === "scheduled" && path.length === 2) {
+        authorizeCron(req.headers.get("authorization"));
+        return response(
+          await refreshRoutine(
+            actor,
+            new URLSearchParams({ store: "all" }),
+            220000,
+          ),
+        );
+      }
       if (resource === "analytics" && !key)
         return response(await analyticsReport(actor, req.nextUrl.searchParams));
       if (resource === "workspace")
@@ -182,6 +267,55 @@ async function handle(req: NextRequest, context: Context) {
       }
     }
     if (req.method === "POST" || req.method === "PATCH") {
+      if (
+        resource === "proposals" &&
+        key &&
+        action === "apply-ml" &&
+        path.length === 3 &&
+        req.method === "POST"
+      )
+        return response(await applyApprovedPrice(actor, key, body));
+      if (
+        resource === "routine" &&
+        key === "task" &&
+        path.length === 2 &&
+        req.method === "POST"
+      )
+        return response(await routineTask(actor, body));
+      if (resource === "competitors" && !key && path.length === 1)
+        return response(await competitors.saveCompetitor(actor, body));
+      if (
+        resource === "competitors" &&
+        key &&
+        action === "dismiss" &&
+        path.length === 3
+      )
+        return response(
+          await competitors.changeCompetitor(actor, key, body, "dismiss"),
+        );
+      if (
+        resource === "competitors" &&
+        key &&
+        action === "task" &&
+        path.length === 3
+      )
+        return response(await competitors.competitorTask(actor, key));
+      if (resource === "extension-devices" && !key && path.length === 1)
+        return response(await extension.pairExtension(actor, body));
+      if (
+        resource === "extension-devices" &&
+        key &&
+        action === "revoke" &&
+        path.length === 3
+      )
+        return response(await extension.revokeExtension(actor, key));
+      if (
+        resource === "routine" &&
+        key === "refresh" &&
+        path.length === 2 &&
+        req.method === "POST"
+      )
+        return response(await refreshRoutine(actor, req.nextUrl.searchParams));
       if (
         resource === "connections" &&
         action === "application" &&

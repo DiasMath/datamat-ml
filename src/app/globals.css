@@ -952,19 +952,7 @@ tbody tr:hover {
   height: 3px;
   background: currentColor;
   transform-origin: left;
-  animation: toast-countdown var(--toast-duration) linear var(--toast-elapsed)
-    forwards;
-}
-.toast[data-paused] .toast-progress {
-  animation-play-state: paused;
-}
-@keyframes toast-countdown {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
+  transform: scaleX(1);
 }
 @keyframes toast-appear {
   from {
@@ -981,6 +969,155 @@ tbody tr:hover {
 }
 .workspace-data {
   display: contents;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.skeleton-layout {
+  min-width: 0;
+}
+.skeleton-bone {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 5px;
+  background: var(--line);
+  animation: skeleton-pulse 1.6s ease-in-out infinite alternate;
+}
+.skeleton-layout .stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 142px;
+}
+.skeleton-layout .stats-grid {
+  margin-bottom: 22px;
+}
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.skeleton-row > div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.skeleton-detail {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.skeleton-chart {
+  height: 250px;
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 30px 0 0;
+}
+.skeleton-chart > span {
+  flex: 1;
+  min-width: 0;
+}
+@keyframes skeleton-pulse {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+.routine-today {
+  margin-bottom: 22px;
+}
+.routine-details {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.routine-details > summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.routine-details table {
+  width: 100%;
+  min-width: 650px;
+}
+.routine-details th,
+.routine-details td {
+  padding: 13px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.routine-details td:first-child {
+  max-width: 290px;
+}
+.routine-signals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  font-size: 12px;
+}
+.routine-local-stats .stat-card {
+  padding: 15px;
+}
+.routine-local-stats .stat-card > strong {
+  font-size: 23px;
+  margin: 8px 0;
+}
+.routine-today .analytics-metric {
+  min-width: 0;
+}
+.routine-today .analytics-metric > strong {
+  display: block;
+}
+@media (max-width: 480px) {
+  .routine-today .analytics-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.negative {
+  color: var(--red);
+}
+.competitors-table {
+  width: 100%;
+  min-width: 700px;
+}
+.competitors-table th,
+.competitors-table td {
+  padding: 14px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.competitors-table td:first-child {
+  max-width: 290px;
+}
+.competitors-table small {
+  display: block;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.competitor-actions,
+.extension-pairing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 0;
+}
+.extension-pairing > .field {
+  flex: 1;
+  min-width: 200px;
+}
+.form-grid[disabled] {
+  border: 0;
+}
+fieldset.form-grid {
   border: 0;
   padding: 0;
   margin: 0;

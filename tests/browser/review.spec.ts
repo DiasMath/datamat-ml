@@ -252,7 +252,8 @@ test("all screens, detail tabs and forms fit desktop, tablet and small phones wi
     "/acoes?store=juntos-com",
     "/estudos?store=juntos-com",
     "/historico?store=juntos-com",
-    ...["stores", "integrations", "sync"].map(
+    "/concorrencia?store=juntos-com",
+    ...["stores", "integrations", "sync", "extension"].map(
       (t) => "/configuracoes?store=juntos-com&configTab=" + t,
     ),
     ...["overview", "content", "costs", "performance", "tasks", "history"].map(
@@ -264,7 +265,7 @@ test("all screens, detail tabs and forms fit desktop, tablet and small phones wi
     await page.setViewportSize({ width, height: 900 });
     for (const path of paths) {
       await page.goto(path);
-      await expect(page.locator(".loading-state")).not.toBeVisible();
+      await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
       await expect(page.locator("main")).toBeVisible();
       const size = await page.evaluate(() => ({
         viewport: innerWidth,
@@ -405,7 +406,7 @@ test("combined UI filters and batch status changes persist only the selected rec
   await category.locator("summary").click();
   await category.getByLabel("Categoria Lote UI", { exact: true }).click();
   await expect(page).toHaveURL(/category=Categoria/);
-  await expect(page.locator(".loading-state")).not.toBeVisible();
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   await category.locator("summary").click();
   const brand = page
     .locator(".multi-filter")
@@ -413,7 +414,7 @@ test("combined UI filters and batch status changes persist only the selected rec
   await brand.locator("summary").click();
   await brand.getByLabel("Marca Lote UI", { exact: true }).click();
   await expect(page).toHaveURL(/brand=Marca/);
-  await expect(page.locator(".loading-state")).not.toBeVisible();
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   await brand.locator("summary").click();
   await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
   await page.getByLabel("Selecionar anúncios desta página").check();
@@ -464,7 +465,7 @@ test("load failures clear stale data and provide a working retry", async ({
   page,
 }) => {
   await page.goto("/anuncios?store=juntos-com");
-  await expect(page.locator(".loading-state")).not.toBeVisible();
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   await page.route("**/api/workspace*", (route) =>
     route.fulfill({
       status: 503,

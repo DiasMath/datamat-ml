@@ -13,7 +13,7 @@
 - OAuth ML por loja, proteção/renovação dos tokens, importação em lotes, consulta de tarifas por preço, métricas por período e notificações, testados com respostas controladas; ativação real pendente.
 - Checklist que vira tarefa, prioridades operacionais explicáveis, indicadores de publicidade manuais e configuração de publicação na Vercel.
 - Pesquisa de ML, Real Trends, Nubimetrics, Avantpro e Bling com [prioridades por módulo](research-mercado-livre.md).
-- Pesquisa pública do Avantpro e [plano da futura extensão](avantpro.md), com limitações da comparação Free/Pro registradas.
+- Pesquisa pública do Avantpro e [referência e extensão implementada](avantpro.md), com limitações da comparação Free/Pro registradas.
 
 ## Ordem de conclusão
 
@@ -29,10 +29,14 @@
 
 ## O que falta para iniciar a rotina manual
 
-Conferir dados financeiros, cadastrar/importar anúncios reais e integrar/publicar pelo portal. A versão atual permite gestão manual no ambiente existente: cadastro, edição/exclusão permitida, custos, simulação, proposta, aprovação, confirmação, ações, notas e histórico. Alterações no ML/Bling continuam executadas fora da aplicação e confirmadas com evidência aqui.
+Conferir dados financeiros, cadastrar/importar anúncios reais e integrar/publicar pelo portal. A versão atual permite gestão manual no ambiente existente: cadastro, edição/exclusão permitida, custos, simulação, proposta, aprovação, confirmação, ações, notas e histórico. Preço de anúncio individual elegível pode ser aplicado por API após aprovação; demais alterações ML/Bling continuam externas com confirmação manual.
 
-Para concluir a rotina conectada, faltam a ativação/validação real do ML, os complementos de frete/promoções/escrita, Bling e a extensão acima. O Excel não substitui sincronização. A paginação visual não limita a leitura inicial do banco; bases grandes exigem consultas por cursor.
+Para concluir a rotina conectada, faltam a ativação/validação real do ML, frete/promoções, escrita de conteúdo/estoque e variações, Bling e expansão da extensão. O Excel não substitui sincronização. A paginação visual não limita a leitura inicial do banco; bases grandes exigem consultas por cursor.
 
 Dados necessários: anúncios/SKUs reais, custos/impostos/margens e base da comissão, aplicações/autorização ML e Bling, contrato do portal e eventual relatório/pipeline BI. Ver [review.md](review.md), [validation.md](validation.md) e [integrations.md](integrations.md).
 
-A preparação da Vercel está documentada em [vercel.md](vercel.md). O recebimento de notificações ainda não inclui worker automático; o processamento grande de pedidos, publicidade por API, conciliação e preços individuais de variação permanecem pendentes.
+A preparação da Vercel está documentada em [vercel.md](vercel.md). O recebimento de notificações inclui processamento verificado em segundo plano; cron diário exige CRON_SECRET compartilhada; o processamento grande de pedidos, publicidade por API, conciliação e preços individuais de variação permanecem pendentes.
+
+## Rotina integrada entregue
+
+Skeletons, toasts com relógio único, Hoje com vendas/margens/estoque/tarefas, processamento de notificações, aplicação de preço aprovado com conferência e concorrência com primeira extensão própria. Ver [fontes e limites](daily-operation.md).

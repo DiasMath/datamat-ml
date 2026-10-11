@@ -4,7 +4,10 @@ import { find, get, put, transaction, now, key } from "./db";
 
 // Notifications are signals, not authoritative item/order data. The official
 // resource is read with the seller token before any operational update.
-export async function receiveNotification(payload: unknown) {
+export async function receiveNotification(
+  payload: unknown,
+  queued?: (storeId: string) => void,
+) {
   const body = z
     .object({
       _id: z.string().max(200).optional(),
@@ -58,7 +61,12 @@ export async function receiveNotification(payload: unknown) {
         body.resource,
         String(body.user_id),
       );
-      const events = (old?.events || []) as Array<Record<string, unknown>>;
+      const events = (
+        old?.auth_version == null ||
+        old.auth_version === (current.auth_version || 0)
+          ? old?.events || []
+          : []
+      ) as Array<Record<string, unknown>>;
       if (events.some((e) => e.id === eventId)) return;
       const event = {
         id: eventId,
@@ -77,12 +85,14 @@ export async function receiveNotification(payload: unknown) {
           ),
         ].slice(0, 100),
         updated_at: now(),
+        auth_version: current.auth_version || 0,
       });
       await put("connections", c.id, {
         ...current,
         last_notification_at: now(),
         notification_hint: true,
       });
+      queued?.(c.store_id);
     });
   return { accepted: true };
 }

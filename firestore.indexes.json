@@ -65,6 +65,11 @@
       "collectionGroup": "ml_analytics",
       "fieldPath": "data_json",
       "indexes": []
+    },
+    {
+      "collectionGroup": "competitors",
+      "fieldPath": "history",
+      "indexes": []
     }
   ]
 }

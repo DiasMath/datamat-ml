@@ -71,7 +71,7 @@ No site, selecionar a loja, cadastrar **ID do aplicativo** e **Chave secreta**, 
 
 As chaves dos aplicativos ficam cifradas em `ml_applications`, com proteção vinculada à conexão; workspace, exportações e histórico não contêm chaves ou ciphertext. Alterar ID/chave invalida os tokens e autorizações em andamento somente daquela loja. Um salvamento sem alteração preserva a autorização. A proteção usa a chave dedicada existente ou uma chave derivada da identidade administrativa Firebase via HKDF-SHA256. A rotação dessa identidade, quando usada para cifrar, exige recadastrar as chaves e reconectar as contas ou planejar uma migração; manter a credencial anterior em backup seguro permite recuperar os dados. Na hospedagem com ADC sem chave administrativa exportável, usar a chave dedicada de instalação.
 
-As notificações são recebidas com resposta 202, validação de aplicação/recurso e deduplicação em caixa limitada. São sinais para consultar novamente os dados, não instruções para alterar preço ou estoque. Nesta etapa não há worker/cron que processe essa caixa automaticamente; a consulta é iniciada na interface.
+As notificações são recebidas com resposta 202, validação de aplicação/recurso e deduplicação em caixa limitada. São sinais para consultar novamente os dados, não instruções para alterar preço ou estoque. A caixa é processada por execução verificada após a notificação, atualização pela interface e cron diário protegido. A fila é retomável e não constitui um processo permanente; ver [rotina integrada](daily-operation.md).
 
 ## Verificações antes e depois
 
@@ -80,3 +80,7 @@ Antes: `npm run typecheck`, `npm test`, `npm run build` e `npm run test:e2e`. O 
 Depois: consultar `/api/workspace`, conferir ausência de erros da credencial, testar uma gravação própria a partir do domínio de produção e finalizar o OAuth pelo botão da loja. A integração real precisa validar os contratos/permissões da aplicação ML: as APIs/documentação oficiais retornaram 403 neste ambiente, e os testes de integração foram feitos com respostas simuladas controladas. O SDK oficial foi consultado para o fluxo OAuth.
 
 O usuário já publicou em `https://datamat-ml.vercel.app`. Na revisão da configuração, `/api/workspace` inicialmente retornou 503 por credencial administrativa ausente ou inválida; na conferência final, respondeu **200**. O arquivo administrativo original também passou na validação e autorizou uma leitura real do Firestore. Sem acesso autenticado ao painel Vercel, os valores cadastrados e a ação que corrigiu o deploy não puderam ser inspecionados. Alterações futuras das variáveis exigem Redeploy no painel. Previews devem usar credenciais e projeto Firestore de teste separados.
+
+## Rotina diária e extensão
+
+O build também gera o pacote público da extensão, sem credenciais. Download em Configurações → Extensão. O cron chama /api/routine/scheduled diariamente às 09:00 UTC (06:00 de Brasília). Configure uma CRON_SECRET aleatória em Production e faça Redeploy para autorizar o cron; sem ela a rota responde 503 e não executa. As credenciais de cada loja continuam no próprio site. Webhooks e atualização da tela funcionam sem CRON_SECRET. Ver [rotina integrada](daily-operation.md).

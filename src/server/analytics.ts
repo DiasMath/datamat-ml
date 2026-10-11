@@ -95,7 +95,7 @@ function blank(store: Row, connection?: Row): StoreAnalysis {
     error: null,
   };
 }
-export async function analyticsReport(actor: Actor, query: URLSearchParams) {
+export async function analyticsSources(actor: Actor, query: URLSearchParams) {
   const range = rangeFromQuery(query);
   const sources: StoreAnalysis[] = [];
   for (const store of selectedStores(actor, query)) {
@@ -118,7 +118,13 @@ export async function analyticsReport(actor: Actor, query: URLSearchParams) {
       error: snapshot?.last_error || null,
     });
   }
-  return aggregateAnalytics(sources, range);
+  return sources;
+}
+export async function analyticsReport(actor: Actor, query: URLSearchParams) {
+  return aggregateAnalytics(
+    await analyticsSources(actor, query),
+    rangeFromQuery(query),
+  );
 }
 async function collectStore(
   actor: Actor,
@@ -208,6 +214,18 @@ async function collectStore(
                       p,
                     )
                   : null;
+              const actualFeeCalculation =
+                calculation && line.sale_fee != null
+                  ? calculate(
+                      String(line.unit_price),
+                      {
+                        ...JSON.parse(costs!.data_json),
+                        mlPercent: "0",
+                        mlFixed: String(line.sale_fee),
+                      },
+                      p,
+                    )
+                  : null;
               return {
                 itemId: line.item.id,
                 title: line.item.title || offer?.title || line.item.id,
@@ -222,6 +240,11 @@ async function collectStore(
                     ? calculation.margin
                     : null,
                 offerId: offer?.id || null,
+                actualFeeContribution:
+                  actualFeeCalculation && !actualFeeCalculation.pending.length
+                    ? actualFeeCalculation.margin
+                    : null,
+                minMargin: p?.minMargin ?? null,
               };
             }),
           };
@@ -351,6 +374,7 @@ async function collectStore(
         ),
       ];
       const statuses: Record<string, number> = {};
+      const entries: NonNullable<StoreAnalysis["shipping"]>["entries"] = [];
       let sampled = 0;
       for (let i = 0; i < Math.min(shipmentIds.length, 20); i += 5) {
         const shipments = await Promise.allSettled(
@@ -365,6 +389,14 @@ async function collectStore(
               id: z.number(),
               sender_id: z.number(),
               status: z.string().min(1),
+              substatus: z.string().nullish(),
+              shipping_option: z
+                .object({
+                  estimated_handling_limit: z
+                    .object({ date: z.string().nullish() })
+                    .nullish(),
+                })
+                .nullish(),
             })
             .safeParse(result.value);
           if (
@@ -375,11 +407,32 @@ async function collectStore(
             sampled++;
             statuses[shipping.data.status] =
               (statuses[shipping.data.status] || 0) + 1;
+            const rawDeadline =
+              shipping.data.shipping_option?.estimated_handling_limit?.date;
+            const handlingDeadline =
+              rawDeadline && Number.isFinite(Date.parse(rawDeadline))
+                ? rawDeadline
+                : null;
+            entries.push({
+              id: String(shipping.data.id),
+              status: shipping.data.status,
+              substatus: shipping.data.substatus || null,
+              handlingDeadline,
+              late:
+                !!handlingDeadline &&
+                Date.parse(handlingDeadline) < Date.now() &&
+                ["handling", "ready_to_ship"].includes(shipping.data.status),
+            });
           }
         });
       }
       if (sampled > 0 || shipmentIds.length === 0)
-        source.shipping = { sampled, total: shipmentIds.length, statuses };
+        source.shipping = {
+          sampled,
+          total: shipmentIds.length,
+          statuses,
+          entries,
+        };
       if (sampled < shipmentIds.length)
         source.warnings.push(
           "Logística: amostra de até 20 envios recentes por loja; não representa todos os envios.",
@@ -390,10 +443,13 @@ async function collectStore(
     deadline,
   );
 }
-export async function refreshAnalytics(actor: Actor, query: URLSearchParams) {
+export async function refreshAnalytics(
+  actor: Actor,
+  query: URLSearchParams,
+  deadline = Date.now() + 220000,
+) {
   canWrite(actor);
-  const range = rangeFromQuery(query),
-    deadline = Date.now() + 220000;
+  const range = rangeFromQuery(query);
   for (const store of selectedStores(actor, query)) {
     const connectionId = key(store.id, "mercadolivre"),
       connection = await get("connections", connectionId);

@@ -49,6 +49,11 @@ export async function applyApprovedPrice(
         409,
         "Outra aplicação está em andamento neste anúncio",
       );
+    if (offer?.ml_status_uncertain)
+      throw new HttpError(
+        409,
+        "Confira a ativação ou pausa pendente antes de aplicar preço",
+      );
     if (
       !offer ||
       offer.origin === "reference" ||

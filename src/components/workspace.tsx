@@ -1,4 +1,6 @@
 "use client";
+import { useSmartTable } from "./smart-table";
+import BulkOffers from "./bulk-offers";
 import { ListingChecklist, MarketplacePerformance } from "./marketplace-panels";
 import Analytics from "./analytics";
 import { useToast, useToastMessage } from "./toasts";
@@ -169,6 +171,7 @@ export default function Workspace({ view }: { view: string[] }) {
     "page",
     "pageSize",
     "sort",
+    "sortDir",
     "taskPage",
     "taskSize",
     "historyPage",
@@ -699,6 +702,31 @@ export default function Workspace({ view }: { view: string[] }) {
                       </div>
                       <div className="heading-actions">
                         <Badge value={detail.offer.status} />
+                        {canWrite &&
+                          detail.mlConnection?.status === "connected" &&
+                          detail.offer.origin !== "reference" &&
+                          /^MLB\d+$/.test(detail.offer.ml_id || "") && (
+                            <button
+                              className="button"
+                              onClick={() =>
+                                open("batch", {
+                                  ids: [detail.offer.id],
+                                  action: detail.offer.ml_status_target
+                                    ? "ml-" + detail.offer.ml_status_target
+                                    : detail.offer.status === "active"
+                                      ? "ml-paused"
+                                      : "ml-active",
+                                })
+                              }
+                            >
+                              {detail.offer.ml_status_uncertain
+                                ? "Conferir situação no ML"
+                                : detail.offer.status === "active"
+                                  ? "Pausar no ML"
+                                  : "Ativar no ML"}
+                            </button>
+                          )}
+
                         {canWrite && (
                           <button
                             className="button"
@@ -1243,48 +1271,24 @@ export default function Workspace({ view }: { view: string[] }) {
             />
           )}
           {modal.type === "batch" && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                mutate(
-                  "/api/offers/batch",
-                  { ids: selection, status: string(f, "status") },
-                  "Situação atualizada para os anúncios selecionados.",
-                  true,
-                ).then((ok) => {
-                  if (ok) setSelection([]);
-                });
+            <BulkOffers
+              data={data}
+              ids={modal.record?.ids || selection}
+              initialAction={modal.record?.action || "edit"}
+              busy={busy}
+              onBusy={setBusy}
+              onDirty={() => setDirty(true)}
+              onChanged={() => {
+                setDirty(false);
+                setRefresh((v) => v + 1);
               }}
-            >
-              <div className="alert">
-                A operação altera a situação do cadastro local. Nenhuma mudança
-                será enviada ao Mercado Livre.
-              </div>
-              <h3>{selection.length} anúncios selecionados</h3>
-              <ul className="selected-list">
-                {data.offerChoices
-                  .filter((o: Row) => selection.includes(o.id))
-                  .map((o: Row) => (
-                    <li key={o.id}>
-                      {o.store_name} · {o.title} · {o.sku || "Sem SKU"}
-                    </li>
-                  ))}
-              </ul>
-              <Field label="Nova situação">
-                <select name="status">
-                  {["paused", "active", "draft", "closed"].map((v) => (
-                    <option key={v} value={v}>
-                      {labels[v]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div className="form-footer">
-                <span>Confira o conjunto acima antes de confirmar.</span>
-                <Submit busy={busy} label="Confirmar alteração em lote" />
-              </div>
-            </form>
+              onDone={() => {
+                setSelection([]);
+                setDirty(false);
+                setModal(null);
+                setRefresh((v) => v + 1);
+              }}
+            />
           )}
           {modal.type === "convert" && (
             <form
@@ -1365,7 +1369,7 @@ function modalTitle(modal: { type: string; record?: Row }) {
       parameters: "Parâmetros financeiros",
       import: "Importar anúncios",
       decision: "Revisão e aplicação da proposta",
-      batch: "Alterar situação em lote",
+      batch: "Ações em lote",
       convert: "Transformar nota em tarefa",
       store: modal.record ? "Editar loja" : "Adicionar loja",
       delete: "Confirmar exclusão",
@@ -1697,7 +1701,8 @@ function Offers({
     [input, setInput] = useState(q.get("q") || "");
   const scrollArea = useRef<HTMLDivElement>(null);
   const selectionQuery = new URLSearchParams(query);
-  for (const key of ["page", "pageSize", "sort"]) selectionQuery.delete(key);
+  for (const key of ["page", "pageSize", "sort", "sortDir"])
+    selectionQuery.delete(key);
   const selectionKey = selectionQuery.toString();
   useEffect(() => {
     setInput(new URLSearchParams(query).get("q") || "");
@@ -1713,24 +1718,91 @@ function Offers({
         : 1,
     ),
     size = pageSize(q.get("pageSize"));
-  const sorted = [...data.offers].sort((a: Row, b: Row) =>
-    sort === "price"
-      ? Number(b.price || 0) - Number(a.price || 0)
-      : sort === "name"
-        ? a.title.localeCompare(b.title, "pt-BR")
-        : b.updated_at.localeCompare(a.updated_at),
+  const table = useSmartTable<Row>(
+    "offers",
+    data.offers,
+    [
+      ...(canWrite
+        ? [{ id: "select", label: "", width: 44, fixed: true }]
+        : []),
+      {
+        id: "name",
+        label: "Anúncio / produto",
+        width: 290,
+        value: (o) => o.title,
+      },
+      { id: "store", label: "Loja", width: 125, value: (o) => o.store_name },
+      {
+        id: "brand",
+        label: "Marca / categoria",
+        width: 165,
+        value: (o) => [o.brand, o.category].filter(Boolean).join(" · "),
+      },
+      {
+        id: "sku",
+        label: "SKU / código ML",
+        width: 160,
+        value: (o) => o.sku || o.ml_id,
+      },
+      {
+        id: "status",
+        label: "Situação",
+        width: 120,
+        value: (o) => labels[o.status],
+      },
+      {
+        id: "price",
+        label: "Preço atual",
+        width: 140,
+        kind: "number",
+        value: (o) => o.price,
+      },
+      {
+        id: "pending",
+        label: "Pendências",
+        width: 130,
+        kind: "number",
+        value: (o) => o.pending.length,
+      },
+      {
+        id: "updated",
+        label: "Atualizado",
+        width: 165,
+        kind: "date",
+        value: (o) => o.updated_at,
+      },
+      { id: "open", label: "", width: 48, fixed: true },
+    ],
+    {
+      sort: {
+        id: sort,
+        direction:
+          q.get("sortDir") === "asc" || (!q.get("sortDir") && sort === "name")
+            ? "asc"
+            : "desc",
+      },
+      onSort: (next) => {
+        const params = new URLSearchParams(query);
+        params.set("sort", next.id);
+        params.set("sortDir", next.direction);
+        params.delete("page");
+        navigate("anuncios", params);
+      },
+    },
   );
+  const sorted = table.rows;
   const pages = Math.max(1, Math.ceil(sorted.length / size)),
     current = Math.min(page, pages),
     rows = sorted.slice((current - 1) * size, current * size);
   useEffect(() => {
     scrollArea.current?.scrollTo({ top: 0 });
-  }, [current, size, sort, selectionKey]);
+  }, [current, size, sort, q.get("sortDir"), selectionKey]);
   function update(key: string, values: string[]) {
     const p = new URLSearchParams(query);
     p.delete(key);
     for (const v of values) p.append(key, v);
     p.delete("page");
+    if (key === "sort") p.delete("sortDir");
     navigate("anuncios", p);
   }
   const chips = [...q.entries()].filter(([k]) =>
@@ -1893,7 +1965,7 @@ function Offers({
         <div>
           {selected.length > 0 && canWrite && (
             <button className="button compact" onClick={onBatch}>
-              Alterar situação em lote
+              Ações em lote
             </button>
           )}
           <label className="sort-label">
@@ -1905,7 +1977,12 @@ function Offers({
             >
               <option value="updated">Última atualização</option>
               <option value="name">Produto A–Z</option>
-              <option value="price">Maior preço</option>
+              <option value="price">Preço</option>
+              <option value="store">Loja</option>
+              <option value="brand">Marca / categoria</option>
+              <option value="sku">SKU / código ML</option>
+              <option value="status">Situação</option>
+              <option value="pending">Pendências</option>
             </select>
           </label>
         </div>
@@ -1918,53 +1995,39 @@ function Offers({
           aria-label="Lista de anúncios"
           tabIndex={0}
         >
-          <table className="offers-table">
-            <thead>
-              <tr>
-                {canWrite && (
-                  <th className="check-cell">
-                    <input
-                      type="checkbox"
-                      aria-label="Selecionar anúncios desta página"
-                      checked={
-                        rows.length > 0 &&
-                        rows.every((o: Row) => selected.includes(o.id))
-                      }
-                      disabled={
-                        !rows.every((o: Row) => selected.includes(o.id)) &&
-                        selected.length +
-                          rows.filter((o: Row) => !selected.includes(o.id))
-                            .length >
-                          100
-                      }
-                      onChange={(e) =>
-                        setSelected(
-                          e.target.checked
-                            ? [
-                                ...new Set([
-                                  ...selected,
-                                  ...rows.map((o: Row) => o.id),
-                                ]),
-                              ]
-                            : selected.filter(
-                                (id) => !rows.some((o: Row) => o.id === id),
-                              ),
-                        )
-                      }
-                    />
-                  </th>
-                )}
-                <th>Anúncio / produto</th>
-                <th>Loja</th>
-                <th>Marca / categoria</th>
-                <th>SKU / código ML</th>
-                <th>Situação</th>
-                <th className="numeric">Preço atual</th>
-                <th>Pendências</th>
-                <th>Atualizado</th>
-                <th />
-              </tr>
-            </thead>
+          <table className="offers-table smart-table" {...table.props}>
+            {table.header({
+              select: (
+                <input
+                  type="checkbox"
+                  aria-label="Selecionar anúncios desta página"
+                  checked={
+                    rows.length > 0 &&
+                    rows.every((o: Row) => selected.includes(o.id))
+                  }
+                  disabled={
+                    !rows.every((o: Row) => selected.includes(o.id)) &&
+                    selected.length +
+                      rows.filter((o: Row) => !selected.includes(o.id)).length >
+                      100
+                  }
+                  onChange={(e) =>
+                    setSelected(
+                      e.target.checked
+                        ? [
+                            ...new Set([
+                              ...selected,
+                              ...rows.map((o: Row) => o.id),
+                            ]),
+                          ]
+                        : selected.filter(
+                            (id) => !rows.some((o: Row) => o.id === id),
+                          ),
+                    )
+                  }
+                />
+              ),
+            })}
             <tbody>
               {rows.map((o: Row) => (
                 <tr
@@ -3144,6 +3207,44 @@ function Configuration({
   busy: boolean;
   query: string;
 }) {
+  const ownershipRows = [
+    [
+      "Produto, SKU e estoque",
+      "Bling",
+      "Bling → ML → aplicação. Sem escrita de estoque neste sistema.",
+    ],
+    [
+      "Preço e regra comercial",
+      "Cliente · aplicação pelo Bling/ML",
+      "Proposta aprovada → confirmação → aplicação de preço elegível por API → conferência. Demais cenários permanecem manuais.",
+    ],
+    [
+      "Título, descrição e publicação",
+      "ML / integração Bling validada",
+      "Importar estado atual. Propor alterações, sem sobrescrita automática.",
+    ],
+    [
+      "Tarifa e frete",
+      "Mercado Livre",
+      "ML → oferta. Revalidar quando o preço mudar.",
+    ],
+    [
+      "Custos, tarefas, notas e decisões",
+      "DATAMAT",
+      "Cadastro local → histórico e exportação BI.",
+    ],
+    ["Análises aprofundadas", "Power BI", "Exportação da base → Power BI."],
+  ];
+  const ownership = useSmartTable("fieldOwnership", ownershipRows, [
+    { id: "field", label: "Campo", width: 260, value: (r) => r[0] },
+    {
+      id: "owner",
+      label: "Sistema responsável",
+      width: 270,
+      value: (r) => r[1],
+    },
+    { id: "rule", label: "Direção / regra", width: 460, value: (r) => r[2] },
+  ]);
   const isAdmin = data.user.role === "admin";
   return (
     <>
@@ -3401,47 +3502,10 @@ function Configuration({
               </span>
             </div>
             <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Campo</th>
-                    <th>Sistema responsável</th>
-                    <th>Direção / regra</th>
-                  </tr>
-                </thead>
+              <table className="smart-table" {...ownership.props}>
+                {ownership.header()}
                 <tbody>
-                  {[
-                    [
-                      "Produto, SKU e estoque",
-                      "Bling",
-                      "Bling → ML → aplicação. Sem escrita de estoque neste sistema.",
-                    ],
-                    [
-                      "Preço e regra comercial",
-                      "Cliente · aplicação pelo Bling/ML",
-                      "Proposta → aprovação → execução externa → confirmação manual.",
-                    ],
-                    [
-                      "Título, descrição e publicação",
-                      "ML / integração Bling validada",
-                      "Importar estado atual. Propor alterações, sem sobrescrita automática.",
-                    ],
-                    [
-                      "Tarifa e frete",
-                      "Mercado Livre",
-                      "ML → oferta. Revalidar quando o preço mudar.",
-                    ],
-                    [
-                      "Custos, tarefas, notas e decisões",
-                      "DATAMAT",
-                      "Cadastro local → histórico e exportação BI.",
-                    ],
-                    [
-                      "Análises aprofundadas",
-                      "Power BI",
-                      "Exportação da base → Power BI.",
-                    ],
-                  ].map(([field, owner, rule]) => (
+                  {ownership.rows.map(([field, owner, rule]) => (
                     <tr key={field}>
                       <td>{field}</td>
                       <td>{owner}</td>
@@ -3452,9 +3516,8 @@ function Configuration({
               </table>
             </div>
             <p className="small muted">
-              A consulta do Mercado Livre é iniciada por loja e não envia
-              alterações ao marketplace. Não iniciar rotinas concorrentes antes
-              de validar a propriedade de cada campo.
+              A sincronização consulta dados por loja. Ativar, pausar e aplicar
+              preços enviam alterações ao ML após confirmação do operador.
             </p>
           </section>
           <section className="panel">

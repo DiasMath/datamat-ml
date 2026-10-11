@@ -1,4 +1,5 @@
 "use client";
+import { useSmartTable } from "./smart-table";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -242,6 +243,37 @@ export default function Analytics({
     store,
     configTab: "integrations",
   });
+  const storeTable = useSmartTable("analyticsStores", report?.stores || [], [
+    { id: "store", label: "Loja", width: 220, value: (r) => r.storeName },
+    {
+      id: "revenue",
+      label: "Receita",
+      width: 160,
+      kind: "number",
+      value: (r) => (r.observedAt ? r.summary.revenue : null),
+    },
+    {
+      id: "orders",
+      label: "Pedidos",
+      width: 130,
+      kind: "number",
+      value: (r) => (r.observedAt ? r.summary.paidOrders : null),
+    },
+    {
+      id: "ticket",
+      label: "Ticket",
+      width: 150,
+      kind: "number",
+      value: (r) => (r.observedAt ? r.summary.ticket : null),
+    },
+    {
+      id: "date",
+      label: "Consulta",
+      width: 180,
+      kind: "date",
+      value: (r) => r.observedAt,
+    },
+  ]);
   return (
     <section
       className={`analytics-module stack ${live ? "analytics-live" : ""}`}
@@ -625,18 +657,10 @@ export default function Analytics({
                     <section className="panel">
                       <h2>Comparativo entre lojas</h2>
                       <div className="analytics-table-wrap">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Loja</th>
-                              <th>Receita</th>
-                              <th>Pedidos</th>
-                              <th>Ticket</th>
-                              <th>Consulta</th>
-                            </tr>
-                          </thead>
+                        <table className="smart-table" {...storeTable.props}>
+                          {storeTable.header()}
                           <tbody>
-                            {report?.stores.map((s) => (
+                            {storeTable.rows.map((s) => (
                               <tr key={s.storeId}>
                                 <td>{s.storeName}</td>
                                 <td>
@@ -841,6 +865,27 @@ function SalesChart({
         ? money(value)
         : value.toLocaleString("pt-BR");
   const showPrevious = comparison && rows.some((r) => r.previous !== undefined);
+  const chartTable = useSmartTable("chart-" + label, rows, [
+    { id: "label", label: "Dia / hora", width: 180, value: (r) => r.label },
+    {
+      id: "current",
+      label: "Atual",
+      width: 170,
+      kind: "number" as const,
+      value: (r) => r.value,
+    },
+    ...(showPrevious
+      ? [
+          {
+            id: "previous",
+            label: "Anterior",
+            width: 170,
+            kind: "number" as const,
+            value: (r: (typeof rows)[number]) => r.previous,
+          },
+        ]
+      : []),
+  ]);
   return (
     <div className="analytics-chart">
       <svg viewBox="0 0 730 250" role="img" aria-label={label}>
@@ -918,16 +963,10 @@ function SalesChart({
       <details className="chart-data">
         <summary>Ver dados do gráfico</summary>
         <div className="analytics-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Dia / hora</th>
-                <th>Atual</th>
-                {showPrevious && <th>Anterior</th>}
-              </tr>
-            </thead>
+          <table className="smart-table" {...chartTable.props}>
+            {chartTable.header()}
             <tbody>
-              {rows.map((r, i) => (
+              {chartTable.rows.map((r, i) => (
                 <tr key={i}>
                   <td>{r.label}</td>
                   <td>{fmt(r.value)}</td>
@@ -1072,21 +1111,66 @@ function Products({
 }) {
   const [search, setSearch] = useState(""),
     [sort, setSort] = useState("revenue");
-  const rows = useMemo(
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const filtered = useMemo(
     () =>
-      (report?.available ? report.current.products : [])
-        .filter((p) =>
-          `${p.title} ${p.id}`
-            .toLocaleLowerCase("pt-BR")
-            .includes(search.toLocaleLowerCase("pt-BR")),
-        )
-        .sort(
-          (a, b) =>
-            Number(b[sort as "revenue" | "units"] || 0) -
-            Number(a[sort as "revenue" | "units"] || 0),
-        ),
-    [report, search, sort],
+      (report?.available ? report.current.products : []).filter((p) =>
+        `${p.title} ${p.id}`
+          .toLocaleLowerCase("pt-BR")
+          .includes(search.toLocaleLowerCase("pt-BR")),
+      ),
+    [report, search],
   );
+  const table = useSmartTable(
+    "analyticsProducts",
+    filtered,
+    [
+      { id: "title", label: "Produto", width: 300, value: (r) => r.title },
+      {
+        id: "store",
+        label: "Loja",
+        width: 160,
+        value: (r) => stores.find((s) => s.id === r.storeId)?.name,
+      },
+      {
+        id: "revenue",
+        label: "Receita",
+        width: 160,
+        kind: "number",
+        value: (r) => r.revenue,
+      },
+      {
+        id: "units",
+        label: "Unidades",
+        width: 130,
+        kind: "number",
+        value: (r) => r.units,
+      },
+      {
+        id: "share",
+        label: "Participação",
+        width: 150,
+        kind: "number",
+        value: (r) => r.revenue,
+      },
+      {
+        id: "contribution",
+        label: "Contribuição estimada",
+        width: 190,
+        kind: "number",
+        value: (r) => r.contribution,
+      },
+    ],
+    {
+      sort: { id: sort, direction: sortDirection },
+      pageId: "analyticsProducts",
+      onSort: (s) => {
+        setSort(s.id);
+        setSortDirection(s.direction);
+      },
+    },
+  );
+  const rows = table.rows;
   return (
     <section className="panel">
       <h2>Produtos que sustentam a operação</h2>
@@ -1099,31 +1183,32 @@ function Products({
           />
         </Field>
         <Field label="Ordenar produtos">
-          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+          <select
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value);
+              setSortDirection("desc");
+            }}
+          >
             <option value="revenue">Maior receita</option>
             <option value="units">Mais unidades</option>
             <option value="contribution">Maior contribuição estimada</option>
+            <option value="title">Produto</option>
+            <option value="store">Loja</option>
+            <option value="share">Participação</option>
           </select>
         </Field>
       </div>
       {rows.length ? (
         <Collection
           id="analyticsProducts"
+          sortKey={table.sortKey}
           rows={rows}
           label="Produtos nas análises"
         >
           {(page) => (
-            <table>
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>Loja</th>
-                  <th>Receita</th>
-                  <th>Unidades</th>
-                  <th>Participação</th>
-                  <th>Contribuição estimada</th>
-                </tr>
-              </thead>
+            <table className="smart-table" {...table.props}>
+              {table.header()}
               <tbody>
                 {page.map((p) => (
                   <tr key={p.storeId + p.id}>

@@ -419,7 +419,7 @@ test("combined UI filters and batch status changes persist only the selected rec
   await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
   await page.getByLabel("Selecionar anúncios desta página").check();
   await page
-    .getByRole("button", { name: "Alterar situação em lote", exact: true })
+    .getByRole("button", { name: "Ações em lote", exact: true })
     .click();
   const modal = page.getByRole("dialog");
   await modal.getByLabel("Nova situação").selectOption("closed");

@@ -781,6 +781,30 @@ export async function writeSellerPrice(
     body: JSON.stringify({ price: Number(price) }),
   });
 }
+export async function writeSellerStatus(
+  actor: Actor,
+  connectionId: string,
+  itemId: string,
+  status: "active" | "paused",
+) {
+  canWrite(actor);
+  const c = await connection(actor, connectionId);
+  if (
+    c.status !== "connected" ||
+    !c.external_account ||
+    !/^MLB\d+$/.test(itemId)
+  )
+    throw new HttpError(409, "Conta ou anúncio indisponível para alteração");
+  // A lost response must be verified through a read, never retried as a write.
+  await http(`/items/${itemId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${await accessToken(c)}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  });
+}
 const itemSchema = z.object({
   id: z.string().regex(/^MLB\d+$/),
   seller_id: z.number().int().positive(),

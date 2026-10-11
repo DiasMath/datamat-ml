@@ -72,10 +72,22 @@ export const noteSchema = z
     "Uma nota de anúncio precisa identificar sua loja",
   );
 export const storeSchema = z.object({ name: text });
-export const batchSchema = z.object({
-  ids: z.array(text).min(1).max(100),
-  status: z.enum(["paused", "active", "draft", "closed"]),
-});
+export const batchSchema = z
+  .object({
+    ids: z.array(text).min(1).max(100),
+    status: z.enum(["paused", "active", "draft", "closed"]).optional(),
+    titlePrefix: z.string().trim().max(80).optional(),
+    titleSuffix: z.string().trim().max(80).optional(),
+    description: z.string().max(15000).optional(),
+    versions: z.record(z.string(), z.number().int().positive()),
+    requestId: z.uuid(),
+  })
+  .strict()
+  .refine(
+    (p) =>
+      p.status || p.titlePrefix || p.titleSuffix || p.description !== undefined,
+    "Escolha uma alteração para o lote",
+  );
 export const proposalSchema = z.object({
   offerId: text,
   input: z.unknown(),

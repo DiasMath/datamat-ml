@@ -1,4 +1,5 @@
 "use client";
+import { useSmartTable } from "./smart-table";
 import { useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import { Activity, Pause, Play, RefreshCw } from "lucide-react";
@@ -149,6 +150,67 @@ export default function RoutineToday({
         storeName: s.storeName,
       })),
     ) || [];
+  const salesTable = useSmartTable("routineSales", data?.sales || [], [
+    {
+      id: "order",
+      label: "Pedido / produto",
+      width: 270,
+      value: (r) => r.id + " " + r.title,
+    },
+    {
+      id: "revenue",
+      label: "Receita",
+      width: 150,
+      kind: "number",
+      value: (r) => r.revenue,
+    },
+    {
+      id: "expected",
+      label: "Contribuição prevista",
+      width: 190,
+      kind: "number",
+      value: (r) => r.expected,
+    },
+    {
+      id: "observed",
+      label: "Contribuição ajustada*",
+      width: 190,
+      kind: "number",
+      value: (r) => r.observed,
+    },
+    {
+      id: "difference",
+      label: "Diferença",
+      width: 140,
+      kind: "number",
+      value: (r) => r.difference,
+    },
+  ]);
+  const stockTable = useSmartTable("routineStock", data?.stock || [], [
+    { id: "title", label: "Anúncio", width: 270, value: (r) => r.title },
+    {
+      id: "quantity",
+      label: "Estoque",
+      width: 130,
+      kind: "number",
+      value: (r) => r.quantity,
+    },
+    {
+      id: "units",
+      label: "Vendidos / 7 dias",
+      width: 175,
+      kind: "number",
+      value: (r) => r.units,
+    },
+    {
+      id: "coverage",
+      label: "Cobertura",
+      width: 150,
+      kind: "number",
+      value: (r) => r.coverage,
+    },
+    { id: "reason", label: "Leitura", width: 290, value: (r) => r.reason },
+  ]);
   return (
     <section className="routine-today panel">
       <div className="panel-heading">
@@ -322,20 +384,13 @@ export default function RoutineToday({
               </summary>
               <Collection
                 id="routineSales"
-                rows={data.sales}
+                sortKey={salesTable.sortKey}
+                rows={salesTable.rows}
                 label="Vendas e margem"
               >
                 {(rows) => (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Pedido / produto</th>
-                        <th>Receita</th>
-                        <th>Contribuição prevista</th>
-                        <th>Contribuição ajustada*</th>
-                        <th>Diferença</th>
-                      </tr>
-                    </thead>
+                  <table className="smart-table" {...salesTable.props}>
+                    {salesTable.header()}
                     <tbody>
                       {rows.map((s) => (
                         <tr key={s.storeId + s.id}>
@@ -394,20 +449,13 @@ export default function RoutineToday({
               </summary>
               <Collection
                 id="routineStock"
-                rows={data.stock}
+                sortKey={stockTable.sortKey}
+                rows={stockTable.rows}
                 label="Cobertura de estoque"
               >
                 {(rows) => (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Anúncio</th>
-                        <th>Estoque</th>
-                        <th>Vendidos / 7 dias</th>
-                        <th>Cobertura</th>
-                        <th>Leitura</th>
-                      </tr>
-                    </thead>
+                  <table className="smart-table" {...stockTable.props}>
+                    {stockTable.header()}
                     <tbody>
                       {rows.map((s) => (
                         <tr key={s.offerId}>

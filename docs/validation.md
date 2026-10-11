@@ -1,13 +1,13 @@
 # Validação da versão atual
 
-Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta revisão inclui rotina conectada do dia, aplicação elegível de preço aprovado, concorrência e primeira extensão própria, skeletons e contagem regressiva corrigida, além dos módulos existentes. Testes de negócio usam projetos aleatórios `demo-*` no emulador Firestore e não escrevem cadastros na base operacional `datamat-ml`.
+Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta revisão inclui cabeçalhos ordenáveis/redimensionáveis, edição/exclusão em lote e ativação/pausa no ML, além da rotina conectada do dia, aplicação elegível de preço aprovado, concorrência, primeira extensão própria, skeletons e contagem regressiva corrigida. Testes de negócio usam projetos aleatórios `demo-*` no emulador Firestore e não escrevem cadastros na base operacional `datamat-ml`.
 
 | Verificação              | Resultado                                                                                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                                |
-| Domínio e serviços       | `npm test`: **126 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **135 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                    |
-| Navegador Chromium       | `npm run test:e2e`: **43 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Navegador Chromium       | `npm run test:e2e`: **46 passaram**, nenhuma falha ou teste ignorado                                                                                       |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
 | Responsividade           | 17 telas/abas × 6 larguras: **102 combinações**, sem transbordamento horizontal do documento                                                               |
@@ -35,7 +35,7 @@ Capturas em `test-results/review/`, traces de falhas e relatórios são locais e
 
 O emulador verifica persistência e regras de negócio, sem garantir que todos os fluxos comerciais foram usados em uma conta real. O CRUD técnico anterior no Firebase real usou um único documento UUID em `_datamat_review_checks`, removido depois. A verificação atual não introduz anúncios/tarefas de teste no projeto real.
 
-OAuth/catálogo/tarifas/métricas ML foram implementados e testados com respostas controladas. Não foram autorizadas contas reais nem validados contratos/permissões na aplicação ML do usuário: API/documentação retornaram HTTP 403 neste ambiente. Bling, IA, inspeção autenticada das variáveis da publicação, portal, backup/restauração, pipeline Power BI e extensão permanecem pendentes. Regras publicadas do projeto real já negam acesso direto de clientes; índices versionados não foram publicados. Paginação é visual: a consulta inicial ainda carrega os registros das lojas selecionadas. Importação com vários lotes preserva os lotes concluídos, sem atomicidade do arquivo inteiro.
+OAuth/catálogo/tarifas/métricas e alterações ML foram implementados e testados com respostas controladas. Não foram autorizadas contas reais nem validados contratos/permissões na aplicação ML do usuário: API/documentação retornaram HTTP 403 neste ambiente. Bling, IA, inspeção autenticada das variáveis da publicação, portal, backup/restauração e pipeline Power BI permanecem pendentes. A primeira extensão está implementada e testada no Chrome; captura em páginas reais ainda precisa de conferência. Regras publicadas do projeto real já negam acesso direto de clientes; índices versionados não foram publicados. Paginação é visual: a consulta inicial ainda carrega os registros das lojas selecionadas. Importação com vários lotes preserva os lotes concluídos, sem atomicidade do arquivo inteiro.
 
 As fontes públicas do Avantpro foram pesquisadas, mas a experiência Free/Pro e a extensão paga não foram testadas. Veja [avantpro.md](avantpro.md), [roadmap.md](roadmap.md) e [README](../README.md).
 
@@ -105,3 +105,13 @@ Permissões e contratos do ML real ainda precisam ser conferidos com a conta aut
 - Conta juntos.data foi consultada em produção e ainda aparece **unauthorized**; juntos.com, **unconfigured**. Uso de dados reais exige Conectar conta ML. Nenhum preço real foi enviado durante os testes. Cron diário exige configurar CRON_SECRET uma vez na infraestrutura e republicar; credenciais de novas lojas continuam pelo site.
 
 Fontes, limites financeiros e operação: [daily-operation.md](daily-operation.md).
+
+## Cabeçalhos e operações em lote
+
+- Nove novos testes de negócio cobrem edição atômica com versões, reenvio idempotente, preservação de preços/custos, conflitos, isolamento, exclusão com dependências e histórico de referências, ativação/pausa confirmada, estoque zero, vendedor divergente, resultado parcial, leases concorrentes e recuperação de resposta incerta após recarga/notificação. PUT incerto nunca é reenviado automaticamente.
+- Três novos testes Chromium exercitam ordenação numérica do conjunto completo antes da paginação, dados desconhecidos no final, seleção entre páginas, largura arrastada/persistida/restaurada, teclado e ausência de novas consultas ao ordenar; edição/exclusão persistidas pelo SDK após recarga; resultados parciais e retomada de ações ML com a mesma operação e versões atualizadas para uma nova ação.
+- A revisão corrigiu o scroll das listas ao trocar de página: a posição é restaurada já no acionamento do controle. O teste também aguarda a navegação e a nova página antes de conferir o resultado.
+- A suíte completa de 46 cenários inclui a revisão de 102 combinações de telas/larguras. TypeScript, build de produção e 135 testes de negócio passaram. O diálogo em lote foi conferido em 320 px.
+- O fluxo de navegador de ativação/pausa usa respostas controladas e os testes de serviço simulam a API oficial. Nenhum anúncio real foi ativado, pausado ou teve preço alterado. Na última leitura de produção, juntos.data permanece `unauthorized` e juntos.com `unconfigured`; é necessário autorizar o vendedor pelo site.
+
+Uso, limites e diferenças entre cadastro local e marketplace: [tables-and-bulk.md](tables-and-bulk.md).

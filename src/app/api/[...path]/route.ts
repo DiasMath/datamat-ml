@@ -15,6 +15,7 @@ import {
 import * as competitors from "@/server/competitors";
 import * as extension from "@/server/extension";
 import { applyApprovedPrice } from "@/server/ml-price-application";
+import { batchListingStatus } from "@/server/ml-status";
 import { csvCell } from "@/domain/csv";
 import {
   offersWorkbook,
@@ -374,6 +375,20 @@ async function handle(req: NextRequest, context: Context) {
         req.method === "POST"
       )
         return response(await ml.createQualityTask(actor, key, body));
+      if (
+        resource === "offers" &&
+        key === "batch-delete" &&
+        path.length === 2 &&
+        req.method === "POST"
+      )
+        return response(await service.batchDeleteOffers(actor, body));
+      if (
+        resource === "offers" &&
+        key === "batch-ml-status" &&
+        path.length === 2 &&
+        req.method === "POST"
+      )
+        return response(await batchListingStatus(actor, body));
       if (resource === "offers" && key === "batch")
         return response(await service.batchOffers(actor, body));
       if (resource === "offers" && action === "costs")

@@ -39,3 +39,7 @@ A primeira extensão é gerada no build e baixada em **Configurações → Exten
 Parear pelo site → escolher loja → gerar código → colar na extensão. Token aleatório mostrado uma vez, guardado como hash no servidor, vinculado à origem, válido por 30 dias e revogável. Permite consultar ofertas/custos da loja e salvar referências, sem segredos ML/Firebase nem aprovação/envio de preços. O script de captura não recebe o token. O acesso principal ao site ainda aguarda a identidade verificada do portal.
 
 Instalação: [extension/README.md](../extension/README.md). Sem publicação na Chrome Web Store nesta etapa. Paridade completa Avantpro Free/Pro, editor, IA, tendências, publicador, Ads por API, conciliação, variações individuais e ERP continuam pendentes.
+
+## Tabelas e ações em lote
+
+Cabeçalhos ordenam antes de paginar, com ajuste de largura por arraste e restauração por duplo clique. Anúncios permite edição/exclusão local em lote e ativação/pausa real no ML, mediante confirmação e verificação por anúncio. Ver [fluxos, limites e retomada](tables-and-bulk.md).

@@ -86,9 +86,10 @@ export function stockCoverage(
         !!source?.connected &&
         source.sellerId === observed?.sellerId &&
         source.authVersion === observed?.authVersion;
+      const stockObserved = observed?.stockObservedAt || observed?.observedAt;
       const recentStock =
-        !!observed?.observedAt &&
-        clock.getTime() - Date.parse(observed.observedAt) <= 30 * 60_000;
+        !!stockObserved &&
+        clock.getTime() - Date.parse(stockObserved) <= 30 * 60_000;
       const recentSales =
         !!source?.observedAt &&
         clock.getTime() - Date.parse(source.observedAt) <= 86400000;

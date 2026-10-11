@@ -36,6 +36,8 @@ A aplicação não cria usuários nem sessões locais. Firebase Authentication, 
 
 Cadastros de tarefas e notas podem ser editados ou excluídos com confirmação e histórico preservado. Rascunhos sem vínculos também podem ser excluídos; anúncios em operação ou com propostas devem ser encerrados. A ficha permite corrigir nome, modelo, marca e categoria do produto compartilhado. Propostas que deixaram de fazer sentido podem ser canceladas com justificativa.
 
+As tabelas têm ordenação por cabeçalho, largura ajustável/restaurável e preferências de largura por navegador. Em Anúncios, Ações em lote permite editar até 100 cadastros, excluir até 40 rascunhos/referências sem vínculos e ativar/pausar anúncios próprios no ML, com confirmação e resultado individual. Inserção e atualização em massa continuam pela planilha. Ver [tabelas e operações em lote](docs/tables-and-bulk.md).
+
 O contexto atual tem acesso às lojas ativas da organização DATAMAT e pode cadastrar, aprovar e confirmar operações. O motor mantém verificações de papel e loja para a futura integração com o portal, mas ainda não identifica operadores individuais. Organização, papel e responsável enviados pelo navegador não são aceitos como identidade.
 
 ## Listas, importação e exportação

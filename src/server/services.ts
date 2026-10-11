@@ -1,6 +1,6 @@
 import { z } from "zod";
 import Decimal from "decimal.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   get,
   find,
@@ -281,6 +281,8 @@ async function saveOfferInside(
       409,
       "Mudanças de preço precisam de proposta e confirmação de aplicação",
     );
+  if (old?.ml_status_uncertain && old.status !== p.status)
+    throw new HttpError(409, "Confira a alteração de situação pendente no ML");
   if (p.type === "kit" && !p.components.length)
     throw new HttpError(
       422,
@@ -1037,6 +1039,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
         store_name: actor.stores.find((s) => s.id === o.store_id)?.name,
         costs_updated_at: c?.updated_at || null,
         pending: [
+          ...(o.ml_status_uncertain ? ["Conferir situação no ML"] : []),
           ...(!brand ? ["Sem marca"] : []),
           ...(!category ? ["Sem categoria"] : []),
           ...(!o.ml_id ? ["Sem código ML"] : []),
@@ -1158,24 +1161,112 @@ export async function batchOffers(actor: Actor, payload: unknown) {
   canWrite(actor);
   const p = batchSchema.parse(payload);
   return transaction(async () => {
-    for (const offerId of [...new Set(p.ids)]) {
-      const o = await getOffer(actor, offerId);
+    const op = await operation(actor, "batch-edit", p.requestId, p);
+    if (op.existing) return { count: new Set(p.ids).size };
+    const rows = await Promise.all(
+      [...new Set(p.ids)].map((offerId) => getOffer(actor, offerId)),
+    );
+    for (const o of rows) {
+      if (o.ml_apply_until > Date.now())
+        throw new HttpError(
+          409,
+          "Uma operação ML está em andamento; aguarde a conferência",
+        );
+      if (p.status && o.ml_status_uncertain)
+        throw new HttpError(
+          409,
+          "Confira a alteração de situação pendente no ML",
+        );
+      if (p.versions[o.id] !== o.version)
+        throw new HttpError(
+          409,
+          "Um anúncio mudou; recarregue antes de editar o lote",
+        );
+      const title = [p.titlePrefix, o.title, p.titleSuffix]
+        .filter(Boolean)
+        .join(" ");
+      if (title.length > 200)
+        throw new HttpError(
+          422,
+          "Um título excederia 200 caracteres; reduza o prefixo ou sufixo",
+        );
+    }
+    for (const o of rows) {
+      const offerId = o.id;
+      const changes: Row = {};
+      if (p.status) changes.status = p.status;
+      if (p.description !== undefined) changes.description = p.description;
+      if (p.titlePrefix || p.titleSuffix)
+        changes.title = [p.titlePrefix, o.title, p.titleSuffix]
+          .filter(Boolean)
+          .join(" ");
       await put("offers", offerId, {
         ...(await get("offers", offerId)),
-        status: p.status,
+        ...changes,
         version: o.version + 1,
         updated_at: now(),
       });
-      await log(
-        actor,
-        o.store_id,
-        offerId,
-        "status",
-        o.status,
-        p.status,
-        "Alteração em lote confirmada",
-      );
+      for (const [field, value] of Object.entries(changes))
+        await log(
+          actor,
+          o.store_id,
+          offerId,
+          field,
+          o[field],
+          value,
+          "Alteração em lote confirmada",
+        );
     }
+    await recordOperation(actor, op, p.ids[0], rows[0].store_id);
+    return { count: new Set(p.ids).size };
+  });
+}
+export async function batchDeleteOffers(actor: Actor, payload: unknown) {
+  canWrite(actor);
+  const p = z
+    .object({
+      ids: z.array(z.string().min(1)).min(1).max(40),
+      versions: z.record(z.string(), z.number().int().positive()),
+      requestId: z.uuid(),
+      confirmed: z.literal(true),
+    })
+    .strict()
+    .parse(payload);
+  return transaction(async () => {
+    const op = await operation(actor, "batch-delete", p.requestId, p);
+    if (op.existing) return { count: new Set(p.ids).size };
+    let writes = 1;
+    for (const offerId of [...new Set(p.ids)]) {
+      await getOffer(actor, offerId);
+      const children = await Promise.all([
+        find("components", { offer_id: offerId }),
+        find("simulations", { offer_id: offerId }),
+        find("competitors", { offer_id: offerId }),
+      ]);
+      writes += 6 + children.reduce((n, rows) => n + rows.length, 0);
+    }
+    if (writes > 400)
+      throw new HttpError(
+        422,
+        "O lote possui muitos registros vinculados; selecione menos anúncios para excluir",
+      );
+    let store = "";
+    for (const offerId of [...new Set(p.ids)]) {
+      const row = await getOffer(actor, offerId);
+      if (row.ml_apply_until > Date.now())
+        throw new HttpError(
+          409,
+          "Uma operação ML está em andamento; aguarde a conferência",
+        );
+      if (!p.versions[offerId])
+        throw new HttpError(409, "Confira a versão de todos os anúncios");
+      store = row.store_id;
+      await deleteRecord(actor, "offers", offerId, {
+        requestId: randomUUID(),
+        version: p.versions[offerId],
+      });
+    }
+    await recordOperation(actor, op, p.ids[0], store);
     return { count: new Set(p.ids).size };
   });
 }
@@ -1270,6 +1361,11 @@ export async function deleteRecord(
         "Registro alterado; recarregue antes de excluir",
       );
     if (collection === "offers") {
+      if (row.ml_apply_until > Date.now() || row.ml_status_uncertain)
+        throw new HttpError(
+          409,
+          "Confira a operação ML pendente antes de excluir",
+        );
       if (row.status !== "draft" && row.origin !== "reference")
         throw new HttpError(
           409,
@@ -1291,6 +1387,15 @@ export async function deleteRecord(
         }))
           await remove(collectionName, child.id);
       await remove("costs", documentId);
+      for (const reference of await find("competitors", {
+        offer_id: documentId,
+      }))
+        await put("competitors", reference.id, {
+          ...reference,
+          offer_id: null,
+          version: reference.version + 1,
+          updated_at: now(),
+        });
       if (row.ml_id)
         await release("offers.ml." + row.store_id, row.ml_id, documentId);
     }

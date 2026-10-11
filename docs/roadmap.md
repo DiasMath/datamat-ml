@@ -40,3 +40,7 @@ A preparação da Vercel está documentada em [vercel.md](vercel.md). O recebime
 ## Rotina integrada entregue
 
 Skeletons, toasts com relógio único, Hoje com vendas/margens/estoque/tarefas, processamento de notificações, aplicação de preço aprovado com conferência e concorrência com primeira extensão própria. Ver [fontes e limites](daily-operation.md).
+
+## Tabelas e ações em lote entregues
+
+Ordenação por cabeçalho, largura ajustável/restaurável, edição local e exclusão elegível em lote e ativação/pausa de anúncios próprios por API com conferência. Inserção continua pelo Excel. Publicar novos anúncios, enviar conteúdo/estoque e excluir anúncios reais por API permanecem pendentes. Ver [tabelas e operações em lote](tables-and-bulk.md).

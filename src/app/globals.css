@@ -3160,3 +3160,95 @@ h3,
     margin: 0;
   }
 }
+
+.smart-table {
+  table-layout: fixed;
+}
+.smart-table th {
+  position: sticky;
+  top: 0;
+  padding-right: 14px;
+  z-index: 2;
+}
+.smart-table th,
+.smart-table td {
+  overflow-wrap: anywhere;
+}
+.smart-table td {
+  overflow: hidden;
+}
+.smart-table td button,
+.smart-table td a {
+  max-width: 100%;
+}
+.column-sort {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.column-sort span {
+  min-width: 0;
+}
+.column-sort svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+.column-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  border-right: 2px solid transparent;
+}
+.column-resize:hover,
+.column-resize:focus-visible {
+  border-right-color: var(--orange);
+  background: rgba(255, 255, 255, 0.04);
+}
+.smart-table .offer-title {
+  max-width: 100%;
+}
+.offers-table.smart-table td:nth-child(2) {
+  min-width: 0;
+  max-width: none;
+}
+.offers-table.smart-table th:first-child,
+.offers-table.smart-table td:first-child {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.offers-table.smart-table th:last-child,
+.offers-table.smart-table td:last-child {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.smart-table th {
+  background: var(--surface);
+}
+.bulk-controls {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.bulk-results {
+  max-height: 300px;
+  margin: 18px 0;
+}
+.bulk-results .list-item {
+  gap: 14px;
+}

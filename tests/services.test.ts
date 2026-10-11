@@ -114,6 +114,11 @@ test("store isolation is enforced by server for reading, writing, filtering, bat
       await s.batchOffers(restricted, {
         ids: [offerId, secret.id],
         status: "active",
+        requestId: randomUUID(),
+        versions: {
+          [offerId]: (await s.getOffer(admin, offerId)).version,
+          [secret.id]: secret.version,
+        },
       }),
     /acesso/,
   );

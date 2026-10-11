@@ -1,4 +1,5 @@
 "use client";
+import { useSmartTable } from "./smart-table";
 import { useEffect, useRef, useState } from "react";
 import { Download, Plus } from "lucide-react";
 import { useToast } from "./toasts";
@@ -117,6 +118,64 @@ export default function Competitors({
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  const table = useSmartTable<Row>("competitors", rows || [], [
+    { id: "title", label: "Referência", width: 280, value: (r) => r.title },
+    {
+      id: "price",
+      label: "Preço observado",
+      width: 165,
+      kind: "number",
+      value: (r) => r.price,
+    },
+    {
+      id: "offer",
+      label: "Sua oferta",
+      width: 240,
+      value: (r) =>
+        data.offerChoices.find((o: Row) => o.id === r.offer_id)?.title,
+    },
+    {
+      id: "date",
+      label: "Última observação",
+      width: 185,
+      kind: "date",
+      value: (r) => r.observed_at,
+    },
+    {
+      id: "change",
+      label: "Mudança",
+      width: 180,
+      kind: "number",
+      value: (r) => r.alert?.delta,
+    },
+  ]);
+  const history = useSmartTable<Row>(
+    "competitorHistory",
+    modal?.history?.toReversed() || [],
+    [
+      {
+        id: "date",
+        label: "Data",
+        width: 185,
+        kind: "date",
+        value: (r) => r.observedAt,
+      },
+      {
+        id: "price",
+        label: "Preço",
+        width: 140,
+        kind: "number",
+        value: (r) => r.price,
+      },
+      {
+        id: "shipping",
+        label: "Frete",
+        width: 140,
+        kind: "number",
+        value: (r) => r.shipping,
+      },
+    ],
+  );
   return (
     <>
       <div className="section-heading">
@@ -164,20 +223,13 @@ export default function Competitors({
         <section className="panel">
           <Collection
             id="competitors"
-            rows={rows}
+            sortKey={table.sortKey}
+            rows={table.rows}
             label="Concorrentes acompanhados"
           >
             {(visible) => (
-              <table className="competitors-table">
-                <thead>
-                  <tr>
-                    <th>Referência</th>
-                    <th>Preço observado</th>
-                    <th>Sua oferta</th>
-                    <th>Última observação</th>
-                    <th>Mudança</th>
-                  </tr>
-                </thead>
+              <table className="competitors-table smart-table" {...table.props}>
+                {table.header()}
                 <tbody>
                   {visible.map((r) => {
                     const own = data.offerChoices.find(
@@ -384,16 +436,10 @@ export default function Competitors({
                   Histórico observado · {modal.history.length} registros
                 </summary>
                 <div className="collection-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Data</th>
-                        <th>Preço</th>
-                        <th>Frete</th>
-                      </tr>
-                    </thead>
+                  <table className="smart-table" {...history.props}>
+                    {history.header()}
                     <tbody>
-                      {modal.history.toReversed().map((h: Row, i: number) => (
+                      {history.rows.map((h: Row, i: number) => (
                         <tr key={i}>
                           <td>{date(h.observedAt)}</td>
                           <td>{money(h.price)}</td>

@@ -337,6 +337,8 @@ test("tasks, notes and history have bounded scroll areas and independent paginat
     await page
       .getByRole("button", { name: "Próxima página: " + scenario.label })
       .click();
+    await expect(page).toHaveURL(/Page=2/);
+    await expect(page.locator(".collection-pagination")).toContainText("2 /");
     await expect(page.locator(scenario.item)).toHaveCount(20);
     expect(await viewport.evaluate((el) => el.scrollTop)).toBe(0);
     await page.setViewportSize({ width: 360, height: 844 });

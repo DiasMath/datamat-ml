@@ -11,11 +11,13 @@ export default function Collection<T>({
   rows,
   label,
   children,
+  sortKey,
 }: {
   id: string;
   rows: T[];
   label: string;
   children: (rows: T[]) => ReactNode;
+  sortKey?: string;
 }) {
   const search = useSearchParams(),
     router = useRouter();
@@ -29,8 +31,9 @@ export default function Collection<T>({
   const viewport = useRef<HTMLDivElement>(null);
   useEffect(() => {
     viewport.current?.scrollTo({ top: 0 });
-  }, [page, size, search.toString()]);
+  }, [page, size, search.toString(), sortKey]);
   function change(key: string, value: number) {
+    viewport.current?.scrollTo({ top: 0 });
     const params = new URLSearchParams(search.toString());
     params.set(key, String(value));
     if (key.endsWith("Size")) params.delete(id + "Page");

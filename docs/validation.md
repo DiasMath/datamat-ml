@@ -170,4 +170,6 @@ O Drive substitui a ativação do Firebase Storage indicada na revisão anterior
 
 **Resultado desta revisão:** 179 testes de domínio/serviços e 65 testes Chromium passaram, sem falhas ou ignorados; TypeScript, build de produção e formatação passaram. A revisão inicial identificou a interceptação antiga e a classe comum ausente do novo skeleton; ambos foram corrigidos antes da suíte completa final. As capturas com dados disponíveis e sem consulta foram inspecionadas em desktop/celular.
 
+**Conferência em produção:** o commit `87219b4` foi publicado com sucesso na Vercel. A página e `GET /api/today?store=juntos-data` responderam 200. Com os mesmos 56 anúncios próprios pausados, o workspace retornou 547.179 bytes e Hoje 33.326 bytes, redução de **93,9% na resposta JSON**, sem alegação equivalente sobre tempo de carregamento. O relatório mostrou zero urgências/revisões e 56 anúncios em Preparar; a consulta de vendas disponível/completa informou zero pedidos pagos. A fila permaneceu na loja selecionada, sem catálogo completo, notas, histórico ou propostas na resposta. A conferência fez somente leituras, sem inserir dados sintéticos nem enviar mudanças ao ML.
+
 Uso e critérios: [daily-operation.md](daily-operation.md).

@@ -51,6 +51,7 @@ export default function Today({
   blocked,
   onUpdated,
   onOpen,
+  onPreview,
   onTask,
   navigate,
 }: {
@@ -59,6 +60,7 @@ export default function Today({
   blocked: boolean;
   onUpdated: (data: Row) => void;
   onOpen: (id: string, tab?: string) => void;
+  onPreview: (id: string, tab?: string) => void;
   onTask: (task: Row) => void;
   navigate: (path: string, query?: URLSearchParams) => void;
 }) {
@@ -647,9 +649,7 @@ export default function Today({
                   <button
                     className="today-thumbnail"
                     aria-label={`Abrir ${item.title}`}
-                    onClick={() =>
-                      onOpen(item.id, decisionsOnly ? "proposals" : item.tab)
-                    }
+                    onClick={() => onPreview(item.id)}
                   >
                     {item.thumbnail ? (
                       <MediaImage src={item.thumbnail} alt="" />
@@ -663,9 +663,7 @@ export default function Today({
                     <button
                       className="text-link today-title"
                       title={item.title}
-                      onClick={() =>
-                        onOpen(item.id, decisionsOnly ? "proposals" : item.tab)
-                      }
+                      onClick={() => onPreview(item.id)}
                     >
                       {item.title}
                     </button>

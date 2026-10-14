@@ -87,6 +87,8 @@ import Competitors from "./competitors";
 import ExtensionSettings from "./extension-settings";
 import { TitleWorkbench } from "./listing-diagnostics";
 import useCatalogPolling from "./use-catalog-polling";
+import OfferPreview from "./offer-preview";
+import CommandSearch from "./command-search";
 
 type Row = Record<string, any>;
 const navigation = [
@@ -129,6 +131,13 @@ export default function Workspace({ view }: { view: string[] }) {
     section = view[0] || "",
     offerId = section === "anuncios" ? view[1] : undefined;
   const [data, setData] = useState<Row | null>(null),
+    [navigationData, setNavigationData] = useState<Row | null>(null),
+    [preview, setPreview] = useState<{
+      id: string;
+      tab?: string;
+      canEdit: boolean;
+    } | null>(null),
+    [searchOpen, setSearchOpen] = useState(false),
     [detail, setDetail] = useState<Row | null>(null),
     [formWorkspace, setFormWorkspace] = useState<Row | null>(null),
     [loading, setLoading] = useState(true),
@@ -145,9 +154,11 @@ export default function Workspace({ view }: { view: string[] }) {
     data: Row;
   } | null>(null);
   const loadedContext = useRef("");
+  const [loadedScope, setLoadedScope] = useState("");
+  const previewChanged = useRef(false);
   const backgroundReload = useRef(false);
   const editing = useRef(false);
-  editing.current = busy || dirty || !!modal;
+  editing.current = busy || dirty || !!modal || !!preview || searchOpen;
   const reloadInBackground = useCallback((action: SetStateAction<number>) => {
     backgroundReload.current = true;
     setRefresh(action);
@@ -279,15 +290,56 @@ export default function Workspace({ view }: { view: string[] }) {
     ? new URLSearchParams({ store }).toString()
     : dataQuery.toString();
   const cacheKey = dataKey + (home ? ":today" : ":workspace");
+  const contentReady = loadedScope === `${section}:${store}:${offerId || ""}`;
+  const chrome = navigationData || data;
+  useEffect(() => {
+    const controller = new AbortController();
+    jsonRequest(
+      "/api/navigation?" + new URLSearchParams({ store }),
+      undefined,
+      "GET",
+      controller.signal,
+      "background",
+    )
+      .then((result) => {
+        if (!controller.signal.aborted) setNavigationData(result);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [store, refresh]);
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        event.altKey ||
+        event.key.toLowerCase() !== "k"
+      )
+        return;
+      event.preventDefault();
+      if (searchOpen) setSearchOpen(false);
+      else if (!document.querySelector("dialog[open]")) {
+        setMenu(false);
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [searchOpen]);
+  useEffect(() => {
+    setPreview(null);
+    setSearchOpen(false);
+    setModal(null);
+  }, [route, store]);
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
     const contextKey = cacheKey + ":" + (offerId || "");
+    const scopeKey = `${section}:${store}:${offerId || ""}`;
     const background =
       backgroundReload.current && loadedContext.current === contextKey;
     backgroundReload.current = false;
     if (!background) setLoading(true);
-    if (loadedContext.current !== contextKey) {
+    if (loadedScope !== scopeKey) {
       setData(null);
       setDetail(null);
     }
@@ -316,6 +368,7 @@ export default function Workspace({ view }: { view: string[] }) {
       .then(([d, o]) => {
         if (active && !(background && editing.current)) {
           loadedContext.current = contextKey;
+          setLoadedScope(scopeKey);
           workspaceCache.current = {
             key: cacheKey,
             revision: refresh,
@@ -330,6 +383,7 @@ export default function Workspace({ view }: { view: string[] }) {
         if (active && !controller.signal.aborted) {
           if (!background && (!home || loadedContext.current !== contextKey))
             setData(null);
+          setLoadedScope(scopeKey);
           setToast({ text: e.message, error: true });
           setLoading(false);
         }
@@ -338,7 +392,7 @@ export default function Workspace({ view }: { view: string[] }) {
       active = false;
       controller.abort();
     };
-  }, [cacheKey, offerId, refresh, home, dataKey]);
+  }, [cacheKey, offerId, refresh, home, dataKey, section, store]);
   useCatalogPolling({
     store,
     offerId,
@@ -351,7 +405,7 @@ export default function Workspace({ view }: { view: string[] }) {
           c.status === "connected" &&
           (store === "all" || c.store_id === store),
       ),
-    blocked: loading || busy || dirty || !!modal,
+    blocked: loading || busy || dirty || !!modal || !!preview || searchOpen,
     onReload: reloadInBackground,
   });
   useEffect(() => {
@@ -376,18 +430,15 @@ export default function Workspace({ view }: { view: string[] }) {
     setDirty(false);
     setMenu(false);
     setModal(null);
+    const targetQuery =
+      params ??
+      (path.split("/")[0] !== section
+        ? new URLSearchParams({ store })
+        : new URLSearchParams(query));
     startTransition(() =>
-      router.push(
-        "/" +
-          path +
-          (params?.toString()
-            ? "?" + params
-            : params
-              ? ""
-              : query
-                ? "?" + query
-                : ""),
-      ),
+      router.push("/" + path + (targetQuery.size ? "?" + targetQuery : ""), {
+        scroll: path !== route,
+      }),
     );
   }
   function changeParam(key: string, value: string) {
@@ -500,6 +551,23 @@ export default function Workspace({ view }: { view: string[] }) {
     if (initialTab) p.set("tab", initialTab);
     navigate("anuncios/" + key, p);
   }
+  function openPreview(id: string, initialTab?: string) {
+    if (busy || modal) return;
+    setSearchOpen(false);
+    setPreview({
+      id,
+      tab: initialTab,
+      canEdit:
+        !!chrome && chrome.user.role !== "viewer" && !dirty && !hasUnsaved(),
+    });
+  }
+  function closePreview() {
+    setPreview(null);
+    if (previewChanged.current && !dirty) {
+      previewChanged.current = false;
+      setRefresh((n) => n + 1);
+    }
+  }
   async function back() {
     const target = search.get("returnTo");
     let valid = false;
@@ -520,7 +588,7 @@ export default function Workspace({ view }: { view: string[] }) {
     if (target && valid) {
       if (await guard()) {
         setDirty(false);
-        router.push(target);
+        router.push(target, { scroll: false });
       }
     } else navigate("anuncios", new URLSearchParams({ store }));
   }
@@ -534,7 +602,7 @@ export default function Workspace({ view }: { view: string[] }) {
     : null;
   const restoredPosition = useRef("");
   useEffect(() => {
-    if (loading || offerId) return;
+    if (loading || !contentReady || offerId) return;
     const target = "/" + route + (query ? "?" + query : "");
     if (restoredPosition.current === target) return;
     restoredPosition.current = target;
@@ -558,8 +626,8 @@ export default function Workspace({ view }: { view: string[] }) {
       cancelAnimationFrame(frame);
       restoredPosition.current = "";
     };
-  }, [loading, offerId, route, query]);
-  const canWrite = !!data && data.user.role !== "viewer";
+  }, [loading, contentReady, offerId, route, query]);
+  const canWrite = contentReady && !!data && data.user.role !== "viewer";
   const title = offerId
     ? "Ficha do anúncio"
     : section === "analises" && view[1] === "ao-vivo"
@@ -605,16 +673,17 @@ export default function Workspace({ view }: { view: string[] }) {
               <n.icon size={18} />
               <span>{n.title}</span>
               {n.path === "acoes" &&
-                data &&
-                data.tasks.filter(
-                  (t: Row) => !["done", "cancelled"].includes(t.status),
-                ).length > 0 && (
+                chrome &&
+                (chrome.openTasks ??
+                  chrome.tasks?.filter(
+                    (t: Row) => !["done", "cancelled"].includes(t.status),
+                  ).length ??
+                  0) > 0 && (
                   <span className="nav-count">
-                    {
-                      data.tasks.filter(
+                    {chrome.openTasks ??
+                      chrome.tasks?.filter(
                         (t: Row) => !["done", "cancelled"].includes(t.status),
-                      ).length
-                    }
+                      ).length}
                   </span>
                 )}
               {n.path === "anuncios" && section === "anuncios" && (
@@ -628,7 +697,7 @@ export default function Workspace({ view }: { view: string[] }) {
             <span
               className={
                 "dot " +
-                (data?.connections.some(
+                (chrome?.connections.some(
                   (c: Row) =>
                     c.provider === "mercadolivre" && c.status === "connected",
                 )
@@ -639,7 +708,7 @@ export default function Workspace({ view }: { view: string[] }) {
             <span>
               Integrações
               <small>
-                {data?.connections.some(
+                {chrome?.connections.some(
                   (c: Row) =>
                     c.provider === "mercadolivre" && c.status === "connected",
                 )
@@ -663,13 +732,13 @@ export default function Workspace({ view }: { view: string[] }) {
           </div>
           <div className="user-card">
             <div className="avatar">
-              {data?.user.name?.slice(0, 2).toUpperCase() || "DM"}
+              {chrome?.user.name?.slice(0, 2).toUpperCase() || "DM"}
             </div>
             <span>
-              {data?.user.name || "DATAMAT"}
+              {chrome?.user.name || "DATAMAT"}
               <small>
-                {data ? (
-                  labels[data.user.role]
+                {chrome ? (
+                  labels[chrome.user.role]
                 ) : (
                   <LoaderCircle
                     size={12}
@@ -706,8 +775,21 @@ export default function Workspace({ view }: { view: string[] }) {
             <strong>{title}</strong>
           </div>
           <div className="topbar-actions">
+            <button
+              className="nav-search"
+              aria-label="Abrir busca rápida (Ctrl+K)"
+              title="Buscar anúncios · Ctrl+K ou ⌘K"
+              onClick={() => {
+                setMenu(false);
+                setSearchOpen(true);
+              }}
+            >
+              <Search size={16} aria-hidden="true" />
+              <span>Buscar anúncios</span>
+              <kbd>Ctrl K</kbd>
+            </button>
             <RequestLoading
-              busy={loading || busy || transitioning}
+              busy={loading || !contentReady || busy || transitioning}
               label={
                 mlAuthorization.connectionId
                   ? "Aguardando autorização…"
@@ -719,12 +801,12 @@ export default function Workspace({ view }: { view: string[] }) {
               <span className="sr-only">Loja global</span>
               <select
                 aria-label="Loja global"
-                disabled={transitioning || loading || busy}
+                disabled={busy}
                 value={store}
                 onChange={(e) => changeStore(e.target.value)}
               >
                 <option value="all">Todas as lojas autorizadas</option>
-                {data?.stores.map((s: Row) => (
+                {chrome?.stores.map((s: Row) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>
@@ -735,7 +817,7 @@ export default function Workspace({ view }: { view: string[] }) {
         </header>
         <main
           className={"content " + (home ? "today-content" : "")}
-          aria-busy={loading || busy}
+          aria-busy={loading || !contentReady || busy}
         >
           {!offerId && (
             <div className="page-heading">
@@ -852,7 +934,7 @@ export default function Workspace({ view }: { view: string[] }) {
               </div>
             </div>
           )}
-          {loading && !data ? (
+          {(!contentReady || loading) && (!contentReady || !data) ? (
             <Skeleton
               variant={
                 offerId
@@ -887,7 +969,7 @@ export default function Workspace({ view }: { view: string[] }) {
                 <Today
                   data={data}
                   store={store}
-                  blocked={busy || dirty || !!modal}
+                  blocked={busy || dirty || !!modal || !!preview || searchOpen}
                   onUpdated={(next) => {
                     setData(next);
                     workspaceCache.current = {
@@ -897,6 +979,7 @@ export default function Workspace({ view }: { view: string[] }) {
                     };
                   }}
                   onOpen={openOffer}
+                  onPreview={openPreview}
                   onTask={(t: Row) => open("task", t)}
                   navigate={navigate}
                 />
@@ -908,6 +991,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   selected={selection}
                   setSelected={setSelection}
                   onOpen={openOffer}
+                  onPreview={openPreview}
                   canWrite={canWrite}
                   navigate={navigate}
                   onNew={() => open("offer")}
@@ -1358,6 +1442,29 @@ export default function Workspace({ view }: { view: string[] }) {
           </footer>
         </main>
       </div>
+      <CommandSearch
+        open={searchOpen}
+        store={store}
+        revision={refresh}
+        onClose={() => setSearchOpen(false)}
+        onSelect={(id) => openPreview(id)}
+      />
+      {preview && (
+        <OfferPreview
+          key={preview.id}
+          id={preview.id}
+          initialTab={preview.tab}
+          canEdit={preview.canEdit}
+          onClose={closePreview}
+          onChanged={() => {
+            previewChanged.current = true;
+          }}
+          onView={(id, tab) => {
+            closePreview();
+            openOffer(id, tab);
+          }}
+        />
+      )}
       {modal && data && (
         <Modal
           protectChanges={false}
@@ -1687,6 +1794,7 @@ function Offers({
   selected,
   setSelected,
   onOpen,
+  onPreview,
   canWrite,
   navigate,
   onNew,
@@ -1699,6 +1807,7 @@ function Offers({
   selected: string[];
   setSelected: (s: string[]) => void;
   onOpen: (id: string, initialTab?: string) => void;
+  onPreview: (id: string, initialTab?: string) => void;
   canWrite: boolean;
   navigate: (p: string, q: URLSearchParams) => void;
   onNew: () => void;
@@ -2404,6 +2513,14 @@ function Offers({
                   </td>
                   <td className="small muted">{date(o.updated_at)}</td>
                   <td>
+                    <button
+                      className="icon-button"
+                      aria-label={"Prévia de " + o.title}
+                      title="Abrir prévia lateral"
+                      onClick={() => onPreview(o.id)}
+                    >
+                      <Eye size={15} />
+                    </button>
                     <button
                       className="icon-button"
                       aria-label={"Abrir " + o.title}

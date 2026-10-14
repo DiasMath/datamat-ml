@@ -97,7 +97,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               />
             ))}
           </div>,
-          host || fullscreen || document.body,
+          host ||
+            Array.from(
+              document.querySelectorAll("dialog[open] .toast-dialog-host"),
+            ).at(-1) ||
+            fullscreen ||
+            document.body,
         )}
     </Context.Provider>
   );

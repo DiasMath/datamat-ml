@@ -1,4 +1,5 @@
 import { todayReport } from "@/server/today";
+import { navigationReport, searchOffers } from "@/server/navigation";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { workspaceActor, HttpError } from "@/server/access";
@@ -397,6 +398,12 @@ async function handle(req: NextRequest, context: Context) {
         return response(await analyticsReport(actor, req.nextUrl.searchParams));
       if (resource === "today" && !key && path.length === 1)
         return response(await todayReport(actor, req.nextUrl.searchParams));
+      if (resource === "navigation" && path.length === 1)
+        return response(
+          await navigationReport(actor, req.nextUrl.searchParams),
+        );
+      if (resource === "search" && path.length === 1)
+        return response(await searchOffers(actor, req.nextUrl.searchParams));
       if (resource === "workspace")
         return response(
           await service.workspace(actor, req.nextUrl.searchParams),

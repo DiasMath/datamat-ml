@@ -67,8 +67,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
   const sidebar = page.locator(".sidebar");
   await expect(sidebar.locator(".brand img")).toHaveAttribute(
     "src",
-    "/datamat.svg",
+    "/icon.svg",
   );
+  await expect(sidebar.locator(".brand-wordmark")).toBeVisible();
+  const symbolSize = (await sidebar.locator(".brand img").boundingBox())!;
   await page
     .getByRole("button", { name: "Recolher menu", exact: true })
     .click();
@@ -80,6 +82,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
     "src",
     "/icon.svg",
   );
+  await expect(sidebar.locator(".brand-wordmark")).toHaveCount(0);
+  const collapsedSize = (await sidebar.locator(".brand img").boundingBox())!;
+  expect(collapsedSize.width).toBe(symbolSize.width);
+  expect(collapsedSize.height).toBe(symbolSize.height);
   await expect(sidebar.locator(".nav-item > span").first()).not.toBeVisible();
   await page.reload();
   await expect(
@@ -98,9 +104,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
     await trigger.click();
     await expect(sidebar).toHaveClass(/is-open/);
     expect((await sidebar.boundingBox())!.width).toBeGreaterThan(76);
+    await expect(sidebar.locator(".brand-wordmark")).toBeVisible();
     await expect(sidebar.locator(".brand img")).toHaveAttribute(
       "src",
-      "/datamat.svg",
+      "/icon.svg",
     );
     await expect(page.locator(".main-shell")).toHaveAttribute("inert", "");
     await expect(
@@ -142,9 +149,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
     .getByRole("button", { name: "Expandir menu", exact: true })
     .click();
   expect((await sidebar.boundingBox())!.width).toBe(232);
+  await expect(sidebar.locator(".brand-wordmark")).toBeVisible();
   await expect(sidebar.locator(".brand img")).toHaveAttribute(
     "src",
-    "/datamat.svg",
+    "/icon.svg",
   );
   await page.screenshot({ path: "test-results/sidebar-expanded.png" });
   await expect(sidebar.locator(".nav-item > span").first()).toBeVisible();

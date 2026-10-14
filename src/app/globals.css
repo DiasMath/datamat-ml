@@ -306,32 +306,35 @@ tbody tr:hover {
   z-index: 40;
 }
 .brand {
-  padding: 0 12px 20px;
+  padding: 0 0 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
+}
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 0 1 164px;
 }
 .brand img {
   display: block;
-  max-height: 36px;
-  width: 132px;
-  min-width: 0;
-  flex: 0 1 132px;
-  object-fit: contain;
-  object-position: left;
-}
-.brand img.brand-symbol {
   width: 28px;
+  height: 36px;
   flex: none;
-  object-position: center;
+  object-fit: contain;
 }
-.brand > span {
-  font-size: 7.5px;
-  letter-spacing: 2px;
-  color: var(--dim);
+.brand-wordmark {
   display: block;
-  margin-top: 8px;
+  min-width: 0;
+  flex: 1;
+  height: 36px;
+}
+.brand .icon-button {
+  flex-shrink: 0;
 }
 .workspace-label {
   display: flex;
@@ -5201,6 +5204,9 @@ button.today-metric:hover {
     flex-direction: column;
     gap: 12px;
     padding: 0 0 16px;
+  }
+  .sidebar-collapsed .brand-lockup {
+    flex: none;
   }
   .sidebar-collapsed .workspace-label,
   .sidebar-collapsed .nav-caption,

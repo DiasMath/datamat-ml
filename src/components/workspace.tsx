@@ -657,15 +657,20 @@ export default function Workspace({ view }: { view: string[] }) {
         className={`sidebar ${menu ? "is-open" : ""}`}
       >
         <div className="brand">
-          <img
-            src={sidebarCollapsed && !mobile ? "/icon.svg" : "/datamat.svg"}
-            className={
-              sidebarCollapsed && !mobile ? "brand-symbol" : "brand-logo"
-            }
-            width={sidebarCollapsed && !mobile ? 28 : 132}
-            height={36}
-            alt="DATAMAT"
-          />
+          <span className="brand-lockup" role="img" aria-label="DATAMAT">
+            <img src="/icon.svg" width={28} height={36} alt="" />
+            {(!sidebarCollapsed || mobile) && (
+              <svg
+                className="brand-wordmark"
+                viewBox="410 80 1892 350"
+                width={128}
+                height={36}
+                aria-hidden="true"
+              >
+                <image href="/datamat.svg" width={2302} height={453} />
+              </svg>
+            )}
+          </span>
           <button
             className="icon-button sidebar-toggle"
             aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}

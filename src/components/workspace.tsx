@@ -15,7 +15,15 @@ import { listingCounts, listingType } from "../domain/listing-table";
 import GoogleDriveSettings from "./google-drive-settings";
 import IntegrationForm from "./integration-form";
 import useMlAuthorization from "./use-ml-authorization";
-import { useEffect, useMemo, useState, useRef, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  useTransition,
+  useCallback,
+  type SetStateAction,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { calendarDay } from "../domain/dates";
 import {
@@ -137,6 +145,13 @@ export default function Workspace({ view }: { view: string[] }) {
     data: Row;
   } | null>(null);
   const loadedContext = useRef("");
+  const backgroundReload = useRef(false);
+  const editing = useRef(false);
+  editing.current = busy || dirty || !!modal;
+  const reloadInBackground = useCallback((action: SetStateAction<number>) => {
+    backgroundReload.current = true;
+    setRefresh(action);
+  }, []);
   const [indicatorProgress, setIndicatorProgress] = useState<
     string | undefined
   >();
@@ -266,8 +281,12 @@ export default function Workspace({ view }: { view: string[] }) {
   const cacheKey = dataKey + (home ? ":today" : ":workspace");
   useEffect(() => {
     let active = true;
-    setLoading(true);
+    const controller = new AbortController();
     const contextKey = cacheKey + ":" + (offerId || "");
+    const background =
+      backgroundReload.current && loadedContext.current === contextKey;
+    backgroundReload.current = false;
+    if (!background) setLoading(true);
     if (loadedContext.current !== contextKey) {
       setData(null);
       setDetail(null);
@@ -277,11 +296,25 @@ export default function Workspace({ view }: { view: string[] }) {
       workspaceCache.current?.key === cacheKey &&
       workspaceCache.current.revision === refresh
         ? Promise.resolve(workspaceCache.current.data)
-        : jsonRequest((home ? "/api/today?" : "/api/workspace?") + dataKey),
-      offerId ? jsonRequest("/api/offers/" + offerId) : Promise.resolve(null),
+        : jsonRequest(
+            (home ? "/api/today?" : "/api/workspace?") + dataKey,
+            undefined,
+            "GET",
+            controller.signal,
+            background ? "background" : "foreground",
+          ),
+      offerId
+        ? jsonRequest(
+            "/api/offers/" + offerId,
+            undefined,
+            "GET",
+            controller.signal,
+            background ? "background" : "foreground",
+          )
+        : Promise.resolve(null),
     ])
       .then(([d, o]) => {
-        if (active) {
+        if (active && !(background && editing.current)) {
           loadedContext.current = contextKey;
           workspaceCache.current = {
             key: cacheKey,
@@ -294,14 +327,16 @@ export default function Workspace({ view }: { view: string[] }) {
         }
       })
       .catch((e) => {
-        if (active) {
-          if (!home || loadedContext.current !== contextKey) setData(null);
+        if (active && !controller.signal.aborted) {
+          if (!background && (!home || loadedContext.current !== contextKey))
+            setData(null);
           setToast({ text: e.message, error: true });
           setLoading(false);
         }
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [cacheKey, offerId, refresh, home, dataKey]);
   useCatalogPolling({
@@ -317,7 +352,7 @@ export default function Workspace({ view }: { view: string[] }) {
           (store === "all" || c.store_id === store),
       ),
     blocked: loading || busy || dirty || !!modal,
-    onReload: setRefresh,
+    onReload: reloadInBackground,
   });
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -632,7 +667,17 @@ export default function Workspace({ view }: { view: string[] }) {
             </div>
             <span>
               {data?.user.name || "DATAMAT"}
-              <small>{labels[data?.user.role] || "Carregando…"}</small>
+              <small>
+                {data ? (
+                  labels[data.user.role]
+                ) : (
+                  <LoaderCircle
+                    size={12}
+                    className="spin"
+                    aria-label="Carregando perfil"
+                  />
+                )}
+              </small>
             </span>
           </div>
         </div>
@@ -660,32 +705,34 @@ export default function Workspace({ view }: { view: string[] }) {
             <ChevronRight size={14} />
             <strong>{title}</strong>
           </div>
-          <label className="global-store">
-            <Store size={16} />
-            <span className="sr-only">Loja global</span>
-            <select
-              aria-label="Loja global"
-              disabled={transitioning || loading || busy}
-              value={store}
-              onChange={(e) => changeStore(e.target.value)}
-            >
-              <option value="all">Todas as lojas autorizadas</option>
-              {data?.stores.map((s: Row) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="topbar-actions">
+            <RequestLoading
+              busy={loading || busy || transitioning}
+              label={
+                mlAuthorization.connectionId
+                  ? "Aguardando autorização…"
+                  : indicatorProgress
+              }
+            />
+            <label className="global-store">
+              <Store size={16} />
+              <span className="sr-only">Loja global</span>
+              <select
+                aria-label="Loja global"
+                disabled={transitioning || loading || busy}
+                value={store}
+                onChange={(e) => changeStore(e.target.value)}
+              >
+                <option value="all">Todas as lojas autorizadas</option>
+                {data?.stores.map((s: Row) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </header>
-        <RequestLoading
-          busy={loading || busy || transitioning}
-          label={
-            mlAuthorization.connectionId
-              ? "Aguardando autorização…"
-              : indicatorProgress
-          }
-        />
         <main
           className={"content " + (home ? "today-content" : "")}
           aria-busy={loading || busy}

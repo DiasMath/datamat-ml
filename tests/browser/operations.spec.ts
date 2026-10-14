@@ -91,6 +91,10 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
       complete: true,
       revenue: "100.00",
       orders: 1,
+      units: 2,
+      ticket: "100.00",
+      contribution: "20.00",
+      contributionCoverage: "100.00",
       change: null,
       observedAt: new Date().toISOString(),
       stores: [
@@ -129,10 +133,21 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
     await expect(
       panel.locator(".today-metric").filter({ hasText: "Receita de hoje" }),
     ).toContainText("R$ 100,00");
+    await expect(
+      page.getByRole("progressbar", { name: "Operação em andamento" }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Loja global")).toBeEnabled();
+    await expect(
+      panel
+        .getByRole("button", { name: "Atualizar ML", exact: true })
+        .locator("svg.spin"),
+    ).toBeVisible();
+    await expect(panel.getByRole("tab", { name: /Preparar/ })).toBeEnabled();
     release();
     await expect(
       panel.getByRole("button", { name: "Atualizar ML", exact: true }),
     ).toBeEnabled();
+    await expect(panel.locator(".today-financial")).toContainText("R$ 20,00");
     await page.screenshot({
       path: "test-results/today-live-compact-mobile.png",
       fullPage: true,
@@ -154,6 +169,12 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
       .click();
     await expect.poll(() => requests).toBe(2);
     await expect(panel).toContainText("R$ 100,00");
+    await expect(
+      page
+        .getByRole("progressbar", { name: "Operação em andamento" })
+        .locator("svg.spin"),
+    ).toBeVisible();
+    await expect(page.locator(".request-loading-bar")).toHaveCount(0);
     release();
     await expect(
       panel.getByRole("button", { name: "Atualizar ML", exact: true }),

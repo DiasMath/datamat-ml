@@ -52,6 +52,7 @@ export default function useCatalogPolling({
               signal: controller.signal,
               cache: "no-store",
             },
+            "background",
           ),
           result = await response.json();
         if (!response.ok)

@@ -131,7 +131,7 @@ export default function Analytics({
       setError("");
       lastKey.current = key;
     }
-    async function load(refresh: boolean) {
+    async function load(refresh: boolean, manual = false) {
       if (running || disposed) return;
       running = true;
       setLoading(true);
@@ -147,6 +147,7 @@ export default function Analytics({
             signal: controller.signal,
             cache: "no-store",
           },
+          refresh && !manual ? "background" : "foreground",
         );
         const result = await response.json();
         if (!response.ok)
@@ -171,7 +172,7 @@ export default function Analytics({
     }
     trigger.current = () => {
       if (timer) clearTimeout(timer);
-      void load(true);
+      void load(true, true);
     };
     void load(false).then(() => {
       if (live && !paused && !hidden && canRefresh) {

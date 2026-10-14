@@ -437,6 +437,16 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
 }) => {
   const o = await ownOffer(request);
   let calls = 0;
+  let reads = 0;
+  let release: () => void = () => {};
+  await page.route("**/api/workspace?*", async (route) => {
+    reads++;
+    if (reads === 2)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    await route.continue();
+  });
   await page.route("**/api/catalog/refresh*", async (route) => {
     expect(route.request().postDataJSON()).toEqual({ offerId: o.id });
     calls++;
@@ -460,6 +470,17 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
   await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   await page.clock.fastForward(61000);
   await expect.poll(() => calls).toBe(1);
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator(".workspace-data")).toHaveJSProperty(
+    "disabled",
+    false,
+  );
+  await expect(page.getByLabel("Loja global")).toBeEnabled();
+  await expect(
+    page.getByRole("progressbar", { name: "Operação em andamento" }),
+  ).toHaveCount(0);
+  release();
   await expect(page.locator(".detail-stats").first()).toContainText(
     "R$ 125,00",
   );

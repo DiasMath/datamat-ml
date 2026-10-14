@@ -68,6 +68,7 @@ test("Today incomplete costs and voluntary pauses remain preparation, not urgenc
   assert.equal(queue.length, 1);
   assert.equal(queue[0].severity, "prepare");
   assert.equal(queue[0].reason, "Dados financeiros a completar");
+  assert.match(queue[0].evidence, /Mercadoria e Frete/);
   assert.deepEqual(
     todayQueue(
       [
@@ -102,6 +103,7 @@ test("Today merges margin, stock and proposal problems into a single urgent list
   assert.equal(queue.length, 1);
   assert.equal(queue[0].proposalId, "p");
   assert.equal(queue[0].decisionAction, "Abrir proposta");
+  assert.match(queue[0].decisionEvidence!, /aprovada/);
   assert.equal(queue[0].severity, "urgent");
   assert.ok(queue[0].reasons.includes("Contribuição estimada negativa"));
   assert.ok(queue[0].reasons.includes("Anúncio ativo sem estoque"));
@@ -285,6 +287,10 @@ test("Today summary scopes stores and omits full catalogue, media, history, note
   assert.equal(report.summary.totalOffers, 1);
   assert.equal(report.summary.urgent, 0);
   assert.equal(report.summary.decisions, 1);
+  assert.equal(report.portfolio.paused, 1);
+  assert.equal(report.portfolio.financiallyReady, 0);
+  assert.equal(report.portfolio.needsCosts, 1);
+  assert.equal(report.sales.contribution, null);
   assert.equal(report.queue[0].id, a.id);
   assert.equal(report.queue[0].severity, "review");
   const payload = JSON.stringify(report);
@@ -308,6 +314,40 @@ test("Today summary scopes stores and omits full catalogue, media, history, note
     todayReport(actor, new URLSearchParams({ store: "foreign-store" })),
     /Loja/,
   );
+});
+
+test("Today actionable facts hide outdated stock and cost estimates", () => {
+  const base = offer({
+    price: "100",
+    calculation: {
+      margin: "20",
+      marginPercent: "20",
+      minPrice: "80",
+      minMargin: "30",
+      pending: [],
+    },
+  });
+  const fresh = todayQueue([base], [], weekly(), clock.getTime())[0];
+  assert.equal(fresh.price, "100");
+  assert.equal(fresh.stock, 3);
+  assert.equal(fresh.margin, "20");
+  assert.equal(fresh.minPrice, "80");
+  const stale = todayQueue(
+    [
+      {
+        ...base,
+        costs_stale: true,
+        ml: { ...base.ml, observedAt: "2026-10-14T10:00:00Z" },
+      },
+    ],
+    [],
+    weekly(),
+    clock.getTime(),
+  )[0];
+  assert.equal(stale.stock, null);
+  assert.equal(stale.margin, null);
+  assert.equal(stale.marginPercent, null);
+  assert.equal(stale.minPrice, null);
 });
 
 test("Today cuts the previous-day comparison at the actual oldest observation, not the current clock", async () => {

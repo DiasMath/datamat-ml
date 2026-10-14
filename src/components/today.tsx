@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useId } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowUpRight,
@@ -11,8 +11,25 @@ import {
   RefreshCw,
   CheckCircle2,
   LoaderCircle,
+  Wallet,
+  ShoppingBag,
+  CircleAlert,
+  ClipboardCheck,
+  CirclePause,
+  CirclePlay,
+  FilePenLine,
+  Calculator,
+  ListChecks,
+  TrendingUp,
+  TrendingDown,
+  Sparkles,
+  Package,
+  Images,
+  History,
+  Banknote,
+  ExternalLink,
 } from "lucide-react";
-import { money, jsonRequest, percent } from "./ui";
+import { money, jsonRequest, percent, labels } from "./ui";
 import { MediaImage } from "./listing-media";
 import { useToast } from "./toasts";
 import type { TodayFocus, TodayItem } from "../domain/today";
@@ -21,6 +38,11 @@ const focusLabels = {
   urgent: "Urgentes",
   review: "Revisar",
   prepare: "Preparar",
+};
+const focusIcons = {
+  urgent: CircleAlert,
+  review: ListChecks,
+  prepare: Calculator,
 };
 export default function Today({
   data,
@@ -151,6 +173,7 @@ export default function Today({
           {},
           "POST",
           controller.signal,
+          manual ? "foreground" : "background",
         );
         if (safe()) {
           latest.current.onUpdated(result);
@@ -218,6 +241,21 @@ export default function Today({
   const lastPage = Math.max(1, Math.ceil(rows.length / 5)),
     activePage = Math.min(page, lastPage),
     visible = rows.slice((activePage - 1) * 5, activePage * 5);
+  const queueRef = useRef<HTMLDivElement>(null);
+  const queueScrollKey = `${storageKey}:scroll:${focus}:${activePage}:${decisionsOnly}`;
+  useEffect(() => {
+    let position = 0;
+    try {
+      position = Number(sessionStorage.getItem(queueScrollKey) || "0");
+    } catch {}
+    const frame = requestAnimationFrame(() => {
+      if (queueRef.current)
+        queueRef.current.scrollTop = Number.isFinite(position)
+          ? Math.max(0, position)
+          : 0;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [queueScrollKey]);
   const dateTime = (v: string) =>
     new Intl.DateTimeFormat("pt-BR", {
       timeZone: "America/Sao_Paulo",
@@ -275,7 +313,7 @@ export default function Today({
                 ) : (
                   <RefreshCw size={14} />
                 )}{" "}
-                {working ? "Atualizando…" : "Atualizar ML"}
+                Atualizar ML
               </button>
             </>
           )}
@@ -291,44 +329,162 @@ export default function Today({
       </div>
       <div className="today-metrics" aria-label="Resumo de hoje">
         <div
-          className="today-metric"
+          className="today-metric revenue"
           title="Receita dos produtos em pedidos pagos; não é o repasse líquido"
         >
-          <span>Receita de hoje</span>
-          <strong>
+          <span className="today-metric-label">
+            <Wallet size={16} aria-hidden="true" />
+            Receita de hoje
+          </span>
+          <strong
+            title={
+              data.sales.revenue == null ? undefined : money(data.sales.revenue)
+            }
+          >
             {data.sales.revenue == null ? "—" : money(data.sales.revenue)}
           </strong>
-          {data.sales.change != null && (
-            <small>
+          {data.sales.change != null ? (
+            <small
+              className={
+                Number(data.sales.change) < 0
+                  ? "trend negative"
+                  : "trend positive"
+              }
+            >
+              {Number(data.sales.change) < 0 ? (
+                <TrendingDown size={12} aria-hidden="true" />
+              ) : (
+                <TrendingUp size={12} aria-hidden="true" />
+              )}
               {`${Number(data.sales.change) > 0 ? "+" : ""}${percent(data.sales.change)} vs. ontem até a consulta`}
             </small>
+          ) : (
+            <small>Produtos em pedidos pagos</small>
           )}
         </div>
-        <div className="today-metric">
-          <span>Pedidos pagos</span>
+        <div className="today-metric orders">
+          <span className="today-metric-label">
+            <ShoppingBag size={16} aria-hidden="true" />
+            Pedidos pagos
+          </span>
           <strong>{data.sales.orders ?? "—"}</strong>
+          <small>
+            {data.sales.units == null
+              ? "Aguardando consulta"
+              : `${data.sales.units} ${data.sales.units === 1 ? "unidade vendida" : "unidades vendidas"}`}
+          </small>
         </div>
-        <button className="today-metric" onClick={() => changeFocus("urgent")}>
-          <span>Anúncios urgentes</span>
+        <button
+          className={
+            "today-metric urgencies " +
+            (data.summary.urgent ? "has-urgency" : "")
+          }
+          onClick={() => changeFocus("urgent")}
+        >
+          <span className="today-metric-label">
+            <CircleAlert size={16} aria-hidden="true" />
+            Anúncios urgentes
+          </span>
           <strong className={data.summary.urgent ? "negative" : ""}>
             {data.summary.urgent}
           </strong>
+          <small>
+            {data.summary.urgent ? "Conferir agora" : "Nenhum problema urgente"}
+            <ChevronRight size={12} aria-hidden="true" />
+          </small>
         </button>
         <button
-          className="today-metric"
+          className="today-metric decisions"
           onClick={() => changeFocus("review", true)}
         >
-          <span>Decisões pendentes</span>
+          <span className="today-metric-label">
+            <ClipboardCheck size={16} aria-hidden="true" />
+            Decisões pendentes
+          </span>
           <strong>{data.summary.decisions}</strong>
+          <small>
+            Revisar e aplicar propostas
+            <ChevronRight size={12} aria-hidden="true" />
+          </small>
         </button>
       </div>
+      {data.portfolio && (
+        <section
+          className="today-portfolio panel"
+          aria-label="Resumo da carteira de anúncios"
+        >
+          <div className="today-portfolio-statuses">
+            {(
+              [
+                ["active", "Ativos", CirclePlay],
+                ["paused", "Pausados", CirclePause],
+                ["draft", "Rascunhos", FilePenLine],
+              ] as const
+            ).map(([key, label, Icon]) => (
+              <button
+                key={key}
+                className={"today-status-count " + key}
+                onClick={() =>
+                  navigate(
+                    "anuncios",
+                    new URLSearchParams({ store, status: key }),
+                  )
+                }
+              >
+                <Icon size={15} aria-hidden="true" />
+                <strong>{data.portfolio[key]}</strong>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            className="today-cost-coverage"
+            onClick={() =>
+              navigate(
+                "anuncios",
+                new URLSearchParams({ store, pending: "costs" }),
+              )
+            }
+          >
+            <Calculator size={17} aria-hidden="true" />
+            <span>
+              <strong>
+                {data.portfolio.financiallyReady}/{data.summary.totalOffers}
+              </strong>{" "}
+              com custos em dia
+              <meter
+                min={0}
+                max={Math.max(1, data.summary.totalOffers)}
+                value={data.portfolio.financiallyReady}
+                aria-label="Anúncios com custos em dia"
+              />
+            </span>
+            <ChevronRight size={14} aria-hidden="true" />
+          </button>
+          {data.portfolio.overdueTasks > 0 && (
+            <button
+              className="today-overdue"
+              onClick={() => navigate("acoes", new URLSearchParams({ store }))}
+            >
+              <Clock size={14} aria-hidden="true" />
+              {data.portfolio.overdueTasks}{" "}
+              {data.portfolio.overdueTasks === 1
+                ? "ação atrasada"
+                : "ações atrasadas"}
+            </button>
+          )}
+        </section>
+      )}
       <div className="today-main-grid">
         <section
           className="panel today-work-panel"
           aria-labelledby="today-queue-heading"
         >
           <div className="panel-heading">
-            <h2 id="today-queue-heading">Próximos anúncios</h2>
+            <h2 id="today-queue-heading">
+              <Sparkles size={16} aria-hidden="true" />
+              Próximos anúncios
+            </h2>
             <span className="small muted">
               {data.summary.totalOffers} no cadastro
             </span>
@@ -338,46 +494,59 @@ export default function Today({
             role="tablist"
             aria-label="Prioridade dos anúncios"
           >
-            {(Object.keys(focusLabels) as TodayFocus[]).map((key) => (
-              <button
-                key={key}
-                role="tab"
-                aria-selected={key === focus}
-                tabIndex={key === focus ? 0 : -1}
-                onKeyDown={(event) => {
-                  const keys = Object.keys(focusLabels) as TodayFocus[],
-                    index = keys.indexOf(key);
-                  const next =
-                    event.key === "ArrowRight"
-                      ? keys[(index + 1) % 3]
-                      : event.key === "ArrowLeft"
-                        ? keys[(index + 2) % 3]
-                        : event.key === "Home"
-                          ? keys[0]
-                          : event.key === "End"
-                            ? keys[2]
-                            : null;
-                  if (!next) return;
-                  event.preventDefault();
-                  changeFocus(next);
-                  requestAnimationFrame(() =>
-                    document.getElementById("today-tab-" + next)?.focus(),
-                  );
-                }}
-                aria-controls="today-queue"
-                id={"today-tab-" + key}
-                className={key === focus ? "selected" : ""}
-                onClick={() => changeFocus(key)}
-              >
-                {focusLabels[key]} <span>{data.summary[key]}</span>
-              </button>
-            ))}
+            {(Object.keys(focusLabels) as TodayFocus[]).map((key) => {
+              const Icon = focusIcons[key];
+              return (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={key === focus}
+                  tabIndex={key === focus ? 0 : -1}
+                  onKeyDown={(event) => {
+                    const keys = Object.keys(focusLabels) as TodayFocus[],
+                      index = keys.indexOf(key);
+                    const next =
+                      event.key === "ArrowRight"
+                        ? keys[(index + 1) % 3]
+                        : event.key === "ArrowLeft"
+                          ? keys[(index + 2) % 3]
+                          : event.key === "Home"
+                            ? keys[0]
+                            : event.key === "End"
+                              ? keys[2]
+                              : null;
+                    if (!next) return;
+                    event.preventDefault();
+                    changeFocus(next);
+                    requestAnimationFrame(() =>
+                      document.getElementById("today-tab-" + next)?.focus(),
+                    );
+                  }}
+                  aria-controls="today-queue"
+                  id={"today-tab-" + key}
+                  className={key + (key === focus ? " selected" : "")}
+                  onClick={() => changeFocus(key)}
+                >
+                  <Icon size={13} aria-hidden="true" />
+                  {focusLabels[key]} <span>{data.summary[key]}</span>
+                </button>
+              );
+            })}
           </div>
           <div
             id="today-queue"
             role="tabpanel"
             aria-labelledby={"today-tab-" + focus}
             className="today-queue"
+            ref={queueRef}
+            onScroll={(event) => {
+              try {
+                sessionStorage.setItem(
+                  queueScrollKey,
+                  String(event.currentTarget.scrollTop),
+                );
+              } catch {}
+            }}
           >
             {decisionsOnly && (
               <div className="today-filter-note">
@@ -421,7 +590,14 @@ export default function Today({
                     >
                       {item.title}
                     </button>
-                    <span className="today-reason" title={item.evidence}>
+                    <span
+                      className="today-reason"
+                      title={
+                        decisionsOnly
+                          ? item.decisionEvidence || item.evidence
+                          : item.evidence
+                      }
+                    >
                       {store === "all" ? item.storeName + " · " : ""}
                       {decisionsOnly
                         ? item.decisionReason || item.reason
@@ -433,6 +609,54 @@ export default function Today({
                         </small>
                       )}
                     </span>
+                    <span
+                      className="today-evidence"
+                      title={
+                        decisionsOnly
+                          ? item.decisionEvidence || item.evidence
+                          : item.evidence
+                      }
+                    >
+                      {decisionsOnly
+                        ? item.decisionEvidence || item.evidence
+                        : item.evidence}
+                    </span>
+                    <div className="today-listing-facts">
+                      <span className={"today-status-badge " + item.status}>
+                        {labels[item.status] || item.status}
+                      </span>
+                      {item.mlId && <span title={item.mlId}>{item.mlId}</span>}
+                      <span title="Preço cadastrado">
+                        <Banknote size={12} aria-hidden="true" />
+                        {item.price == null
+                          ? "Preço a conferir"
+                          : money(item.price)}
+                      </span>
+                      {item.margin != null && (
+                        <span
+                          className={
+                            Number(item.margin) < 0 ? "negative" : "positive"
+                          }
+                          title="Contribuição estimada por unidade com os custos cadastrados"
+                        >
+                          Margem {money(item.margin)}
+                          {item.marginPercent != null
+                            ? ` (${percent(item.marginPercent)})`
+                            : ""}
+                        </span>
+                      )}
+                      {item.stock != null && (
+                        <span title="Estoque publicado consultado há até 15 minutos">
+                          <Package size={12} aria-hidden="true" />
+                          {item.stock} un.
+                        </span>
+                      )}
+                      {item.minPrice != null && item.severity !== "prepare" && (
+                        <span title="Preço mínimo calculado com as condições cadastradas">
+                          Piso {money(item.minPrice)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="today-row-actions">
                     <button
@@ -456,7 +680,13 @@ export default function Today({
                           ? item.decisionAction || "Abrir proposta"
                           : item.action}
                       </span>
-                      <ChevronRight size={13} />
+                      {item.tab === "costs" && !decisionsOnly ? (
+                        <Calculator size={14} />
+                      ) : item.tab === "media" ? (
+                        <Images size={14} />
+                      ) : (
+                        <ChevronRight size={14} />
+                      )}
                     </button>
                     {item.severity !== "urgent" && (
                       <button
@@ -531,32 +761,85 @@ export default function Today({
             </div>
           </div>
         </section>
-        <details
-          className="panel today-chart-panel"
-          open={graphOpen}
-          onToggle={(e) => setGraphOpen(e.currentTarget.open)}
-        >
-          <summary
-            onClick={() => {
-              graphTouched.current = true;
-            }}
+        <div className="today-insights">
+          <details
+            className="panel today-chart-panel"
+            open={graphOpen}
+            onToggle={(e) => setGraphOpen(e.currentTarget.open)}
           >
-            Ritmo de vendas{" "}
-            <span className="small muted">
-              Hoje × ontem até o mesmo horário
-            </span>
-          </summary>
-          <TodayChart
-            hours={data.sales.hours}
-            available={data.sales.available}
-            complete={data.sales.complete}
-          />
-        </details>
+            <summary
+              onClick={() => {
+                graphTouched.current = true;
+              }}
+            >
+              <b>
+                <TrendingUp size={16} aria-hidden="true" />
+                Ritmo de vendas
+              </b>{" "}
+              <span className="small muted">
+                Hoje × ontem até o mesmo horário
+              </span>
+            </summary>
+            <TodayChart
+              hours={data.sales.hours}
+              available={data.sales.available}
+              complete={data.sales.complete}
+            />
+          </details>
+          <section
+            className="panel today-financial"
+            aria-label="Resultado financeiro do dia"
+          >
+            <h2>
+              <Calculator size={15} aria-hidden="true" />
+              Resultado do dia
+            </h2>
+            <div className="today-financial-values">
+              <div>
+                <span>Ticket médio</span>
+                <strong>
+                  {data.sales.ticket == null ? "—" : money(data.sales.ticket)}
+                </strong>
+              </div>
+              <div>
+                <span>Contribuição estimada</span>
+                <strong
+                  className={
+                    data.sales.contribution == null
+                      ? ""
+                      : Number(data.sales.contribution) < 0
+                        ? "negative"
+                        : "positive"
+                  }
+                >
+                  {data.sales.contribution == null
+                    ? "—"
+                    : money(data.sales.contribution)}
+                </strong>
+              </div>
+            </div>
+            <p>
+              {data.sales.contributionCoverage == null
+                ? "A estimativa depende de vendas e custos completos."
+                : `Custos disponíveis para ${percent(data.sales.contributionCoverage)} da receita consultada.`}
+            </p>
+            <button
+              className="text-link"
+              onClick={() =>
+                navigate("analises", new URLSearchParams({ store }))
+              }
+            >
+              Analisar margens e desempenho
+              <ArrowUpRight size={13} aria-hidden="true" />
+            </button>
+          </section>
+        </div>
       </div>
       <div className="today-secondary">
         {data.highlights.length > 0 && (
           <details className="panel today-fold">
             <summary>
+              <TrendingUp size={15} aria-hidden="true" />
               Anúncios em destaque{" "}
               <span className="small muted">7 dias completos</span>
             </summary>
@@ -578,6 +861,7 @@ export default function Today({
         {data.changes.length > 0 && (
           <details className="panel today-fold">
             <summary>
+              <History size={15} aria-hidden="true" />
               Alterações detectadas <span className="small muted">Hoje</span>
             </summary>
             <div className="today-mini-list">
@@ -598,6 +882,7 @@ export default function Today({
         {data.tasks.length > 0 && (
           <details className="panel today-fold">
             <summary>
+              <ClipboardCheck size={15} aria-hidden="true" />
               Ações em aberto{" "}
               <span className="count-pill">{data.tasks.length}</span>
             </summary>
@@ -637,6 +922,7 @@ export default function Today({
                 )
               }
             >
+              <ExternalLink size={13} aria-hidden="true" />
               Conectar conta ML
             </button>{" "}
             para acompanhar as vendas e o desempenho.
@@ -655,6 +941,7 @@ function TodayChart({
   complete: boolean;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
+  const gradient = useId();
   const width = 380,
     height = 190,
     left = 32,
@@ -697,6 +984,12 @@ function TodayChart({
           aria-label="Receita por hora de hoje e ontem até o mesmo horário"
         >
           <title>Receita por hora</title>
+          <defs>
+            <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#ffb03f" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#ffb03f" stopOpacity="0" />
+            </linearGradient>
+          </defs>
           {[0, 0.5, 1].map((f) => (
             <g key={f}>
               <line
@@ -714,6 +1007,12 @@ function TodayChart({
               </text>
             </g>
           ))}
+          {hours.length > 1 && (
+            <path
+              d={`${path("revenue")} L${x(hours.length - 1)},${bottom} L${x(0)},${bottom} Z`}
+              fill={`url(#${gradient})`}
+            />
+          )}
           {complete && <path d={path("previous")} className="chart-previous" />}
           <path d={path("revenue")} className="chart-current" />
           {hours.map((h, i) => (
@@ -734,6 +1033,12 @@ function TodayChart({
                 aria-label={`${h.hour} horas: hoje ${money(h.revenue)}${complete ? `, ontem ${money(h.previous)}` : ""}`}
                 onFocus={() => setSelected(i)}
                 onClick={() => setSelected(i)}
+                onKeyDown={(event) => {
+                  if (["Enter", " "].includes(event.key)) {
+                    event.preventDefault();
+                    setSelected(i);
+                  }
+                }}
                 onMouseEnter={() => setSelected(i)}
               />
             </g>

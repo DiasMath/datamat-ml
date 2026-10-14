@@ -242,12 +242,13 @@ function activityChange(change: number) {
 export async function trackedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
+  activity: "foreground" | "background" = "foreground",
 ) {
-  activityChange(1);
+  if (activity === "foreground") activityChange(1);
   try {
     return await fetch(input, init);
   } finally {
-    activityChange(-1);
+    if (activity === "foreground") activityChange(-1);
   }
 }
 export function RequestLoading({
@@ -267,25 +268,25 @@ export function RequestLoading({
     () => requests,
     () => 0,
   );
-  return busy || count > 0 ? (
+  const active = busy || count > 0;
+  return (
     <div
       className="request-loading"
-      role="progressbar"
-      aria-label="Operação em andamento"
-      aria-valuetext={label}
+      role={active ? "progressbar" : undefined}
+      aria-label={active ? "Operação em andamento" : undefined}
+      aria-valuetext={active ? label : undefined}
+      title={active ? label : undefined}
     >
-      <div className="request-loading-bar" />
-      <span>
-        <LoaderCircle size={14} className="spin" /> {label}
-      </span>
+      {active && <LoaderCircle size={18} className="spin" aria-hidden="true" />}
     </div>
-  ) : null;
+  );
 }
 export const jsonRequest = async <T = any,>(
   url: string,
   body?: unknown,
   method = "POST",
   signal?: AbortSignal,
+  activity: "foreground" | "background" = "foreground",
 ): Promise<T> => {
   const res = await trackedFetch(
     url,
@@ -297,6 +298,7 @@ export const jsonRequest = async <T = any,>(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },
+    activity,
   );
   const data = await res.json();
   if (!res.ok) {

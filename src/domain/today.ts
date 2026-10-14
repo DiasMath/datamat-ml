@@ -22,7 +22,16 @@ export type TodayItem = {
   proposalId: string | null;
   decisionAction: string | null;
   decisionReason: string | null;
+  decisionEvidence: string | null;
   impact: string;
+  price: string | null;
+  margin: string | null;
+  marginPercent: string | null;
+  minPrice: string | null;
+  stock: number | null;
+  status: string;
+  mlId: string | null;
+  pending: string[];
 };
 export const pendingDecisions = new Set([
   "review",
@@ -221,7 +230,7 @@ export function todayQueue(
           ? "Dados financeiros a completar"
           : "Custos precisam de revisão",
         evidence: offer.calculation.pending.length
-          ? `${offer.calculation.pending.length} ${offer.calculation.pending.length === 1 ? "campo necessário" : "campos necessários"} para calcular a margem.`
+          ? `Preencha ${offer.calculation.pending.slice(0, 2).join(" e ")}${offer.calculation.pending.length > 2 ? ` e mais ${offer.calculation.pending.length - 2} campos` : ""}.`
           : "O prazo de revisão dos custos desta loja venceu.",
         action: "Completar custos",
         tab: "costs",
@@ -242,7 +251,16 @@ export function todayQueue(
       proposalId: first.proposalId || ownDecisions[0]?.id || null,
       decisionAction: signals.find((s) => s.proposalId)?.action || null,
       decisionReason: signals.find((s) => s.proposalId)?.reason || null,
+      decisionEvidence: signals.find((s) => s.proposalId)?.evidence || null,
       impact: c?.revenue || "0",
+      price: offer.ml?.variablePrices ? null : (offer.price ?? null),
+      margin: !offer.costs_stale ? (costs?.margin ?? null) : null,
+      marginPercent: !offer.costs_stale ? (costs?.marginPercent ?? null) : null,
+      minPrice: !offer.costs_stale ? (costs?.minPrice ?? null) : null,
+      stock: fresh ? (offer.ml?.availableQuantity ?? null) : null,
+      status: offer.status,
+      mlId: offer.ml_id || null,
+      pending: costs?.pending || [],
     });
   }
   return rows.sort(

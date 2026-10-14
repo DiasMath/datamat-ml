@@ -164,6 +164,10 @@ test("Hoje remains readable with five priorities at mobile, tablet and desktop w
   await page.locator(".today-queue-row").last().scrollIntoViewIfNeeded();
   const scroll = await page.evaluate(() => scrollY);
   expect(scroll).toBeGreaterThan(30);
+  const queueScroll = await page
+    .locator(".today-queue")
+    .evaluate((e) => e.scrollTop);
+  expect(queueScroll).toBeGreaterThan(30);
   await page
     .locator(".today-queue-row")
     .last()
@@ -177,6 +181,9 @@ test("Hoje remains readable with five priorities at mobile, tablet and desktop w
   await expect
     .poll(() => page.evaluate(() => scrollY))
     .toBeGreaterThan(scroll - 30);
+  await expect
+    .poll(() => page.locator(".today-queue").evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(queueScroll - 3);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: "test-results/today-compact-mobile.png",
@@ -187,4 +194,81 @@ test("Hoje remains readable with five priorities at mobile, tablet and desktop w
     path: "test-results/today-compact-desktop.png",
     fullPage: true,
   });
+});
+
+test("Hoje distinguishes an urgent margin problem from an approved proposal when opening the decisions view", async ({
+  page,
+  request,
+}) => {
+  const initial = await (
+    await request.get("/api/today?store=" + storeId)
+  ).json();
+  const fixture = {
+    ...initial,
+    summary: { totalOffers: 1, urgent: 1, review: 0, prepare: 0, decisions: 1 },
+    portfolio: {
+      active: 1,
+      paused: 0,
+      draft: 0,
+      financiallyReady: 1,
+      needsCosts: 0,
+      overdueTasks: 0,
+    },
+    queue: [
+      {
+        id: "fixture-offer",
+        title: "Anúncio com contribuição negativa",
+        storeId,
+        storeName: "Loja",
+        thumbnail: null,
+        severity: "urgent",
+        reason: "Contribuição estimada negativa",
+        evidence: "Estimativa de -R$ 10,00 por unidade.",
+        action: "Revisar preço",
+        tab: "costs",
+        reasons: [
+          "Contribuição estimada negativa",
+          "Proposta pronta para aplicação",
+        ],
+        proposalId: "p",
+        decisionAction: "Abrir proposta",
+        decisionReason: "Proposta pronta para aplicação",
+        decisionEvidence:
+          "A proposta foi aprovada; a aplicação ainda precisa ser confirmada.",
+        impact: "0",
+        price: "100",
+        margin: "-10",
+        marginPercent: "-10",
+        minPrice: "125",
+        stock: 0,
+        status: "active",
+        mlId: "MLB123",
+        pending: [],
+      },
+    ],
+  };
+  await page.route("**/api/today?*", (route) =>
+    route.fulfill({ json: fixture }),
+  );
+  await page.goto(`/?store=${storeId}`);
+  const row = page.locator(".today-queue-row");
+  await expect(row.locator(".today-listing-facts")).toContainText("R$ 100,00");
+  await expect(row.locator(".today-listing-facts")).toContainText(
+    "Margem -R$ 10,00",
+  );
+  await expect(row.locator(".today-listing-facts")).toContainText("0 un.");
+  await expect(row.locator(".today-listing-facts")).toContainText(
+    "Piso R$ 125,00",
+  );
+  await expect(row.locator(".today-evidence")).toContainText("Estimativa");
+  await page.locator(".today-metric.decisions").click();
+  await expect(page).toHaveURL(/todayDecisions=yes/);
+  await expect(row.locator(".today-reason")).toContainText(
+    "Proposta pronta para aplicação",
+  );
+  await expect(row.locator(".today-evidence")).toContainText("foi aprovada");
+  await expect(row.locator(".today-evidence")).not.toContainText("Estimativa");
+  await expect(
+    row.getByRole("button", { name: "Abrir proposta", exact: true }),
+  ).toBeVisible();
 });

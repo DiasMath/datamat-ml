@@ -242,6 +242,12 @@ export async function todayReport(
     observedAt: s.observedAt,
     error: s.error,
   }));
+  const own = offers.filter(
+    (o) => o.origin !== "reference" && o.status !== "closed",
+  );
+  const financiallyReady = own.filter(
+    (o) => !o.costs_stale && o.calculation.margin !== null,
+  ).length;
   return {
     user: actor,
     stores: actor.stores,
@@ -264,11 +270,31 @@ export async function todayReport(
       prepare: queue.filter((q) => q.severity === "prepare").length,
       decisions: new Set(pending.map((p) => p.offer_id)).size,
     },
+    portfolio: {
+      active: own.filter((o) => o.status === "active").length,
+      paused: own.filter((o) => o.status === "paused").length,
+      draft: own.filter((o) => o.status === "draft").length,
+      financiallyReady,
+      needsCosts: own.length - financiallyReady,
+      overdueTasks: tasks.filter(
+        (t) =>
+          scoped(t) &&
+          !["done", "cancelled"].includes(t.status) &&
+          t.due_date &&
+          t.due_date < day,
+      ).length,
+    },
     sales: {
       available: report.available,
       complete: report.complete,
       revenue: report.available ? report.current.revenue : null,
       orders: report.available ? report.current.paidOrders : null,
+      units: report.available ? report.current.units : null,
+      ticket: report.available ? report.current.ticket : null,
+      contribution: report.available ? report.current.contribution : null,
+      contributionCoverage: report.available
+        ? report.current.contributionCoverage
+        : null,
       previousRevenue: report.complete ? report.previous.revenue : null,
       change: report.changes?.revenue ?? null,
       observedAt: observations[0] || null,

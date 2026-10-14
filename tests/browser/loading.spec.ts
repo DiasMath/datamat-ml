@@ -46,6 +46,12 @@ test("initial page loads use structured skeletons without overflow at mobile wid
   ]) {
     await page.goto(path);
     await expect(page.locator(".skeleton-layout").first()).toBeVisible();
+    const spinner = page.getByRole("progressbar", {
+      name: "Operação em andamento",
+    });
+    await expect(spinner.locator("svg.spin")).toBeVisible();
+    await expect(spinner).toHaveText("");
+    await expect(page.locator(".request-loading-bar")).toHaveCount(0);
     await expect(page.locator(".loading-state")).toHaveCount(0);
     expect(
       await page.evaluate(
@@ -55,5 +61,35 @@ test("initial page loads use structured skeletons without overflow at mobile wid
     release();
     await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".skeleton-layout")).toHaveCount(0);
+  }
+});
+
+test("leaving a pending screen cancels its request and clears the loading icon", async ({
+  page,
+}) => {
+  let pending = false;
+  let release: () => void = () => {};
+  await page.route("**/api/today?*", async (route) => {
+    pending = true;
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await route.abort();
+  });
+  try {
+    await page.goto("/?store=juntos-com");
+    await expect.poll(() => pending).toBe(true);
+    await expect(
+      page.getByRole("progressbar", { name: "Operação em andamento" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Anúncios", exact: true }).click();
+    await expect(page).toHaveURL(/\/anuncios/);
+    await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+    await expect(
+      page.getByRole("progressbar", { name: "Operação em andamento" }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Loja global")).toBeEnabled();
+  } finally {
+    release();
   }
 });

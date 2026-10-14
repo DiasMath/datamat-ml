@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Trash2 } from "lucide-react";
+import useDialogDismiss from "./use-dialog-dismiss";
 type Options = {
   title: string;
   description: string;
@@ -113,6 +114,7 @@ export function ConfirmationProvider({
     setOptions(null);
     resolve?.(value);
   }
+  const dismiss = useDialogDismiss(() => finish(false));
   useEffect(() => {
     if (options) dialog.current?.showModal();
   }, [options]);
@@ -130,6 +132,7 @@ export function ConfirmationProvider({
           <dialog
             ref={dialog}
             className="modal confirmation-modal"
+            {...dismiss}
             aria-labelledby={titleId}
             aria-describedby={titleId + "-description"}
             onCancel={(e) => {

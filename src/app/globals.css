@@ -263,22 +263,27 @@ tbody tr:hover {
   flex-shrink: 0;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
-  height: 100vh;
+  height: 100dvh;
   position: fixed;
   left: 0;
   top: 0;
   display: flex;
   flex-direction: column;
-  padding: 30px 18px 0;
+  padding: 20px 18px 0;
+  min-height: 0;
   z-index: 40;
 }
 .brand {
-  padding: 0 12px 26px;
+  padding: 0 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
 }
 .brand img {
   display: block;
   max-height: 36px;
-  width: 151px;
+  width: 28px;
   object-fit: contain;
   object-position: left;
 }
@@ -297,7 +302,8 @@ tbody tr:hover {
   border-radius: 8px;
   padding: 11px 10px;
   font-size: 11px;
-  margin-bottom: 31px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
 }
 .workspace-label > div:nth-child(2) {
   flex: 1;
@@ -332,6 +338,12 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-bottom: 12px;
+  scrollbar-width: thin;
 }
 .nav-item {
   position: relative;
@@ -345,6 +357,7 @@ tbody tr:hover {
   font-size: 12px;
   color: var(--muted);
   border-radius: 7px;
+  flex-shrink: 0;
 }
 .nav-item:hover {
   color: var(--text);
@@ -375,6 +388,7 @@ tbody tr:hover {
 }
 .sidebar-bottom {
   margin-top: auto;
+  flex-shrink: 0;
 }
 .integration-note {
   display: flex;
@@ -5137,5 +5151,73 @@ button.today-metric:hover {
   }
   .command-result > span {
     display: none;
+  }
+}
+
+/* Desktop collapse is independent of the mobile drawer. */
+@media (min-width: 851px) {
+  .sidebar-collapsed .sidebar {
+    width: 76px;
+    padding: 16px 10px 0;
+  }
+  .sidebar-collapsed .main-shell {
+    margin-left: 76px;
+    width: calc(100% - 76px);
+  }
+  .sidebar-collapsed .brand {
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 0 16px;
+  }
+  .sidebar-collapsed .workspace-label,
+  .sidebar-collapsed .nav-caption,
+  .sidebar-collapsed .nav-item > span,
+  .sidebar-collapsed .integration-note > span:nth-child(2),
+  .sidebar-collapsed .user-card > span {
+    display: none;
+  }
+  .sidebar-collapsed .nav-item {
+    justify-content: center;
+    padding: 13px 0;
+  }
+  .sidebar-collapsed .nav-item svg {
+    width: 20px;
+    height: 20px;
+  }
+  .sidebar-collapsed .integration-note {
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 0;
+  }
+  .sidebar-collapsed .user-card {
+    justify-content: center;
+    padding: 14px 0;
+  }
+}
+@media (max-width: 850px) {
+  .sidebar {
+    width: min(280px, calc(100% - 48px));
+    padding: 20px 16px 0;
+    overflow: hidden;
+  }
+  .sidebar-toggle {
+    display: none;
+  }
+}
+@media (max-height: 600px) {
+  .sidebar .workspace-label,
+  .sidebar .nav-caption {
+    display: none;
+  }
+  .sidebar .brand {
+    padding-bottom: 12px;
+  }
+  .sidebar .integration-note {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .sidebar .user-card {
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
 }

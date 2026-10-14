@@ -9,8 +9,15 @@ test("notifications overlay the page, count down, pause for pointer/keyboard and
   await page.clock.install();
   const heading = page.locator(".page-heading");
   const before = (await heading.boundingBox())!;
-  await page.getByLabel("Loja global").selectOption("juntos-data");
-  const toast = page.locator(".toast").filter({ hasText: "Loja atualizada" });
+  await page.getByRole("button", { name: "Nova ação", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Nova ação", exact: true });
+  await form
+    .getByLabel("Título *", { exact: true })
+    .fill("Conferência do aviso " + Date.now());
+  await form.getByLabel("Situação", { exact: true }).selectOption("done");
+  await form.getByRole("button", { name: "Salvar tarefa" }).click();
+  await expect(form).not.toBeVisible();
+  const toast = page.locator(".toast").filter({ hasText: "Tarefa salva." });
   await expect(toast).toBeVisible();
   expect(
     await page

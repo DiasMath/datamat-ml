@@ -13,6 +13,7 @@ import { X, ArrowUpRight, Inbox, LoaderCircle } from "lucide-react";
 import { displayDate } from "../domain/dates";
 import { useConfirm, discardChanges, useUnsavedChanges } from "./confirmation";
 import { useToast } from "./toasts";
+import useDialogDismiss from "./use-dialog-dismiss";
 
 export const money = (value: unknown) =>
   value === null || value === undefined
@@ -176,6 +177,7 @@ export function Modal({
   }
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const dismiss = useDialogDismiss(() => void close());
   const { setHost } = useToast();
   useEffect(() => {
     ref.current?.showModal();
@@ -186,6 +188,7 @@ export function Modal({
       aria-labelledby={titleId}
       aria-describedby={subtitle ? titleId + "-subtitle" : undefined}
       className="modal"
+      {...dismiss}
       onChangeCapture={() => setChanged(true)}
       onCancel={(e) => {
         e.preventDefault();

@@ -60,6 +60,8 @@ import {
   Info,
   Link2,
   Trash2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   Badge,
@@ -146,6 +148,7 @@ export default function Workspace({ view }: { view: string[] }) {
     [modal, setModal] = useState<{ type: string; record?: Row } | null>(null),
     [dirty, setDirty] = useState(false),
     [menu, setMenu] = useState(false),
+    [sidebarCollapsed, setSidebarCollapsed] = useState(false),
     [mobile, setMobile] = useState(false),
     [selection, setSelection] = useState<string[]>([]);
   const workspaceCache = useRef<{
@@ -208,6 +211,20 @@ export default function Workspace({ view }: { view: string[] }) {
       scroll: false,
     });
   }, [authorizationResult, authorizationMessage, notify, query, route, router]);
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(
+        localStorage.getItem("datamat:sidebar-collapsed") === "true",
+      );
+    } catch {}
+  }, []);
+  function toggleSidebar() {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    try {
+      localStorage.setItem("datamat:sidebar-collapsed", String(next));
+    } catch {}
+  }
   useEffect(() => {
     const media = window.matchMedia("(max-width:850px)");
     const update = () => setMobile(media.matches);
@@ -468,9 +485,6 @@ export default function Workspace({ view }: { view: string[] }) {
       p.delete(k);
     setSelection([]);
     setDirty(false);
-    setToast({
-      text: "Loja atualizada. Seleções de marca, categoria e registros foram limpas para respeitar a nova loja.",
-    });
     startTransition(() =>
       router.push("/" + (offerId ? "anuncios" : section) + "?" + p),
     );
@@ -635,7 +649,7 @@ export default function Workspace({ view }: { view: string[] }) {
       : navigation.find((n) => n.path === section)?.title ||
         "Página não encontrada";
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside
         id="main-navigation"
         inert={mobile && !menu}
@@ -643,8 +657,21 @@ export default function Workspace({ view }: { view: string[] }) {
         className={`sidebar ${menu ? "is-open" : ""}`}
       >
         <div className="brand">
-          <img src="/datamat.svg" width={156} alt="DATAMAT" />
-          <span>GESTÃO DE MARKETPLACE</span>
+          <img src="/icon.svg" width={28} height={36} alt="DATAMAT" />
+          <button
+            className="icon-button sidebar-toggle"
+            aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            aria-expanded={!sidebarCollapsed}
+            aria-controls="main-navigation"
+            onClick={toggleSidebar}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeftOpen size={18} />
+            ) : (
+              <PanelLeftClose size={18} />
+            )}
+          </button>
           {mobile && menu && (
             <button
               className="icon-button nav-close"
@@ -667,6 +694,8 @@ export default function Workspace({ view }: { view: string[] }) {
             <button
               key={n.path}
               aria-label={n.title}
+              title={n.title}
+              aria-current={section === n.path ? "page" : undefined}
               className={`nav-item ${section === n.path ? "active" : ""}`}
               onClick={() => navigate(n.path)}
             >

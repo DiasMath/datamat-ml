@@ -197,7 +197,7 @@ test("preview pricing calculates live, protects drafts and persists costs and a 
   expect((await db().collection("offers").doc(a.id).get()).data()!.price).toBe(
     "100",
   );
-  await page.keyboard.press("Escape");
+  await page.mouse.click(2, 2);
   const confirm = page.getByRole("dialog", { name: "Descartar alterações?" });
   await expect(confirm).toBeVisible();
   await confirm.getByRole("button", { name: "Continuar editando" }).click();

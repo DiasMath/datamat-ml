@@ -17,6 +17,7 @@ import ListingMedia from "./listing-media";
 import FinancialEditor from "./financial-editor";
 import Skeleton from "./skeleton";
 import { useToast } from "./toasts";
+import useDialogDismiss from "./use-dialog-dismiss";
 type Row = Record<string, any>;
 export default function OfferPreview({
   id,
@@ -83,6 +84,7 @@ export default function OfferPreview({
     dialog.current?.close();
     action();
   }
+  const dismiss = useDialogDismiss(() => void leave(onClose));
   async function changeTab(next: string) {
     if (busy) return false;
     if (next === tab) return true;
@@ -117,13 +119,7 @@ export default function OfferPreview({
         e.preventDefault();
         void leave(onClose);
       }}
-      onClick={(e) => {
-        if (e.target === dialog.current) {
-          const bounds = dialog.current!.getBoundingClientRect();
-          if (e.clientX < bounds.left || e.clientX > bounds.right)
-            void leave(onClose);
-        }
-      }}
+      {...dismiss}
     >
       <header className="preview-header">
         <div>

@@ -4,6 +4,7 @@ import { Search, X, LoaderCircle, ChevronRight, RefreshCw } from "lucide-react";
 import { quickSearch } from "../domain/quick-search";
 import { jsonRequest, money, labels } from "./ui";
 import { MediaImage } from "./listing-media";
+import useDialogDismiss from "./use-dialog-dismiss";
 type Row = Record<string, any>;
 export default function CommandSearch({
   open,
@@ -27,6 +28,7 @@ export default function CommandSearch({
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [retry, setRetry] = useState(0);
+  const dismiss = useDialogDismiss(onClose);
   const cache = useRef<{ key: string; at: number; data: Row } | null>(null);
   const rows = useMemo(
     () => quickSearch(data?.offers || [], query),
@@ -85,6 +87,7 @@ export default function CommandSearch({
     <dialog
       ref={dialog}
       className="command-search"
+      {...dismiss}
       aria-label="Busca rápida de anúncios"
       onCancel={(e) => {
         e.preventDefault();

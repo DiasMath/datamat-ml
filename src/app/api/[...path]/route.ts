@@ -1,3 +1,4 @@
+import { todayReport } from "@/server/today";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { workspaceActor, HttpError } from "@/server/access";
@@ -394,6 +395,8 @@ async function handle(req: NextRequest, context: Context) {
       }
       if (resource === "analytics" && !key)
         return response(await analyticsReport(actor, req.nextUrl.searchParams));
+      if (resource === "today" && !key && path.length === 1)
+        return response(await todayReport(actor, req.nextUrl.searchParams));
       if (resource === "workspace")
         return response(
           await service.workspace(actor, req.nextUrl.searchParams),
@@ -466,6 +469,16 @@ async function handle(req: NextRequest, context: Context) {
       }
     }
     if (req.method === "POST" || req.method === "PATCH") {
+      if (
+        resource === "today" &&
+        key === "refresh" &&
+        path.length === 2 &&
+        req.method === "POST"
+      ) {
+        await refreshRoutine(actor, req.nextUrl.searchParams, 55000, true);
+        return response(await todayReport(actor, req.nextUrl.searchParams));
+      }
+
       if (
         resource === "proposals" &&
         key &&

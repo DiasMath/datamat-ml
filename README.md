@@ -62,7 +62,7 @@ O menu **Análises** inclui visão geral, vendas, produtos, tráfego, financeiro
 
 ## Rotina integrada
 
-Hoje inclui vendas, contribuição prevista/ajustada com tarifa observada, tarefas operacionais e cobertura de estoque. Concorrência guarda referências, histórico observado, alertas e exportação. Webhooks acionam consultas verificadas em segundo plano; o cron diário exige uma única CRON_SECRET da infraestrutura. Fontes, limites e aplicação de preços: [docs/daily-operation.md](docs/daily-operation.md).
+Hoje concentra anúncios, preços e desempenho: quatro indicadores compactos, cinco prioridades por página, ações diretas e receita horária comparada até o mesmo horário consultado. Custos incompletos aparecem em Preparar; não viram alertas urgentes. A resposta inicial usa projeções menores, com carregamento do workspace completo apenas ao abrir formulários. Concorrência guarda referências, histórico observado, alertas e exportação. Webhooks acionam consultas verificadas em segundo plano; o cron diário exige uma única CRON_SECRET da infraestrutura. Fontes, limites e aplicação de preços: [docs/daily-operation.md](docs/daily-operation.md).
 
 ## Validar
 

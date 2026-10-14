@@ -132,6 +132,7 @@ async function collectStore(
   connectionId: string,
   range: AnalysisRange,
   deadline: number,
+  salesOnly = false,
 ) {
   return withSellerData(
     actor,
@@ -139,6 +140,7 @@ async function collectStore(
     async (request, connection) => {
       const source = blank(store, connection);
       source.connected = true;
+      source.collectedThrough = new Date(range.end).toISOString();
       const [offers, costRows, parameters] = await Promise.all([
         find("offers", { store_id: store.id }),
         find("costs", { store_id: store.id }),
@@ -277,6 +279,10 @@ async function collectStore(
         source.warnings.push(
           "Consulta parcial: até 1.000 pedidos por loja, incluindo a comparação. Reduza o período.",
         );
+      if (salesOnly) {
+        source.observedAt = now();
+        return source;
+      }
       const optional = await Promise.allSettled([
         request(`/users/${connection.external_account}`),
         request(
@@ -447,6 +453,7 @@ export async function refreshAnalytics(
   actor: Actor,
   query: URLSearchParams,
   deadline = Date.now() + 220000,
+  salesOnly = false,
 ) {
   canWrite(actor);
   const range = rangeFromQuery(query);
@@ -462,7 +469,8 @@ export async function refreshAnalytics(
       if (
         lock?.until > Date.now() ||
         (snapshot?.updated_at &&
-          Date.now() - Date.parse(snapshot.updated_at) < 45000)
+          Date.now() - Date.parse(snapshot.updated_at) < 45000 &&
+          (salesOnly || !snapshot.sales_only))
       )
         return false;
       await put("ml_analytics_locks", connectionId, {
@@ -479,6 +487,7 @@ export async function refreshAnalytics(
         connectionId,
         range,
         deadline,
+        salesOnly,
       );
       await transaction(async () => {
         const current = await get("connections", connectionId),
@@ -494,6 +503,7 @@ export async function refreshAnalytics(
           seller_id: connection.external_account,
           auth_version: connection.auth_version,
           data_json: JSON.stringify(source),
+          sales_only: salesOnly,
           updated_at: source.observedAt,
           last_error: null,
         });

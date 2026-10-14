@@ -67,6 +67,7 @@ export type StoreAnalysis = {
   sellerId: string | null;
   authVersion: number | null;
   observedAt: string | null;
+  collectedThrough?: string;
   complete: boolean;
   totalReported: number | null;
   orders: SaleOrder[];

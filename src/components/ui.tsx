@@ -285,13 +285,15 @@ export const jsonRequest = async <T = any,>(
   url: string,
   body?: unknown,
   method = "POST",
+  signal?: AbortSignal,
 ): Promise<T> => {
   const res = await trackedFetch(
     url,
     body === undefined
-      ? { cache: "no-store" }
+      ? { cache: "no-store", signal }
       : {
           method,
+          signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         },

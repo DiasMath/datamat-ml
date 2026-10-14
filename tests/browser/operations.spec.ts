@@ -73,138 +73,88 @@ test("competitor CRUD, alerts, observed history and review task persist without 
   );
 });
 
-test("Hoje retains sales while refreshing, pauses polling and contains expanded tables on mobile", async ({
+test("Hoje retains sales during refresh, preserves scope on failure and pauses automatic polling", async ({
   page,
   request,
 }) => {
-  await request.get("/api/workspace");
-  const connection = key("juntos-com", "mercadolivre");
-  await db().collection("connections").doc(connection).set({
-    store_id: "juntos-com",
-    provider: "mercadolivre",
-    status: "connected",
-    external_account: "111",
-    auth_version: 800,
-  });
-  const today = businessDay(),
-    range = analysisRange(today, today);
-  const report = aggregateAnalytics(
-    [
-      {
-        storeId: "juntos-com",
-        storeName: "juntos.com",
-        connected: true,
-        sellerId: "111",
-        authVersion: 800,
-        observedAt: new Date().toISOString(),
-        complete: true,
-        totalReported: 1,
-        orders: [
-          {
-            id: "991",
-            storeId: "juntos-com",
-            created: new Date(
-              Math.max(range.start, Date.now() - 60000),
-            ).toISOString(),
-            status: "paid",
-            shipmentId: null,
-            lines: [
-              {
-                itemId: "MLB1",
-                title: "Venda demonstrativa",
-                quantity: 1,
-                price: "100",
-                fee: "10",
-                contribution: "20",
-                offerId: null,
-              },
-            ],
-          },
-        ],
-        visits: null,
-        unanswered: 2,
-        reputation: null,
-        shipping: null,
-        warnings: [],
-        error: null,
-      },
-    ],
-    range,
-  );
+  const initial = await (
+    await request.get("/api/today?store=juntos-com")
+  ).json();
   const fixture = {
-    report,
-    sales: [
-      {
-        id: "991",
-        storeId: "juntos-com",
-        created: new Date().toISOString(),
-        title: "Venda demonstrativa",
-        offerId: null,
-        revenue: "100.00",
-        expected: "20.00",
-        observed: "15.00",
-        difference: "-5.00",
-        coverage: "100.00",
-        lowMargin: true,
-      },
+    ...initial,
+    connections: [
+      { store_id: "juntos-com", provider: "mercadolivre", status: "connected" },
     ],
-    stock: Array.from({ length: 25 }, (_, i) => ({
-      offerId: "fixture-" + i,
-      storeId: "juntos-com",
-      title: `Produto estoque ${i}`,
-      quantity: 3,
-      units: 7,
-      days: 7,
-      coverage: "3.0",
-      urgency: "replenish",
-      reason: "Estoque observado",
-    })),
-    updates: [
-      {
-        storeId: "juntos-com",
-        storeName: "juntos.com",
-        connected: true,
-        lastSuccess: new Date().toISOString(),
-        running: false,
-        error: null,
-        nextAttempt: null,
-      },
-    ],
+    sales: {
+      ...initial.sales,
+      available: true,
+      complete: true,
+      revenue: "100.00",
+      orders: 1,
+      change: null,
+      observedAt: new Date().toISOString(),
+      stores: [
+        { id: "juntos-com", name: "juntos.com", connected: true, error: null },
+      ],
+      hours: [
+        { hour: 0, revenue: "20", previous: "10" },
+        { hour: 1, revenue: "50", previous: "40" },
+        { hour: 2, revenue: "30", previous: "30" },
+      ],
+    },
   };
   let requests = 0;
   let release: () => void = () => {};
-  await page.route("**/api/routine**", async (route) => {
+  await page.route("**/api/today?*", (route) =>
+    route.fulfill({ json: fixture }),
+  );
+  await page.route("**/api/today/refresh?*", async (route) => {
     requests++;
-    if (requests === 2 || requests === 3)
+    if (requests <= 2)
       await new Promise<void>((resolve) => {
         release = resolve;
       });
-    await route.fulfill({
-      json:
-        requests === 1
-          ? {
-              ...fixture,
-              report: { ...fixture.report, available: false },
-              sales: [],
-            }
-          : fixture,
-    });
+    if (requests === 3)
+      return route.fulfill({
+        status: 502,
+        json: { error: "Consulta temporariamente indisponível" },
+      });
+    await route.fulfill({ json: fixture });
   });
   try {
     await page.setViewportSize({ width: 320, height: 800 });
-    await page.goto("/?store=juntos-com");
-    const panel = page.locator(".routine-today");
+    await page.goto("/?store=juntos-com&todayFocus=prepare");
+    const panel = page.locator(".today-dashboard");
+    await expect.poll(() => requests).toBe(1);
     await expect(
-      panel.getByRole("status", { name: "Carregando vendas de hoje" }),
-    ).toBeVisible();
-    await expect.poll(() => requests).toBe(2);
+      panel.locator(".today-metric").filter({ hasText: "Receita de hoje" }),
+    ).toContainText("R$ 100,00");
     release();
     await expect(
-      panel
-        .locator(".analytics-metric")
-        .filter({ hasText: "Receita de produtos" })
-        .getByText("R$ 100,00", { exact: true }),
-    ).toBeVisible();
+      panel.getByRole("button", { name: "Atualizar ML", exact: true }),
+    ).toBeEnabled();
+    await page.screenshot({
+      path: "test-results/today-live-compact-mobile.png",
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.locator(".today-chart-panel > summary").click();
+    await expect(page.locator(".today-chart-panel")).toHaveAttribute(
+      "open",
+      "",
+    );
+    await page.screenshot({
+      path: "test-results/today-live-compact-desktop.png",
+      fullPage: true,
+    });
+    await page.locator(".today-chart-panel > summary").click();
+    await page.setViewportSize({ width: 320, height: 800 });
+    await panel
+      .getByRole("button", { name: "Atualizar ML", exact: true })
+      .click();
+    await expect.poll(() => requests).toBe(2);
+    await expect(panel).toContainText("R$ 100,00");
+    release();
     await expect(
       panel.getByRole("button", { name: "Atualizar ML", exact: true }),
     ).toBeEnabled();
@@ -213,67 +163,25 @@ test("Hoje retains sales while refreshing, pauses polling and contains expanded 
       .click();
     await expect.poll(() => requests).toBe(3);
     await expect(
-      panel
-        .locator(".analytics-metric")
-        .filter({ hasText: "Receita de produtos" })
-        .getByText("R$ 100,00", { exact: true }),
+      page.locator(".toast").filter({ hasText: "Consulta temporariamente" }),
     ).toBeVisible();
+    await expect(panel).toContainText("R$ 100,00");
+    await expect(page).toHaveURL(/store=juntos-com&todayFocus=prepare/);
+    await panel.getByLabel("Pausar atualização automática").click();
     await expect(
-      panel.getByRole("status", { name: "Carregando vendas de hoje" }),
-    ).toHaveCount(0);
-    release();
-    await expect(
-      panel.getByRole("button", { name: "Atualizar ML", exact: true }),
-    ).toBeEnabled();
-    await panel.getByText("Vendas e margem", { exact: false }).first().click();
-    await expect(
-      panel.getByRole("cell", { name: "R$ 15,00", exact: false }),
+      panel.getByLabel("Retomar atualização automática"),
     ).toBeVisible();
-    await panel
-      .getByText("Reposição de estoque", { exact: false })
-      .first()
-      .click();
-    await expect(
-      panel.getByLabel("Próxima página: Cobertura de estoque"),
-    ).toBeEnabled();
+    await expect(panel).toHaveAttribute("aria-busy", "false");
+    await page.clock.install();
+    await page.clock.fastForward(61000);
+    expect(requests).toBe(3);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    const metricSize = await panel
-      .locator(".analytics-metric > strong")
-      .first()
-      .evaluate((el) => ({
-        height: el.getBoundingClientRect().height,
-        lineHeight: parseFloat(getComputedStyle(el).lineHeight),
-      }));
-    expect(metricSize.height).toBeLessThanOrEqual(metricSize.lineHeight + 1);
-    await panel.getByLabel("Pausar atualização automática").click();
-    await expect(
-      panel.getByLabel("Retomar atualização automática"),
-    ).toBeVisible();
-    await expect(panel.locator("[aria-busy]")).toHaveAttribute(
-      "aria-busy",
-      "false",
-    );
-    await page.clock.install();
-    const pausedRequests = requests;
-    await page.clock.fastForward(61000);
-    expect(requests).toBe(pausedRequests);
-    await page.screenshot({
-      path: "test-results/routine-today-mobile.png",
-      fullPage: true,
-    });
   } finally {
     release();
-    await db().collection("connections").doc(connection).set({
-      store_id: "juntos-com",
-      provider: "mercadolivre",
-      status: "unauthorized",
-      external_account: null,
-      auth_version: 801,
-    });
   }
 });
 

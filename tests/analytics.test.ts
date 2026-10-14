@@ -480,3 +480,41 @@ test("failed updates preserve the last snapshot and mark comparisons as unavaila
   assert.equal(report.complete, false);
   assert.ok(report.stores[0].error);
 });
+
+test("Today refresh requests sales only; a full analytics request still fetches operational data despite the fresh sales cache", async () => {
+  await account();
+  const paths: string[] = [];
+  const sales = await mocked(
+    (url) => {
+      paths.push(url.pathname);
+      if (url.pathname === "/orders/search")
+        return json({ paging: { total: 1 }, results: [order(1)] });
+      throw new Error("Today must not request optional operational data");
+    },
+    () => refreshAnalytics(actor, query(), Date.now() + 220000, true),
+  );
+  assert.deepEqual(paths, ["/orders/search"]);
+  assert.equal(sales.complete, true);
+  assert.ok(sales.stores[0].collectedThrough);
+  assert.ok(
+    Date.parse(sales.stores[0].collectedThrough!) <=
+      Date.parse(sales.stores[0].observedAt!),
+  );
+  assert.equal(sales.stores[0].shipping, null);
+  assert.equal(sales.stores[0].unanswered, null);
+  assert.equal(sales.visits, null);
+  paths.length = 0;
+  const full = await mocked(
+    (url) => {
+      paths.push(url.pathname);
+      return url.pathname === "/orders/search"
+        ? json({ paging: { total: 1 }, results: [order(1)] })
+        : extras(url);
+    },
+    () => refreshAnalytics(actor, query()),
+  );
+  assert.ok(paths.includes("/questions/search"));
+  assert.ok(paths.includes("/shipments/99"));
+  assert.equal(full.stores[0].shipping?.sampled, 1);
+  assert.equal(full.stores[0].unanswered, 2);
+});

@@ -31,7 +31,7 @@ test("initial page loads use structured skeletons without overflow at mobile wid
 }) => {
   await page.setViewportSize({ width: 320, height: 800 });
   let release: () => void = () => {};
-  await page.route("**/api/workspace**", async (route) => {
+  await page.route(/\/api\/(workspace|today)(\?|$)/, async (route) => {
     await new Promise<void>((resolve) => {
       release = resolve;
     });

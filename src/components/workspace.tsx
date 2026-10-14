@@ -15,7 +15,6 @@ import { listingCounts, listingType } from "../domain/listing-table";
 import GoogleDriveSettings from "./google-drive-settings";
 import IntegrationForm from "./integration-form";
 import useMlAuthorization from "./use-ml-authorization";
-import { operationalAttention } from "@/domain/marketplace";
 import { useEffect, useMemo, useState, useRef, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { calendarDay } from "../domain/dates";
@@ -75,7 +74,7 @@ import AutocompleteInput from "./autocomplete";
 import Importer from "./importer";
 import Collection, { pageSize } from "./collection";
 import Skeleton from "./skeleton";
-import RoutineToday from "./routine-today";
+import Today from "./today";
 import Competitors from "./competitors";
 import ExtensionSettings from "./extension-settings";
 import { TitleWorkbench } from "./listing-diagnostics";
@@ -123,6 +122,7 @@ export default function Workspace({ view }: { view: string[] }) {
     offerId = section === "anuncios" ? view[1] : undefined;
   const [data, setData] = useState<Row | null>(null),
     [detail, setDetail] = useState<Row | null>(null),
+    [formWorkspace, setFormWorkspace] = useState<Row | null>(null),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [refresh, setRefresh] = useState(0),
@@ -208,6 +208,9 @@ export default function Workspace({ view }: { view: string[] }) {
     tab = search.get("tab") || "overview";
   const dataQuery = new URLSearchParams(query);
   for (const key of [
+    "todayFocus",
+    "todayPage",
+    "todayDecisions",
     "page",
     "pageSize",
     "sort",
@@ -256,26 +259,35 @@ export default function Workspace({ view }: { view: string[] }) {
       "stale",
     ])
       dataQuery.delete(key);
-  const dataKey = dataQuery.toString();
+  const home = section === "";
+  const dataKey = home
+    ? new URLSearchParams({ store }).toString()
+    : dataQuery.toString();
+  const cacheKey = dataKey + (home ? ":today" : ":workspace");
   useEffect(() => {
     let active = true;
     setLoading(true);
-    const contextKey = dataKey + ":" + (offerId || "");
+    const contextKey = cacheKey + ":" + (offerId || "");
     if (loadedContext.current !== contextKey) {
       setData(null);
       setDetail(null);
     }
     Promise.all([
-      workspaceCache.current?.key === dataKey &&
+      !home &&
+      workspaceCache.current?.key === cacheKey &&
       workspaceCache.current.revision === refresh
         ? Promise.resolve(workspaceCache.current.data)
-        : jsonRequest("/api/workspace?" + dataKey),
+        : jsonRequest((home ? "/api/today?" : "/api/workspace?") + dataKey),
       offerId ? jsonRequest("/api/offers/" + offerId) : Promise.resolve(null),
     ])
       .then(([d, o]) => {
         if (active) {
           loadedContext.current = contextKey;
-          workspaceCache.current = { key: dataKey, revision: refresh, data: d };
+          workspaceCache.current = {
+            key: cacheKey,
+            revision: refresh,
+            data: d,
+          };
           setData(d);
           setDetail(o);
           setLoading(false);
@@ -283,7 +295,7 @@ export default function Workspace({ view }: { view: string[] }) {
       })
       .catch((e) => {
         if (active) {
-          setData(null);
+          if (!home || loadedContext.current !== contextKey) setData(null);
           setToast({ text: e.message, error: true });
           setLoading(false);
         }
@@ -291,11 +303,12 @@ export default function Workspace({ view }: { view: string[] }) {
     return () => {
       active = false;
     };
-  }, [dataKey, offerId, refresh]);
+  }, [cacheKey, offerId, refresh, home, dataKey]);
   useCatalogPolling({
     store,
     offerId,
     enabled:
+      !home &&
       data?.user.role === "admin" &&
       !!data?.connections.some(
         (c: Row) =>
@@ -408,6 +421,19 @@ export default function Workspace({ view }: { view: string[] }) {
   }
   async function open(type: string, record?: Row) {
     if (!(await guard())) return;
+    if (home) {
+      setBusy(true);
+      try {
+        setFormWorkspace(
+          await jsonRequest("/api/workspace?" + new URLSearchParams({ store })),
+        );
+      } catch (error) {
+        setToast({ text: (error as Error).message, error: true });
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
     setDirty(false);
     clearToasts();
     setModal({
@@ -427,13 +453,36 @@ export default function Workspace({ view }: { view: string[] }) {
   function openOffer(key: string, initialTab?: string) {
     const p = new URLSearchParams();
     p.set("store", store);
-    p.set("returnTo", "/anuncios" + (query ? "?" + query : ""));
+    const target = "/" + route + (query ? "?" + query : "");
+    p.set("returnTo", target);
+    try {
+      sessionStorage.setItem(
+        "datamat:return-scroll:" + target,
+        String(window.scrollY),
+      );
+    } catch {}
+
     if (initialTab) p.set("tab", initialTab);
     navigate("anuncios/" + key, p);
   }
   async function back() {
     const target = search.get("returnTo");
-    if (target?.startsWith("/anuncios") && !target.startsWith("//")) {
+    let valid = false;
+    if (
+      target &&
+      target.startsWith("/") &&
+      !target.startsWith("//") &&
+      !target.includes("\\")
+    ) {
+      try {
+        const destination = new URL(target, window.location.origin);
+        valid =
+          destination.origin === window.location.origin &&
+          (navigation.some((n) => destination.pathname === "/" + n.path) ||
+            /^\/anuncios\/[a-zA-Z0-9_-]+$/.test(destination.pathname));
+      } catch {}
+    }
+    if (target && valid) {
       if (await guard()) {
         setDirty(false);
         router.push(target);
@@ -442,12 +491,39 @@ export default function Workspace({ view }: { view: string[] }) {
   }
   const formData = data
     ? {
-        ...data,
+        ...(home ? formWorkspace || data : data),
         selectedStore:
           detail?.offer.store_id || (store === "all" ? undefined : store),
         initialOffer: offerId,
       }
     : null;
+  const restoredPosition = useRef("");
+  useEffect(() => {
+    if (loading || offerId) return;
+    const target = "/" + route + (query ? "?" + query : "");
+    if (restoredPosition.current === target) return;
+    restoredPosition.current = target;
+    let position: string | null = null;
+    try {
+      position = sessionStorage.getItem("datamat:return-scroll:" + target);
+      if (position !== null)
+        sessionStorage.removeItem("datamat:return-scroll:" + target);
+    } catch {}
+    if (position === null || !Number.isFinite(Number(position)))
+      return () => {
+        restoredPosition.current = "";
+      };
+    const frame = requestAnimationFrame(() =>
+      window.scrollTo({
+        top: Math.max(0, Number(position)),
+        behavior: "instant",
+      }),
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      restoredPosition.current = "";
+    };
+  }, [loading, offerId, route, query]);
   const canWrite = !!data && data.user.role !== "viewer";
   const title = offerId
     ? "Ficha do anúncio"
@@ -610,7 +686,10 @@ export default function Workspace({ view }: { view: string[] }) {
               : indicatorProgress
           }
         />
-        <main className="content" aria-busy={loading || busy}>
+        <main
+          className={"content " + (home ? "today-content" : "")}
+          aria-busy={loading || busy}
+        >
           {!offerId && (
             <div className="page-heading">
               <div>
@@ -641,6 +720,7 @@ export default function Workspace({ view }: { view: string[] }) {
                 {section === "" && canWrite && (
                   <button
                     className="button primary"
+                    disabled={busy}
                     onClick={() => open("task")}
                   >
                     <Plus size={16} />
@@ -758,14 +838,20 @@ export default function Workspace({ view }: { view: string[] }) {
             <fieldset className="workspace-data" disabled={loading}>
               {section === "" && (
                 <Today
-                  store={store}
-                  onChanged={() => setRefresh((v) => v + 1)}
                   data={data}
+                  store={store}
+                  blocked={busy || dirty || !!modal}
+                  onUpdated={(next) => {
+                    setData(next);
+                    workspaceCache.current = {
+                      key: cacheKey,
+                      revision: refresh,
+                      data: next,
+                    };
+                  }}
                   onOpen={openOffer}
                   onTask={(t: Row) => open("task", t)}
                   navigate={navigate}
-                  canWrite={canWrite}
-                  onNew={() => open("offer")}
                 />
               )}
               {section === "anuncios" && !offerId && (
@@ -822,7 +908,10 @@ export default function Workspace({ view }: { view: string[] }) {
                   <div className="detail-heading">
                     <button className="back-button" onClick={back}>
                       <ArrowLeft size={16} />
-                      Voltar aos anúncios
+                      {search.get("returnTo")?.startsWith("/?") ||
+                      search.get("returnTo") === "/"
+                        ? "Voltar à Hoje"
+                        : "Voltar aos anúncios"}
                     </button>
                     <div className="detail-identity">
                       <div>
@@ -1543,304 +1632,6 @@ function modalTitle(modal: { type: string; record?: Row }) {
       access: "Permissões de acesso",
       integration: "Credenciais do Mercado Livre",
     }[modal.type] || ""
-  );
-}
-function Today({
-  store,
-  onChanged,
-  data,
-  onOpen,
-  onTask,
-  navigate,
-  canWrite,
-  onNew,
-}: {
-  store: string;
-  onChanged: () => void;
-  data: Row;
-  onOpen: (id: string) => void;
-  onTask: (t: Row) => void;
-  navigate: (path: string, params?: URLSearchParams) => void;
-  canWrite: boolean;
-  onNew: () => void;
-}) {
-  const today = new Date().toLocaleDateString("en-CA", {
-      timeZone: "America/Sao_Paulo",
-    }),
-    tasks = data.tasks
-      .filter((t: Row) => !["done", "cancelled"].includes(t.status))
-      .sort(
-        (a: Row, b: Row) =>
-          Number(b.due_date && b.due_date < today) -
-            Number(a.due_date && a.due_date < today) ||
-          ["high", "medium", "low"].indexOf(a.priority) -
-            ["high", "medium", "low"].indexOf(b.priority),
-      );
-  const overdue = tasks.filter(
-    (t: Row) => t.due_date && t.due_date < today,
-  ).length;
-  return (
-    <>
-      {data.connections.some(
-        (c: Row) => c.provider === "mercadolivre" && c.status === "connected",
-      ) && (
-        <RoutineToday
-          onCreated={onChanged}
-          store={store}
-          canRefresh={canWrite}
-          onOpen={onOpen}
-          navigate={navigate}
-        />
-      )}
-      <div
-        className={`stats-grid ${data.connections.some((c: Row) => c.provider === "mercadolivre" && c.status === "connected") ? "routine-local-stats" : ""}`}
-      >
-        {[
-          {
-            label: "Ações em aberto",
-            value: tasks.length,
-            note: overdue
-              ? `${overdue} com prazo vencido`
-              : "Priorize seu próximo passo",
-            icon: ListTodo,
-            path: "acoes",
-          },
-          {
-            label: "Propostas em revisão",
-            value: data.summary.reviewProposals,
-            note: "Aguardando uma decisão",
-            icon: FileCheck,
-            path: "anuncios",
-          },
-          {
-            label: "Anúncios com pendências",
-            value: data.summary.pendingOffers,
-            note: `${data.summary.totalOffers} ofertas cadastradas`,
-            icon: Tags,
-            path: "anuncios",
-            params: { pending: "yes" },
-          },
-          {
-            label: "Custos a revisar",
-            value: data.summary.staleCosts,
-            note: "Incompletos ou desatualizados",
-            icon: Calculator,
-            path: "anuncios",
-            params: { pending: "costs" },
-          },
-        ].map((s) => (
-          <button
-            key={s.label}
-            className="stat-card"
-            onClick={() =>
-              navigate(
-                s.path,
-                new URLSearchParams({
-                  store:
-                    data.parameters.length === 1
-                      ? data.parameters[0].storeId
-                      : "all",
-                  ...s.params,
-                }),
-              )
-            }
-          >
-            <div className="stat-top">
-              <span>{s.label}</span>
-              <s.icon size={19} />
-            </div>
-            <strong>{s.value.toString().padStart(2, "0")}</strong>
-            <div className="stat-bottom">
-              <span>{s.note}</span>
-              <ArrowUpRight size={14} />
-            </div>
-          </button>
-        ))}
-      </div>
-      {!data.summary.totalOffers && (
-        <section className="onboarding-card">
-          <div className="onboarding-symbol">
-            <Layers size={28} />
-          </div>
-          <div>
-            <span className="eyebrow orange">
-              SEU ESPAÇO ESTÁ PRONTO PARA COMEÇAR
-            </span>
-            <h2>Vamos organizar o primeiro anúncio?</h2>
-            <p>
-              Cadastre um produto, vincule a oferta à loja e registre os custos.
-              As pendências ajudam a completar o que ainda falta.
-            </p>
-          </div>
-          {canWrite && (
-            <button className="button primary" onClick={onNew}>
-              Cadastrar anúncio <Plus size={16} />
-            </button>
-          )}
-        </section>
-      )}
-      <div className="today-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>
-              <ListTodo size={18} />
-              Prioridades de hoje
-            </h2>
-            <button className="text-link" onClick={() => navigate("acoes")}>
-              Ver todas <ArrowUpRight size={14} />
-            </button>
-          </div>
-          <TaskList
-            tasks={tasks.slice(0, 6)}
-            data={data}
-            onTask={onTask}
-            canWrite={canWrite}
-            onOpen={onOpen}
-          />
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>
-              <FileCheck size={18} />
-              Decisões pendentes
-            </h2>
-            <span className="count-pill">
-              {
-                data.proposals.filter((p: Row) =>
-                  [
-                    "review",
-                    "approved",
-                    "pending_application",
-                    "application_uncertain",
-                    "applying_ml",
-                    "failed",
-                  ].includes(p.status),
-                ).length
-              }
-            </span>
-          </div>
-          {data.proposals.filter((p: Row) =>
-            [
-              "review",
-              "approved",
-              "pending_application",
-              "application_uncertain",
-              "applying_ml",
-              "failed",
-            ].includes(p.status),
-          ).length ? (
-            data.proposals
-              .filter((p: Row) =>
-                [
-                  "review",
-                  "approved",
-                  "pending_application",
-                  "application_uncertain",
-                  "applying_ml",
-                  "failed",
-                ].includes(p.status),
-              )
-              .slice(0, 5)
-              .map((p: Row) => (
-                <button
-                  className="list-item"
-                  key={p.id}
-                  onClick={() => onOpen(p.offer_id)}
-                >
-                  <div>
-                    <strong>
-                      {data.offerChoices.find((o: Row) => o.id === p.offer_id)
-                        ?.title || "Anúncio"}
-                    </strong>
-                    <small>
-                      {money(p.snapshot.current.price)} →{" "}
-                      {money(p.snapshot.proposed.price)} · {p.reason}
-                    </small>
-                  </div>
-                  <Badge value={p.status} />
-                </button>
-              ))
-          ) : (
-            <Empty
-              title="Nenhuma decisão esperando"
-              body="As propostas salvas para revisão aparecerão aqui."
-            />
-          )}
-        </section>
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>
-              <AlertCircle size={18} />
-              Anúncios que merecem atenção
-            </h2>
-            <button className="text-link" onClick={() => navigate("anuncios")}>
-              Abrir anúncios <ArrowUpRight size={14} />
-            </button>
-          </div>
-          {data.offerChoices.some(
-            (o: Row) => operationalAttention(o).priority,
-          ) ? (
-            data.offerChoices
-              .filter((o: Row) => operationalAttention(o).priority)
-              .toSorted(
-                (a: Row, b: Row) =>
-                  operationalAttention(b).priority -
-                  operationalAttention(a).priority,
-              )
-              .slice(0, 4)
-              .map((o: Row) => (
-                <button
-                  key={o.id}
-                  className="list-item"
-                  onClick={() => onOpen(o.id)}
-                >
-                  <div>
-                    <strong>{o.title}</strong>
-                    <small>
-                      {o.store_name} ·{" "}
-                      {operationalAttention(o).reasons.slice(0, 3).join(" · ")}
-                    </small>
-                  </div>
-                  <ChevronRight size={17} />
-                </button>
-              ))
-          ) : (
-            <Empty
-              title="Tudo que sabemos, organizado"
-              body="Campos sem informação serão sinalizados nesta área."
-            />
-          )}
-        </section>
-        <div className="integration-summary">
-          <Info size={15} />
-          <span>
-            {data.connections.some(
-              (c: Row) =>
-                c.provider === "mercadolivre" && c.status === "connected",
-            )
-              ? "Mercado Livre autorizado. Consulte os anúncios por loja e as métricas na ficha."
-              : "Conecte as contas do Mercado Livre para consultar anúncios, tarifas e métricas."}
-          </span>
-          <button
-            className="text-link"
-            onClick={() =>
-              navigate(
-                "configuracoes",
-                new URLSearchParams({
-                  store:
-                    data.parameters.length === 1
-                      ? data.parameters[0].storeId
-                      : "all",
-                  configTab: "integrations",
-                }),
-              )
-            }
-          >
-            Ver integrações
-          </button>
-        </div>
-      </div>
-    </>
   );
 }
 function Offers({

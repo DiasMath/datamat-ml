@@ -21,13 +21,53 @@ export default function Skeleton({
   variant?: "list" | "today" | "analytics" | "detail" | "settings" | "pricing";
   label?: string;
 }) {
-  const cards = [
-    "today",
-    "analytics",
-    "settings",
-    "detail",
-    "pricing",
-  ].includes(variant);
+  if (variant === "today")
+    return (
+      <div
+        className="skeleton-layout skeleton-today today-dashboard"
+        role="status"
+        aria-label={label}
+      >
+        <span className="sr-only">{label}…</span>
+        <div className="today-toolbar" aria-hidden="true">
+          <Bone width="35%" height={16} />
+          <Bone width="18%" height={28} />
+        </div>
+        <div className="today-metrics" aria-hidden="true">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div className="today-metric" key={i}>
+              <Bone width="65%" height={12} />
+              <Bone width="50%" height={24} />
+              <Bone width="75%" height={10} />
+            </div>
+          ))}
+        </div>
+        <div className="today-main-grid" aria-hidden="true">
+          <section className="panel">
+            <Bone width="40%" height={18} />
+            <div className="today-focus">
+              <Bone width="70%" height={32} />
+            </div>
+            {Array.from({ length: 5 }, (_, i) => (
+              <div className="today-queue-row" key={i}>
+                <Bone width="36px" height={36} />
+                <div style={{ flex: 1 }}>
+                  <Bone width="70%" />
+                  <Bone width="50%" height={10} />
+                </div>
+              </div>
+            ))}
+          </section>
+          <section className="panel today-skeleton-chart">
+            <Bone width="50%" height={18} />
+            <Bone height={220} />
+          </section>
+        </div>
+      </div>
+    );
+  const cards = ["analytics", "settings", "detail", "pricing"].includes(
+    variant,
+  );
   return (
     <div
       className={`skeleton-layout skeleton-${variant}`}

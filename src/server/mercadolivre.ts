@@ -1180,6 +1180,25 @@ async function importItem(
       reference_account: existing?.reference_account || null,
       version: (existing?.version || 0) + (changed ? 1 : 0),
       ml: observation,
+      ...(existing && changed
+        ? {
+            ml_last_change: {
+              at: now(),
+              sellerId: c.external_account,
+              authVersion: c.auth_version,
+              fields: [
+                ...(existing.price !== next.price ? ["Preço"] : []),
+                ...(existing.status !== next.status ? ["Situação"] : []),
+                ...(existing.title !== next.title ? ["Título"] : []),
+                ...(existing.ml?.availableQuantity !==
+                observation.availableQuantity
+                  ? ["Estoque"]
+                  : []),
+                ...(contentChanged ? ["Conteúdo e mídia"] : []),
+              ],
+            },
+          }
+        : {}),
       updated_at: changed ? now() : existing.updated_at,
     };
     await put("offers", offerId, row);

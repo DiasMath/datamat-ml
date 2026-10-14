@@ -77,6 +77,7 @@ export async function refreshRoutine(
   actor: Actor,
   query: URLSearchParams,
   budget = 180000,
+  salesOnly = false,
 ) {
   canWrite(actor);
   const deadline = Date.now() + Math.min(budget, 220000);
@@ -196,11 +197,11 @@ export async function refreshRoutine(
           deadline,
         );
       const window = windows(store.id);
-      await refreshAnalytics(actor, window.today, deadline);
+      await refreshAnalytics(actor, window.today, deadline, salesOnly);
       const history = await analyticsReport(actor, window.stock);
       const observed = history.stores[0]?.observedAt;
       if (!observed || Date.now() - Date.parse(observed) > 6 * 3600000)
-        await refreshAnalytics(actor, window.stock, deadline);
+        await refreshAnalytics(actor, window.stock, deadline, salesOnly);
       const current = await analyticsReport(actor, window.today);
       if (current.stores.some((s) => s.error || !s.observedAt))
         throw new HttpError(

@@ -4,12 +4,19 @@ import BulkOffers from "./bulk-offers";
 import { ListingChecklist, MarketplacePerformance } from "./marketplace-panels";
 import Analytics from "./analytics";
 import { useToast, useToastMessage } from "./toasts";
+import ListingMedia, { MediaImage } from "./listing-media";
+import { listingCounts, listingType } from "../domain/listing-table";
 import IntegrationForm from "./integration-form";
+import useMlAuthorization from "./use-ml-authorization";
 import { operationalAttention } from "@/domain/marketplace";
 import { useEffect, useMemo, useState, useRef, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { calendarDay } from "../domain/dates";
 import {
+  LoaderCircle,
+  RefreshCw,
+  ShoppingCart,
+  Eye,
   LayoutDashboard,
   Tags,
   Calculator,
@@ -52,6 +59,8 @@ import {
   labels,
   jsonRequest,
   string,
+  RequestLoading,
+  trackedFetch,
 } from "./ui";
 import { OfferForm, TaskForm, NoteForm, ParameterForm } from "./forms";
 import FinancialEditor from "./financial-editor";
@@ -119,6 +128,26 @@ export default function Workspace({ view }: { view: string[] }) {
     data: Row;
   } | null>(null);
   const loadedContext = useRef("");
+  const [indicatorProgress, setIndicatorProgress] = useState<
+    string | undefined
+  >();
+  const mlAuthorization = useMlAuthorization({
+    disabled: busy,
+    returnTo: "/" + route + (query ? "?" + query : ""),
+    onWorking: setBusy,
+    onResult: ({ connected, message }) => {
+      setToast({
+        text: connected
+          ? "Mercado Livre conectado. A conta foi atualizada."
+          : message || "Não foi possível conectar a conta.",
+        error: !connected,
+      });
+      if (connected) {
+        setLoading(true);
+        setRefresh((n) => n + 1);
+      }
+    },
+  });
   const authorizationResult = search.get("mlAuthorization");
   const authorizationMessage = search.get("mlMessage");
   const handledAuthorization = useRef("");
@@ -195,6 +224,7 @@ export default function Workspace({ view }: { view: string[] }) {
     "extensionId",
     "tab",
     "configTab",
+    "tableView",
     "returnTo",
     "taskQ",
     "taskStatus",
@@ -385,10 +415,11 @@ export default function Workspace({ view }: { view: string[] }) {
       setModal(null);
     }
   }
-  function openOffer(key: string) {
+  function openOffer(key: string, initialTab?: string) {
     const p = new URLSearchParams();
     p.set("store", store);
     p.set("returnTo", "/anuncios" + (query ? "?" + query : ""));
+    if (initialTab) p.set("tab", initialTab);
     navigate("anuncios/" + key, p);
   }
   function back() {
@@ -474,7 +505,17 @@ export default function Workspace({ view }: { view: string[] }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="integration-note">
-            <span className="dot orange-dot" />
+            <span
+              className={
+                "dot " +
+                (data?.connections.some(
+                  (c: Row) =>
+                    c.provider === "mercadolivre" && c.status === "connected",
+                )
+                  ? "green-dot"
+                  : "orange-dot")
+              }
+            />
             <span>
               Integrações
               <small>
@@ -539,7 +580,7 @@ export default function Workspace({ view }: { view: string[] }) {
             <span className="sr-only">Loja global</span>
             <select
               aria-label="Loja global"
-              disabled={transitioning || loading}
+              disabled={transitioning || loading || busy}
               value={store}
               onChange={(e) => changeStore(e.target.value)}
             >
@@ -552,6 +593,14 @@ export default function Workspace({ view }: { view: string[] }) {
             </select>
           </label>
         </header>
+        <RequestLoading
+          busy={loading || busy || transitioning}
+          label={
+            mlAuthorization.connectionId
+              ? "Aguardando autorização…"
+              : indicatorProgress
+          }
+        />
         <main className="content" aria-busy={loading || busy}>
           {!offerId && (
             <div className="page-heading">
@@ -591,13 +640,41 @@ export default function Workspace({ view }: { view: string[] }) {
                 )}
                 {section === "anuncios" && (
                   <>
-                    <a
+                    <button
                       className="button"
-                      href={"/api/export?format=xlsx&" + query}
+                      disabled={busy}
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          const result = await trackedFetch(
+                            "/api/export?format=xlsx&" + query,
+                          );
+                          if (!result.ok)
+                            throw new Error(
+                              "Não foi possível exportar a planilha.",
+                            );
+                          const blob = await result.blob(),
+                            url = URL.createObjectURL(blob),
+                            link = document.createElement("a");
+                          link.href = url;
+                          link.download = "datamat-anuncios.xlsx";
+                          document.body.append(link);
+                          link.click();
+                          link.remove();
+                          setTimeout(() => URL.revokeObjectURL(url), 10000);
+                        } catch (error) {
+                          setToast({
+                            text: (error as Error).message,
+                            error: true,
+                          });
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
                     >
                       <Download size={15} />
                       Exportar Excel
-                    </a>
+                    </button>
                     {canWrite && (
                       <>
                         <button
@@ -693,6 +770,42 @@ export default function Workspace({ view }: { view: string[] }) {
                   navigate={navigate}
                   onNew={() => open("offer")}
                   onBatch={() => open("batch")}
+                  busy={busy}
+                  onIndicators={async (ids) => {
+                    if (busy) return;
+                    setBusy(true);
+                    let successful = 0,
+                      errors = 0;
+                    try {
+                      for (let i = 0; i < ids.length; i += 5) {
+                        setIndicatorProgress(
+                          `Consultando ${i + 1}–${Math.min(i + 5, ids.length)} de ${ids.length}…`,
+                        );
+                        const result = await jsonRequest(
+                          "/api/catalog/indicators",
+                          { ids: ids.slice(i, i + 5) },
+                        );
+                        successful += result.results.filter(
+                          (r: Row) => r.metrics || r.fees,
+                        ).length;
+                        errors += result.results.filter(
+                          (r: Row) => r.errors?.length || r.deferred,
+                        ).length;
+                        if (result.results.some((r: Row) => r.deferred)) break;
+                      }
+                      notify(
+                        `${successful} anúncios consultados.${errors ? ` ${errors} precisam de nova consulta; confira a conexão e as permissões.` : ""}`,
+                        errors ? "warning" : "success",
+                      );
+                    } catch (error) {
+                      setToast({ text: (error as Error).message, error: true });
+                    } finally {
+                      setIndicatorProgress(undefined);
+                      setBusy(false);
+                      setLoading(true);
+                      setRefresh((n) => n + 1);
+                    }
+                  }}
                 />
               )}
               {offerId && detail && (
@@ -763,6 +876,7 @@ export default function Workspace({ view }: { view: string[] }) {
                     {[
                       ["overview", "Visão geral"],
                       ["content", "Conteúdo"],
+                      ["media", "Fotos e vídeos"],
                       ["costs", "Custos e preço"],
                       ["performance", "Desempenho"],
                       ["tasks", "Tarefas e notas"],
@@ -812,6 +926,22 @@ export default function Workspace({ view }: { view: string[] }) {
                         onSaved={() => setRefresh((n) => n + 1)}
                       />
                     </>
+                  )}
+                  {tab === "media" && (
+                    <ListingMedia
+                      detail={detail}
+                      canWrite={canWrite}
+                      busy={busy || dirty}
+                      onWorking={setBusy}
+                      onChanged={() => setRefresh((n) => n + 1)}
+                      onRefresh={() =>
+                        mutate(
+                          `/api/catalog/refresh?store=${detail.offer.store_id}`,
+                          { offerId },
+                          "Fotos e vídeos consultados no ML.",
+                        )
+                      }
+                    />
                   )}
                   {tab === "content" && (
                     <section className="panel">
@@ -1054,20 +1184,9 @@ export default function Workspace({ view }: { view: string[] }) {
                         : "Verificação concluída.",
                     )
                   }
-                  onAuthorize={async (c) => {
-                    if (busy) return;
-                    setBusy(true);
-                    try {
-                      const result = await jsonRequest(
-                        `/api/connections/${c.id}/authorize`,
-                        { returnTo: "/" + route + (query ? "?" + query : "") },
-                      );
-                      window.location.assign(result.url);
-                    } catch (e) {
-                      setToast({ text: (e as Error).message, error: true });
-                      setBusy(false);
-                    }
-                  }}
+                  onAuthorize={(c) => mlAuthorization.authorize(c.id)}
+                  authorizingId={mlAuthorization.connectionId}
+                  onCancelAuthorization={mlAuthorization.cancel}
                   onDisconnect={(c) =>
                     mutate(
                       `/api/connections/${c.id}/disconnect`,
@@ -1724,16 +1843,20 @@ function Offers({
   navigate,
   onNew,
   onBatch,
+  busy,
+  onIndicators,
 }: {
   data: Row;
   query: string;
   selected: string[];
   setSelected: (s: string[]) => void;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, initialTab?: string) => void;
   canWrite: boolean;
   navigate: (p: string, q: URLSearchParams) => void;
   onNew: () => void;
   onBatch: () => void;
+  busy: boolean;
+  onIndicators: (ids: string[]) => void;
 }) {
   const q = new URLSearchParams(query),
     [input, setInput] = useState(q.get("q") || "");
@@ -1756,6 +1879,16 @@ function Offers({
         : 1,
     ),
     size = pageSize(q.get("pageSize"));
+  const operational = q.get("tableView")
+    ? q.get("tableView") === "operational"
+    : data.offers.some((o: Row) => !!o.ml);
+  const counts = listingCounts(data.offers);
+  const eligible = data.offers.filter(
+    (o: Row) =>
+      o.ml?.sellerId &&
+      o.origin !== "reference" &&
+      (!selected.length || selected.includes(o.id)),
+  );
   const table = useSmartTable<Row>(
     "offers",
     data.offers,
@@ -1766,48 +1899,95 @@ function Offers({
       {
         id: "name",
         label: "Anúncio / produto",
-        width: 290,
-        value: (o) => o.title,
+        width: operational ? 260 : 290,
+        value: (o: Row) => o.title,
       },
-      { id: "store", label: "Loja", width: 125, value: (o) => o.store_name },
-      {
-        id: "brand",
-        label: "Marca / categoria",
-        width: 165,
-        value: (o) => [o.brand, o.category].filter(Boolean).join(" · "),
-      },
-      {
-        id: "sku",
-        label: "SKU / código ML",
-        width: 160,
-        value: (o) => o.sku || o.ml_id,
-      },
-      {
-        id: "status",
-        label: "Situação",
-        width: 120,
-        value: (o) => labels[o.status],
-      },
+      ...(!operational
+        ? [
+            {
+              id: "store",
+              label: "Loja",
+              width: 125,
+              value: (o: Row) => o.store_name,
+            },
+            {
+              id: "brand",
+              label: "Marca / categoria",
+              width: 165,
+              value: (o: Row) =>
+                [o.brand, o.category].filter(Boolean).join(" · "),
+            },
+            {
+              id: "sku",
+              label: "SKU / código ML",
+              width: 160,
+              value: (o: Row) => o.sku || o.ml_id,
+            },
+            {
+              id: "status",
+              label: "Situação",
+              width: 105,
+              value: (o: Row) => labels[o.status],
+            },
+          ]
+        : []),
       {
         id: "price",
         label: "Preço atual",
-        width: 140,
-        kind: "number",
-        value: (o) => o.price,
+        width: operational ? 100 : 140,
+        kind: "number" as const,
+        value: (o: Row) => o.price,
       },
+      ...(operational
+        ? [
+            {
+              id: "conditions",
+              label: "Condições",
+              width: 125,
+              value: (o: Row) => o.ml?.listingTypeId,
+            },
+            {
+              id: "settlement",
+              label: "Recebe (estim.)",
+              width: 125,
+              kind: "number" as const,
+              value: (o: Row) => o.settlementEstimate?.amount,
+            },
+            {
+              id: "metrics",
+              label: "Últimos 7 dias",
+              width: 125,
+              kind: "number" as const,
+              value: (o: Row) => o.metrics7d?.paidOrders,
+            },
+            {
+              id: "quality",
+              label: "Qualidade",
+              width: 110,
+              kind: "number" as const,
+              value: (o: Row) => o.ml?.health,
+            },
+            {
+              id: "status",
+              label: "Situação",
+              width: 105,
+              value: (o: Row) => labels[o.status],
+            },
+          ]
+        : []),
       {
         id: "pending",
         label: "Pendências",
         width: 130,
-        kind: "number",
-        value: (o) => o.pending.length,
+        kind: "number" as const,
+        value: (o: Row) => o.pending.length,
       },
       {
         id: "updated",
         label: "Atualizado",
-        width: 165,
-        kind: "date",
-        value: (o) => o.updated_at,
+        width: 145,
+        kind: "date" as const,
+        value: (o: Row) => o.updated_at,
       },
       { id: "open", label: "", width: 48, fixed: true },
     ],
@@ -1841,10 +2021,36 @@ function Offers({
     for (const v of values) p.append(key, v);
     p.delete("page");
     if (key === "sort") p.delete("sortDir");
+    if (
+      key === "tableView" &&
+      values[0] === "operational" &&
+      ["store", "brand", "sku"].includes(p.get("sort") || "")
+    ) {
+      p.delete("sort");
+      p.delete("sortDir");
+    }
+    if (
+      key === "tableView" &&
+      values[0] === "registry" &&
+      ["conditions", "settlement", "metrics", "quality"].includes(
+        p.get("sort") || "",
+      )
+    ) {
+      p.delete("sort");
+      p.delete("sortDir");
+    }
     navigate("anuncios", p);
   }
   const chips = [...q.entries()].filter(([k]) =>
-    ["q", "brand", "category", "status", "type", "pending"].includes(k),
+    [
+      "q",
+      "brand",
+      "category",
+      "status",
+      "type",
+      "pending",
+      "listingKind",
+    ].includes(k),
   );
   return (
     <section className="panel offers-panel">
@@ -1913,6 +2119,20 @@ function Offers({
           selected={q.getAll("status")}
           onChange={(v) => update("status", v)}
         />
+        <label className="filter-select">
+          <select
+            aria-label="Tipo de publicação ML"
+            value={q.get("listingKind") || ""}
+            onChange={(e) =>
+              update("listingKind", e.target.value ? [e.target.value] : [])
+            }
+          >
+            <option value="">Todas as publicações</option>
+            <option value="catalog">Catálogo</option>
+            <option value="traditional">Tradicionais</option>
+            <option value="local">Cadastros locais / referências</option>
+          </select>
+        </label>
         <MultiFilter
           label="Tipo"
           values={["unit", "kit", "variation"]}
@@ -1956,6 +2176,7 @@ function Offers({
                     status: "Situação",
                     type: "Tipo",
                     pending: "Pendência",
+                    listingKind: "Publicação",
                   } as Row
                 )[k]
               }
@@ -1966,6 +2187,9 @@ function Offers({
                     __missing: "Não informado",
                     yes: "Qualquer",
                     costs: "Custos",
+                    catalog: "Catálogo",
+                    traditional: "Tradicionais",
+                    local: "Cadastros locais / referências",
                   } as Row
                 )[v] ||
                 v}
@@ -1985,6 +2209,32 @@ function Offers({
           </button>
         </div>
       )}
+      {counts.mlIds > 0 && (
+        <div className="listing-counts" aria-label="Contagem de publicações ML">
+          <span>
+            <strong>{counts.mlIds}</strong> IDs ML
+          </span>
+          <span>
+            <strong>{counts.titles}</strong>{" "}
+            {counts.titles === 1 ? "título distinto" : "títulos distintos"}
+          </span>
+          <span>
+            {counts.catalog} catálogo · {counts.traditional} tradicionais
+            {counts.local ? ` · ${counts.local} locais/referências` : ""}
+          </span>
+          <details>
+            <summary>Por que os totais podem diferir?</summary>
+            <p>
+              O sistema mantém um registro para cada ID do Mercado Livre.
+              Publicações com o mesmo título, inclusive as de catálogo, podem
+              ter IDs, preços e condições diferentes. Títulos iguais não
+              comprovam que se trata do mesmo produto. A contagem da tela do ML
+              também depende de agrupamentos e filtros. Nenhum anúncio é unido
+              ou excluído por ter título igual.
+            </p>
+          </details>
+        </div>
+      )}
       <div className="table-heading">
         <span>
           <strong>{data.offers.length}</strong>{" "}
@@ -2001,6 +2251,27 @@ function Offers({
           )}
         </span>
         <div>
+          <label className="sort-label">
+            Visão
+            <select
+              aria-label="Visão da tabela"
+              value={operational ? "operational" : "registry"}
+              onChange={(e) => update("tableView", [e.target.value])}
+            >
+              <option value="operational">Operacional ML</option>
+              <option value="registry">Cadastro</option>
+            </select>
+          </label>
+          {eligible.length > 0 && canWrite && (
+            <button
+              className="button compact"
+              disabled={busy}
+              onClick={() => onIndicators(eligible.map((o: Row) => o.id))}
+            >
+              {busy && <LoaderCircle className="spin" size={14} />}Consultar
+              indicadores ML
+            </button>
+          )}
           {selected.length > 0 && canWrite && (
             <button className="button compact" onClick={onBatch}>
               Ações em lote
@@ -2016,9 +2287,21 @@ function Offers({
               <option value="updated">Última atualização</option>
               <option value="name">Produto A–Z</option>
               <option value="price">Preço</option>
-              <option value="store">Loja</option>
-              <option value="brand">Marca / categoria</option>
-              <option value="sku">SKU / código ML</option>
+              {!operational && (
+                <>
+                  <option value="store">Loja</option>
+                  <option value="brand">Marca / categoria</option>
+                  <option value="sku">SKU / código ML</option>
+                </>
+              )}
+              {operational && (
+                <>
+                  <option value="conditions">Condições</option>
+                  <option value="settlement">Recebe (estim.)</option>
+                  <option value="metrics">Pedidos · últimos 7 dias</option>
+                  <option value="quality">Qualidade ML</option>
+                </>
+              )}
               <option value="status">Situação</option>
               <option value="pending">Pendências</option>
             </select>
@@ -2033,7 +2316,12 @@ function Offers({
           aria-label="Lista de anúncios"
           tabIndex={0}
         >
-          <table className="offers-table smart-table" {...table.props}>
+          <table
+            className={
+              "offers-table smart-table " + (operational ? "operational" : "")
+            }
+            {...table.props}
+          >
             {table.header({
               select: (
                 <input
@@ -2092,38 +2380,163 @@ function Offers({
                     </td>
                   )}
                   <td>
-                    <button
-                      className="offer-title"
-                      onClick={() => onOpen(o.id)}
-                    >
-                      {o.title}
-                    </button>
-                    <small>
-                      {o.product_name}{" "}
-                      <span className="type-label">{labels[o.type]}</span>
-                      {o.origin === "reference" && (
-                        <span className="orange">
-                          {" "}
-                          · Referência: {o.reference_account}
-                        </span>
-                      )}
-                    </small>
+                    <div className="offer-product-cell">
+                      <button
+                        className="offer-photo-button"
+                        aria-label={"Ver fotos e vídeos de " + o.title}
+                        onClick={() => onOpen(o.id, "media")}
+                      >
+                        <MediaImage
+                          src={o.ml?.thumbnailUrl}
+                          alt={"Foto de " + o.title}
+                          className="offer-thumbnail"
+                        />
+                      </button>
+                      <div>
+                        <button
+                          className="offer-title"
+                          title={o.title}
+                          onClick={() => onOpen(o.id)}
+                        >
+                          {o.title}
+                        </button>
+                        <small>
+                          {!operational || o.product_name !== o.title
+                            ? o.product_name
+                            : ""}{" "}
+                          {(!operational || o.type !== "unit") && (
+                            <span className="type-label">{labels[o.type]}</span>
+                          )}
+                          {o.origin === "reference" && (
+                            <span className="orange">
+                              {" "}
+                              · Referência: {o.reference_account}
+                            </span>
+                          )}
+                        </small>
+                        <small className="offer-stock">
+                          {o.ml
+                            ? `Estoque: ${o.ml.availableQuantity ?? "não informado"} un.`
+                            : "Estoque não consultado"}
+                          {o.ml?.catalogListing ? " · Catálogo" : ""}
+                        </small>
+                        {operational && (
+                          <small className="mono">
+                            {o.ml_id || "Sem código ML"}
+                            {o.sku ? " · SKU " + o.sku : ""}
+                          </small>
+                        )}
+                      </div>
+                    </div>
                   </td>
-                  <td>
-                    <span className="store-pill">{o.store_name}</span>
-                  </td>
-                  <td>
-                    {o.brand || <span className="muted">Sem marca</span>}
-                    <small>{o.category || "Sem categoria"}</small>
-                  </td>
-                  <td className="mono">
-                    {o.sku || "—"}
-                    <small>{o.ml_id || "Sem código ML"}</small>
-                  </td>
-                  <td>
-                    <Badge value={o.status} />
-                  </td>
+                  {!operational && (
+                    <>
+                      <td>
+                        <span className="store-pill">{o.store_name}</span>
+                      </td>
+                      <td>
+                        {o.brand || <span className="muted">Sem marca</span>}
+                        <small>{o.category || "Sem categoria"}</small>
+                      </td>
+                      <td className="mono">
+                        {o.sku || "—"}
+                        <small>{o.ml_id || "Sem código ML"}</small>
+                      </td>
+                      <td>
+                        <Badge value={o.status} />
+                      </td>
+                    </>
+                  )}
                   <td className="numeric mono">{money(o.price)}</td>
+                  {operational && (
+                    <>
+                      <td>
+                        <span>{listingType(o.ml?.listingTypeId)}</span>
+                        <small>
+                          {o.ml?.freeShipping == null
+                            ? "Frete não consultado"
+                            : o.ml.freeShipping
+                              ? "Oferece frete grátis"
+                              : "Frete por conta do comprador"}
+                        </small>
+                        <small>
+                          {o.ml?.catalogListing
+                            ? "Catálogo"
+                            : o.ml
+                              ? "Tradicional"
+                              : "Cadastro local"}
+                        </small>
+                      </td>
+                      <td className="numeric">
+                        <span title="Estimativa após a tarifa oficial e o frete cadastrado, antes de impostos, custos e ajustes da venda.">
+                          {o.settlementEstimate
+                            ? money(o.settlementEstimate.amount)
+                            : "—"}
+                        </span>
+                        <small>
+                          {o.settlementEstimate
+                            ? "Após tarifa + frete · estimado"
+                            : "Consulte tarifas e informe frete"}
+                        </small>
+                      </td>
+                      <td>
+                        {o.metrics7d ? (
+                          <>
+                            <div
+                              className="listing-metrics"
+                              title={`${date(o.metrics7d.from)} a ${date(o.metrics7d.to)}`}
+                            >
+                              <span
+                                aria-label={o.metrics7d.visits + " visitas"}
+                              >
+                                <Eye size={13} />
+                                {o.metrics7d.visits}
+                              </span>
+                              <span
+                                aria-label={
+                                  o.metrics7d.paidOrders + " pedidos pagos"
+                                }
+                              >
+                                <ShoppingCart size={13} />
+                                {o.metrics7d.paidOrders}
+                              </span>
+                            </div>
+                            <small>
+                              {o.metrics7d.orderVisitRate == null
+                                ? "Conversão indisponível"
+                                : `${o.metrics7d.orderVisitRate}% pedidos/visitas`}
+                            </small>
+                            <small className="muted">
+                              Consulta: {date(o.metrics7d.observedAt)}
+                            </small>
+                          </>
+                        ) : (
+                          <span className="small muted">Não consultado</span>
+                        )}
+                      </td>
+                      <td>
+                        {o.ml?.health == null ? (
+                          <span className="small muted">ML não informou</span>
+                        ) : (
+                          <span className="quality-score">
+                            {Math.round(o.ml.health * 100)} / 100
+                          </span>
+                        )}
+                        <small title="Checklist próprio de campos e mídia; não representa experiência de compra ou ranking oficial.">
+                          {o.quality?.length
+                            ? `${o.quality.length} melhorias no checklist`
+                            : "Checklist sem pendências"}
+                        </small>
+                      </td>
+                      <td>
+                        <Badge value={o.status} />
+                        {o.ml?.subStatus?.includes("paused_by_seller") && (
+                          <small>Pausado pelo vendedor</small>
+                        )}
+                      </td>
+                    </>
+                  )}
+
                   <td>
                     {o.pending.length ? (
                       <button
@@ -2243,7 +2656,26 @@ function MultiFilter({
   onChange: (v: string[]) => void;
 }) {
   return (
-    <details className="multi-filter">
+    <details
+      className="multi-filter"
+      onToggle={(event) => {
+        const details = event.currentTarget;
+        if (!details.open) return;
+        const popup = details.querySelector(
+          ":scope > div",
+        ) as HTMLElement | null;
+        if (!popup) return;
+        popup.style.transform = "";
+        const box = popup.getBoundingClientRect();
+        const offset =
+          box.left < 8
+            ? 8 - box.left
+            : box.right > innerWidth - 8
+              ? innerWidth - 8 - box.right
+              : 0;
+        popup.style.transform = `translateX(${offset}px)`;
+      }}
+    >
       <summary>
         {label}
         {selected.length > 0 && <span>{selected.length}</span>}
@@ -3230,6 +3662,8 @@ function Configuration({
   onAuthorize,
   onDisconnect,
   onApplication,
+  authorizingId,
+  onCancelAuthorization,
   busy,
   query,
 }: {
@@ -3242,6 +3676,8 @@ function Configuration({
   onAuthorize: (c: Row) => void;
   onDisconnect: (c: Row) => void;
   onApplication: (c: Row) => void;
+  authorizingId?: string | null;
+  onCancelAuthorization?: () => void;
   busy: boolean;
   query: string;
 }) {
@@ -3391,14 +3827,21 @@ function Configuration({
       )}
       {selected === "integrations" && (
         <>
-          <div className="alert">
-            Conecte cada conta à sua loja e importe os anúncios em lotes de até
-            20. Os custos internos ficam preservados. A consulta traz o estado
-            atual do ML; propostas continuam seguindo revisão e aprovação.
-          </div>
+          <p className="small muted integration-intro">
+            Conecte a loja e consulte o catálogo. Ative{" "}
+            <strong>leitura, escrita e offline_access</strong> no aplicativo ML:
+            o refresh token é fornecido automaticamente ao autorizar, sem
+            precisar copiá-lo.
+          </p>
           <div className="integration-grid">
             {data.connections.map((c: Row) => (
-              <section className="panel" key={c.id}>
+              <section
+                className={
+                  "panel integration-card " +
+                  (c.status === "connected" ? "is-connected" : "")
+                }
+                key={c.id}
+              >
                 <div className="panel-heading">
                   <h2>{labels[c.provider]}</h2>
                   <Badge value={c.status} />
@@ -3416,7 +3859,9 @@ function Configuration({
                 <p className="small muted">
                   {c.provider === "mercadolivre"
                     ? c.configured
-                      ? "Autorize a conta no Mercado Livre para consultar anúncios, tarifas e desempenho."
+                      ? c.status === "connected"
+                        ? "Anúncios, tarifas e desempenho vinculados a esta loja."
+                        : "Autorize a conta no Mercado Livre para consultar anúncios, tarifas e desempenho."
                       : "Cadastre o ID e a chave da aplicação pelo botão abaixo."
                     : c.provider === "bling"
                       ? "A conexão de produtos e estoque com o Bling está em desenvolvimento."
@@ -3444,59 +3889,95 @@ function Configuration({
                   </>
                 )}
                 {isAdmin && c.provider === "mercadolivre" && (
-                  <div className="heading-actions">
-                    <button
-                      className="button compact"
-                      disabled={busy}
-                      onClick={() => onApplication(c)}
-                    >
-                      {c.application_source === "store"
-                        ? "Editar credenciais"
-                        : "Configurar integração"}
-                    </button>
-                    <button
-                      className="button compact"
-                      disabled={busy || !c.configured}
-                      onClick={() => onAuthorize(c)}
-                    >
-                      {c.external_account
-                        ? "Renovar autorização"
-                        : "Conectar conta ML"}
-                    </button>
-                    {c.external_account && (
+                  <div className="integration-actions">
+                    <div className="integration-primary-actions">
+                      {c.status === "connected" && (
+                        <button
+                          className="button primary"
+                          disabled={busy || !c.configured}
+                          onClick={() => onSync(c)}
+                        >
+                          {busy && authorizingId !== c.id ? (
+                            <LoaderCircle className="spin" size={15} />
+                          ) : (
+                            <RefreshCw size={15} />
+                          )}
+                          {c.has_more
+                            ? "Continuar importação · 20 anúncios"
+                            : "Sincronizar anúncios"}
+                        </button>
+                      )}
+                      <button
+                        className={
+                          "button " +
+                          (c.status === "connected" ? "" : "primary")
+                        }
+                        disabled={busy || !c.configured}
+                        onClick={() => onAuthorize(c)}
+                      >
+                        {authorizingId === c.id && (
+                          <LoaderCircle className="spin" size={15} />
+                        )}
+                        {authorizingId === c.id
+                          ? "Aguardando autorização…"
+                          : c.external_account
+                            ? "Renovar autorização"
+                            : "Conectar conta ML"}
+                      </button>
+                      {authorizingId === c.id && (
+                        <button
+                          className="button"
+                          onClick={onCancelAuthorization}
+                        >
+                          Cancelar autorização
+                        </button>
+                      )}
+                    </div>
+                    <div className="integration-secondary-actions">
                       <button
                         className="text-link"
                         disabled={busy}
-                        onClick={() => onDisconnect(c)}
+                        onClick={() => onApplication(c)}
                       >
-                        Desconectar
+                        {c.application_source === "store"
+                          ? "Editar credenciais"
+                          : "Configurar integração"}
                       </button>
+                      {c.has_more && (
+                        <button
+                          className="text-link"
+                          disabled={busy}
+                          onClick={() => onSync({ ...c, restart: true })}
+                        >
+                          Recomeçar consulta do catálogo
+                        </button>
+                      )}
+                      {c.external_account && (
+                        <button
+                          className="text-link danger-text"
+                          disabled={busy}
+                          onClick={() => onDisconnect(c)}
+                        >
+                          Desconectar
+                        </button>
+                      )}
+                    </div>
+                    {authorizingId === c.id && (
+                      <p className="small muted">
+                        Conclua a autorização na janela do Mercado Livre. Esta
+                        tela continua aberta e mantém seus filtros.
+                      </p>
                     )}
                   </div>
                 )}
-                {isAdmin &&
-                  (c.provider !== "mercadolivre" || c.external_account) && (
-                    <button
-                      className="button compact"
-                      disabled={
-                        busy || (c.provider === "mercadolivre" && !c.configured)
-                      }
-                      onClick={() => onSync(c)}
-                    >
-                      {c.provider === "mercadolivre"
-                        ? c.has_more
-                          ? "Continuar importação · 20 anúncios"
-                          : "Sincronizar anúncios"
-                        : "Verificar disponibilidade"}
-                    </button>
-                  )}
-                {isAdmin && c.provider === "mercadolivre" && c.has_more && (
+                {isAdmin && c.provider !== "mercadolivre" && (
                   <button
-                    className="text-link"
+                    className="button compact"
                     disabled={busy}
-                    onClick={() => onSync({ ...c, restart: true })}
+                    onClick={() => onSync(c)}
                   >
-                    Recomeçar consulta do catálogo
+                    {busy && <LoaderCircle className="spin" size={15} />}
+                    Verificar disponibilidade
                   </button>
                 )}
               </section>

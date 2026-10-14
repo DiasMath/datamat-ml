@@ -88,7 +88,7 @@ test("Excel supports multiple sheets, preserves leading-zero SKUs and exports ev
   await page.goto("/anuncios?store=juntos-com&q=Oferta+XLSX+UI");
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("link", { name: "Exportar Excel", exact: true }).click(),
+    page.getByRole("button", { name: "Exportar Excel", exact: true }).click(),
   ]);
   expect(download.suggestedFilename()).toBe("datamat-anuncios.xlsx");
   const sheets = await readXlsxFile(await readFile((await download.path())!));

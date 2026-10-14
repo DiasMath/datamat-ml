@@ -231,6 +231,7 @@ export function publicConnection(c: Row) {
     auth_version: c.auth_version || 0,
     nickname: c.nickname || null,
     last_sync_at: c.last_sync_at || null,
+    catalog_total: c.catalog_total ?? null,
     has_more: Boolean(c.has_more || c.pending_batch),
     last_error: c.last_error || null,
     last_notification_at: c.last_notification_at || null,
@@ -503,12 +504,15 @@ function authorizationReturnPath(
 
 // Read only the navigation context, bound to the same actor and browser as
 // OAuth. Keep it available for denied/expired/failed flows as well as success.
-export async function authorizationReturn(
+export async function authorizationContext(
   actor: Actor,
   params: URLSearchParams,
   cookie: string | undefined,
 ) {
-  const fallback = "/configuracoes?configTab=integrations";
+  const fallback = {
+    path: "/configuracoes?configTab=integrations",
+    popupChannel: null as string | null,
+  };
   const state = params.get("state");
   if (
     !state ||
@@ -525,13 +529,26 @@ export async function authorizationReturn(
   )
     return fallback;
   const c = await connection(actor, row.connection_id);
-  return authorizationReturnPath(actor, c.store_id, row.return_to);
+  return {
+    path: authorizationReturnPath(actor, c.store_id, row.return_to),
+    popupChannel: z.uuid().safeParse(row.popup_channel).success
+      ? (row.popup_channel as string)
+      : null,
+  };
+}
+export async function authorizationReturn(
+  actor: Actor,
+  params: URLSearchParams,
+  cookie: string | undefined,
+) {
+  return (await authorizationContext(actor, params, cookie)).path;
 }
 
 export async function startAuthorization(
   actor: Actor,
   connectionId: string,
   returnTo?: unknown,
+  popupChannel?: string,
 ) {
   admin(actor);
   const c = await connection(actor, connectionId),
@@ -544,6 +561,7 @@ export async function startAuthorization(
     actor_id: actor.id,
     auth_version: c.auth_version || 0,
     return_to: authorizationReturnPath(actor, c.store_id, returnTo),
+    popup_channel: popupChannel ? z.uuid().parse(popupChannel) : null,
     secret: encryptSecret(verifier),
     expires_at: Date.now() + 600000,
     status: "pending",
@@ -918,6 +936,22 @@ export function safePictureUrl(value: string | null | undefined) {
     return null;
   }
 }
+export function safeListingUrl(value: string | undefined, itemId: string) {
+  try {
+    const url = new URL(value || "");
+    if (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      ["produto.mercadolivre.com.br", "www.mercadolivre.com.br"].includes(
+        url.hostname,
+      )
+    )
+      return url.toString();
+  } catch {}
+  return `https://produto.mercadolivre.com.br/${itemId.replace(/^MLB/, "MLB-")}-_JM`;
+}
 const itemSchema = z.object({
   id: z.string().regex(/^MLB\d+$/),
   seller_id: z.number().int().positive(),
@@ -936,6 +970,9 @@ const itemSchema = z.object({
   available_quantity: z.number().int().nonnegative(),
   sold_quantity: z.number().int().nonnegative(),
   catalog_listing: z.boolean().optional(),
+  catalog_product_id: z.string().nullable().optional(),
+  user_product_id: z.string().nullable().optional(),
+  parent_item_id: z.string().nullable().optional(),
   pictures: z
     .array(
       z.object({
@@ -1359,6 +1396,10 @@ async function syncListingsInside(
         availableQuantity: item.available_quantity,
         soldQuantityLifetime: item.sold_quantity,
         catalogListing: item.catalog_listing || false,
+        catalogProductId: item.catalog_product_id || null,
+        userProductId: item.user_product_id || null,
+        parentItemId: item.parent_item_id || null,
+        permalink: safeListingUrl(item.permalink, item.id),
         photoCount: item.pictures.length,
         pictures: item.pictures.map((p) => ({
           id: p.id || null,
@@ -1438,6 +1479,7 @@ async function syncListingsInside(
         last_sync_at: now(),
         ...(!p.itemIds ? { last_catalog_sync_at: now() } : {}),
         last_error: null,
+        ...(!p.itemIds ? { catalog_total: page.paging.total } : {}),
         updated_at: now(),
       });
       if (!p.itemIds) await remove("ml_sync_pages", c.id);
@@ -1597,6 +1639,8 @@ export async function quoteTariff(
         "A oferta ou a conexão mudou durante a consulta",
       );
     await put("ml_quotes", quoteId, quote);
+    if (new Decimal(p.price!).eq(offer.price))
+      await put("ml_current_quotes", offerId, quote);
   });
   return quote;
 }
@@ -1624,12 +1668,21 @@ export async function validateQuote(
     );
   return q;
 }
-export async function refreshMetrics(actor: Actor, offerId: string) {
-  return requestDeadline.run(Date.now() + 240000, () =>
-    refreshMetricsInside(actor, offerId),
+export async function refreshMetrics(
+  actor: Actor,
+  offerId: string,
+  days: 7 | 30 = 30,
+  deadline = Date.now() + 240000,
+) {
+  return requestDeadline.run(deadline, () =>
+    refreshMetricsInside(actor, offerId, days),
   );
 }
-async function refreshMetricsInside(actor: Actor, offerId: string) {
+async function refreshMetricsInside(
+  actor: Actor,
+  offerId: string,
+  days: 7 | 30,
+) {
   canWrite(actor);
   const { offer, c } = await connectedOffer(actor, offerId);
   const item = itemSchema.parse(await api(c, "/items/" + offer.ml_id));
@@ -1642,7 +1695,10 @@ async function refreshMetricsInside(actor: Actor, offerId: string) {
       date_to: z.string(),
     })
     .parse(
-      await api(c, `/items/${offer.ml_id}/visits/time_window?last=30&unit=day`),
+      await api(
+        c,
+        `/items/${offer.ml_id}/visits/time_window?last=${days}&unit=day`,
+      ),
     );
   const from = Date.parse(visit.date_from),
     to = Date.parse(visit.date_to);
@@ -1650,7 +1706,7 @@ async function refreshMetricsInside(actor: Actor, offerId: string) {
     !Number.isFinite(from) ||
     !Number.isFinite(to) ||
     to <= from ||
-    to - from > 32 * 86400000 ||
+    to - from > (days + 2) * 86400000 ||
     to > Date.now() + 86400000
   )
     throw new HttpError(
@@ -1754,6 +1810,7 @@ async function refreshMetricsInside(actor: Actor, offerId: string) {
     seller_id: c.external_account,
     connection_id: c.id,
     auth_version: c.auth_version,
+    periodDays: days,
     from: new Date(from).toISOString(),
     to: new Date(to).toISOString(),
     visits: visit.total_visits,
@@ -1779,7 +1836,7 @@ async function refreshMetricsInside(actor: Actor, offerId: string) {
         409,
         "A oferta ou a conexão mudou durante a consulta de métricas",
       );
-    await put("ml_metrics", offerId, metrics);
+    await put(days === 7 ? "ml_metrics_7d" : "ml_metrics", offerId, metrics);
   });
   return metrics;
 }

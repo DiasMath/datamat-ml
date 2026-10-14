@@ -512,6 +512,7 @@ test("media-only and stock changes update the official snapshot, version and aud
   const listed = listing.offerChoices.find((r: any) => r.id === made.id)!;
   assert.equal(listed.ml.pictures, undefined);
   assert.equal(listed.ml.photoCount, 1);
+  assert.equal(listed.ml.thumbnailUrl, "https://http2.mlstatic.com/photo2.jpg");
   assert.deepEqual(await get("costs", made.id), beforeCosts);
   const audit = (await find("history", { offer_id: made.id }))
     .filter((h) => h.field === "ml.observed_update")

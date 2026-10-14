@@ -1,4 +1,5 @@
 "use client";
+import { trackedFetch } from "./ui";
 import { useSmartTable } from "./smart-table";
 import { useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
@@ -67,7 +68,7 @@ export default function RoutineToday({
       running = true;
       setLoading(true);
       try {
-        const response = await fetch(
+        const response = await trackedFetch(
           `/api/routine${refresh ? "/refresh" : ""}?` +
             new URLSearchParams({ store }),
           {

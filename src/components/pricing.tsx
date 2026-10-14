@@ -1,4 +1,5 @@
 "use client";
+import { trackedFetch } from "./ui";
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import {
   calculate,
@@ -108,15 +109,18 @@ export default function Pricing({
     if (!useOfficialTariff || !quotePrice) return () => abort.abort();
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/offers/${offer.id}/ml-quote`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            price: quotePrice,
-            offerVersion: offer.version,
-          }),
-          signal: abort.signal,
-        });
+        const response = await trackedFetch(
+          `/api/offers/${offer.id}/ml-quote`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              price: quotePrice,
+              offerVersion: offer.version,
+            }),
+            signal: abort.signal,
+          },
+        );
         const data = await response.json();
         if (!response.ok)
           throw new Error(data.error || "Não foi possível consultar a tarifa");

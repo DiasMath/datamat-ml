@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { trackedFetch } from "./ui";
 import { useToast } from "./toasts";
 export default function useCatalogPolling({
   store,
@@ -42,7 +43,7 @@ export default function useCatalogPolling({
       running = true;
       lastAttempt = Date.now();
       try {
-        const response = await fetch(
+        const response = await trackedFetch(
             "/api/catalog/refresh?" + new URLSearchParams({ store }),
             {
               method: "POST",

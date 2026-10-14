@@ -4,6 +4,9 @@ import { workspaceActor, HttpError } from "@/server/access";
 import { initializeDatabase, DatabaseConfigurationError } from "@/server/db";
 import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
+import { oauthPopupResponse } from "@/server/oauth-popup";
+import { refreshListingIndicators } from "@/server/listing-indicators";
+import * as media from "@/server/listing-media";
 import { receiveNotification } from "@/server/ml-notifications";
 import { analyticsReport, refreshAnalytics } from "@/server/analytics";
 import {
@@ -53,8 +56,14 @@ async function handle(req: NextRequest, context: Context) {
       if (origin !== new URL(allowed).origin)
         throw new HttpError(403, "Origem da operação não autorizada");
     }
+    const mediaUpload =
+      resource === "offers" &&
+      key &&
+      action === "media" &&
+      path.length === 3 &&
+      req.method === "POST";
     let body: unknown = {};
-    if (req.method !== "GET") {
+    if (req.method !== "GET" && !mediaUpload) {
       const text = await req.text();
       if (Buffer.byteLength(text) > (notification ? 64000 : 2_000_000))
         throw new HttpError(413, "Envie arquivos de até 2 MB");
@@ -91,6 +100,62 @@ async function handle(req: NextRequest, context: Context) {
         "Login e usuários locais foram removidos; o acesso será integrado ao portal",
       );
     const actor = await workspaceActor();
+    if (
+      resource === "media-storage" &&
+      key === "status" &&
+      path.length === 2 &&
+      req.method === "GET"
+    )
+      return response(await media.mediaStorageStatus(actor));
+    if (mediaUpload) {
+      const reader = req.body?.getReader();
+      if (!reader) throw new HttpError(422, "Arquivo ausente");
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > media.MAX_MEDIA_BYTES + 64000) {
+          await reader.cancel();
+          throw new HttpError(413, "Cada foto ou vídeo deve ter até 3 MB");
+        }
+        chunks.push(value);
+      }
+      const form = await new Response(new Uint8Array(Buffer.concat(chunks)), {
+        headers: { "Content-Type": req.headers.get("content-type") || "" },
+      }).formData();
+      const file = form.get("file");
+      if (!(file instanceof File)) throw new HttpError(422, "Arquivo ausente");
+      return response(
+        await media.uploadMedia(actor, key, {
+          file,
+          requestId: form.get("requestId"),
+          offerVersion: form.get("offerVersion"),
+        }),
+      );
+    }
+    if (
+      resource === "listing-media" &&
+      key &&
+      path.length === 2 &&
+      req.method === "GET"
+    )
+      return media.readMedia(actor, key, req.headers.get("range"));
+    if (
+      resource === "listing-media" &&
+      key &&
+      path.length === 2 &&
+      req.method === "DELETE"
+    )
+      return response(await media.deleteMedia(actor, key));
+    if (
+      resource === "catalog" &&
+      key === "indicators" &&
+      path.length === 2 &&
+      req.method === "POST"
+    )
+      return response(await refreshListingIndicators(actor, body));
     if (
       resource === "offers" &&
       key &&
@@ -166,12 +231,15 @@ async function handle(req: NextRequest, context: Context) {
       req.method === "GET"
     ) {
       let returnPath = "/configuracoes?configTab=integrations";
+      let popupChannel: string | null = null;
       try {
-        returnPath = await ml.authorizationReturn(
+        const context = await ml.authorizationContext(
           actor,
           req.nextUrl.searchParams,
           req.cookies.get(ml.ML_STATE_COOKIE)?.value,
         );
+        returnPath = context.path;
+        popupChannel = context.popupChannel;
       } catch {}
       const destination = new URL(
         returnPath,
@@ -195,7 +263,14 @@ async function handle(req: NextRequest, context: Context) {
             : "Não foi possível validar a autorização do Mercado Livre; tente conectar novamente",
         );
       }
-      const result = NextResponse.redirect(destination);
+      const popupResponse = popupChannel
+        ? oauthPopupResponse(destination, popupChannel)
+        : null;
+      const result = popupResponse
+        ? new NextResponse(popupResponse.body, {
+            headers: popupResponse.headers,
+          })
+        : NextResponse.redirect(destination);
       result.headers.set("Cache-Control", "no-store");
       result.headers.set("Referrer-Policy", "no-referrer");
       result.cookies.set(ml.ML_STATE_COOKIE, "", {
@@ -384,11 +459,17 @@ async function handle(req: NextRequest, context: Context) {
         action === "authorize" &&
         req.method === "POST"
       ) {
+        const settings = z
+          .object({
+            returnTo: z.string().max(8000).optional(),
+            popupChannel: z.uuid().optional(),
+          })
+          .parse(body);
         const { state, url } = await ml.startAuthorization(
           actor,
           key,
-          z.object({ returnTo: z.string().max(8000).optional() }).parse(body)
-            .returnTo,
+          settings.returnTo,
+          settings.popupChannel,
         );
         const result = response({ url });
         result.cookies.set(ml.ML_STATE_COOKIE, state, {

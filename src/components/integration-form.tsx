@@ -47,6 +47,15 @@ export default function IntegrationForm({
         As credenciais são usadas somente nesta loja. Depois de salvar, autorize
         a conta correspondente no Mercado Livre.
       </p>
+      <div className="integration-permissions">
+        <strong>Permissões necessárias no Mercado Livre</strong>
+        <p>
+          Ative leitura, escrita e <code>offline_access</code> na aplicação.
+          Essa última permite ao ML fornecer o refresh token para renovar a
+          conexão automaticamente. Depois, clique em Conectar conta ML. Você não
+          precisa copiar tokens para o sistema.
+        </p>
+      </div>
       <div className="form-grid">
         <Field label="ID do aplicativo *">
           <input

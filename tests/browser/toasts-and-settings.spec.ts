@@ -206,10 +206,11 @@ test("application configuration rejects writes from an unrelated origin", async 
 
 test("OAuth failure restores the selected store and every filter before showing the toast", async ({
   page,
+  context,
 }) => {
   const target =
     "/configuracoes?store=juntos-com&configTab=integrations&brand=Marca+A&brand=Marca+B&q=produto&page=3&pageSize=50";
-  await page.route(
+  await context.route(
     "https://auth.mercadolivre.com.br/authorization?**",
     async (route) => {
       const state = new URL(route.request().url()).searchParams.get("state")!;
@@ -224,6 +225,10 @@ test("OAuth failure restores the selected store and every filter before showing 
     },
   );
   await page.goto(target);
+  const marker = crypto.randomUUID();
+  await page.evaluate((value) => {
+    (window as any).__authorizationMarker = value;
+  }, marker);
   const authorize = page.waitForResponse(
     (r) => r.url().endsWith("/authorize") && r.request().method() === "POST",
   );
@@ -233,6 +238,7 @@ test("OAuth failure restores the selected store and every filter before showing 
   const response = await authorize;
   expect(response.status()).toBe(200);
   expect(response.request().postDataJSON().returnTo).toBe(target);
+  expect(response.request().postDataJSON().popupChannel).toBeTruthy();
   await expect(
     page.getByRole("alert").filter({ hasText: "Autorização não concedida" }),
   ).toBeVisible();
@@ -243,6 +249,9 @@ test("OAuth failure restores the selected store and every filter before showing 
   await expect(
     page.getByRole("button", { name: "Conectar conta ML", exact: true }),
   ).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).__authorizationMarker)).toBe(
+    marker,
+  );
   await page.reload();
   await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
   expect(new URL(page.url()).search).toBe(

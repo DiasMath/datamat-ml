@@ -806,6 +806,50 @@ test("metrics use the visits interval and paid orders, never lifetime sales or d
   );
   assert.deepEqual(await get("ml_metrics", o.id), before);
 });
+test("seven-day metrics use their own interval/cache and refuse thirty-day responses", async () => {
+  const o = await importedOffer();
+  const to = new Date().toISOString(),
+    from = new Date(Date.now() - 7 * 86400000).toISOString();
+  const old = await get("ml_metrics", o.id);
+  let visitsQuery = "";
+  await mocked(
+    (url, init) => {
+      if (url.pathname.endsWith("/visits/time_window")) {
+        visitsQuery = url.searchParams.get("last") || "";
+        return json({ total_visits: 12, date_from: from, date_to: to });
+      }
+      if (url.pathname === "/orders/search")
+        return json({ paging: { total: 0 }, results: [] });
+      if (url.pathname === "/questions/search") return json({ total: 0 });
+      return tariffHandler()(url, init);
+    },
+    () => ml.refreshMetrics(actor, o.id, 7),
+  );
+  assert.equal(visitsQuery, "7");
+  assert.equal((await get("ml_metrics_7d", o.id))!.periodDays, 7);
+  assert.deepEqual(await get("ml_metrics", o.id), old);
+  const listing = await s.workspace(
+    actor,
+    new URLSearchParams({ store: "juntos-com" }),
+  );
+  assert.equal(
+    listing.offers.find((row: Row) => row.id === o.id)!.metrics7d.visits,
+    12,
+  );
+  const saved = await get("ml_metrics_7d", o.id);
+  await mocked(
+    (url, init) =>
+      url.pathname.endsWith("/visits/time_window")
+        ? json({
+            total_visits: 999,
+            date_from: new Date(Date.now() - 30 * 86400000).toISOString(),
+            date_to: to,
+          })
+        : tariffHandler()(url, init),
+    () => assert.rejects(ml.refreshMetrics(actor, o.id, 7), /período/),
+  );
+  assert.deepEqual(await get("ml_metrics_7d", o.id), saved);
+});
 test("webhooks deduplicate and bound metadata, reject other apps and never trust payloads as listing updates", async () => {
   const body = {
     _id: "event-1",

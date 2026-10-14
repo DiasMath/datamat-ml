@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { Upload, Check, ArrowRight } from "lucide-react";
+import { Upload, Check, ArrowRight, LoaderCircle } from "lucide-react";
 import { parseCsv } from "@/domain/csv";
 import {
   assertWorkbookSize,
@@ -246,7 +246,11 @@ export default function Importer({
           </p>
         )}
         <label className="upload-zone">
-          <Upload size={26} />
+          {loading ? (
+            <LoaderCircle size={26} className="spin" />
+          ) : (
+            <Upload size={26} />
+          )}
           <strong>Selecionar arquivo Excel ou CSV</strong>
           <span>
             {loading

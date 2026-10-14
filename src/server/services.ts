@@ -44,7 +44,14 @@ import {
   importPreviewSchema,
 } from "./schemas";
 import { adapters, reportUrl, type Provider } from "./integrations";
-import { publicConnection, syncListings, validateQuote } from "./mercadolivre";
+import {
+  publicConnection,
+  syncListings,
+  validateQuote,
+  safePictureUrl,
+} from "./mercadolivre";
+import { listingCounts } from "../domain/listing-table";
+import { draftMedia } from "./listing-media";
 import { listingQuality } from "../domain/marketplace";
 
 const parse = (v: string) => JSON.parse(v),
@@ -390,6 +397,8 @@ export async function offerDetail(actor: Actor, offerId: string) {
     calculation: calculate(offer.ml?.variablePrices ? null : offer.price, c, p),
     quality: listingQuality(offer),
     mlMetrics: (await get("ml_metrics", offerId)) || null,
+    draftMedia:
+      offer.origin !== "reference" ? await draftMedia(actor, offerId) : [],
     mlCompetition: (await get("ml_competition", offerId)) || null,
     competitorTitles: (await find("competitors", { offer_id: offerId }))
       .filter(
@@ -1004,6 +1013,8 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     proposals,
     history,
     connections,
+    metricsRows,
+    currentQuotes,
   ] = await Promise.all([
     list(actor, "offers", selected),
     find("products", { organization_id: actor.organization_id }),
@@ -1016,8 +1027,17 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     list(actor, "proposals", selected),
     list(actor, "history", selected),
     list(actor, "connections", selected),
+    list(actor, "ml_metrics_7d", selected),
+    list(actor, "ml_current_quotes", selected),
   ]);
   const productMap = new Map(products.map((p) => [p.id, p])),
+    metricsMap = new Map(metricsRows.map((m) => [m.offer_id, m])),
+    quoteMap = new Map(currentQuotes.map((m) => [m.offer_id, m])),
+    connectionMap = new Map(
+      connections
+        .filter((c) => c.provider === "mercadolivre")
+        .map((c) => [c.store_id, c]),
+    ),
     brandMap = new Map(brands.map((b) => [b.id, b.name])),
     categoryMap = new Map(categories.map((c) => [c.id, c.name])),
     costMap = new Map(costRows.map((c) => [c.id, c])),
@@ -1039,8 +1059,51 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       );
       const brand = brandMap.get(p.brand_id) || null,
         category = categoryMap.get(p.category_id) || null;
+      const account = connectionMap.get(o.store_id),
+        metric = metricsMap.get(o.id),
+        quote = quoteMap.get(o.id);
+      const matching = (snapshot: Row | undefined) =>
+        !!snapshot &&
+        account?.status === "connected" &&
+        snapshot.seller_id === account.external_account &&
+        snapshot.auth_version === account.auth_version;
+      const metrics7d =
+        matching(metric) && metric?.periodDays === 7
+          ? {
+              visits: metric.visits,
+              paidOrders: metric.paidOrders,
+              units: metric.units,
+              orderVisitRate: metric.orderVisitRate,
+              from: metric.from,
+              to: metric.to,
+              observedAt: metric.observed_at,
+            }
+          : null;
+      const tariff =
+        quote &&
+        matching(quote) &&
+        quote?.offer_version === o.version &&
+        quote.expires_at > Date.now() &&
+        o.price != null &&
+        new Decimal(quote.price).eq(o.price)
+          ? quote
+          : null;
+      const shipping = c ? parse(c.data_json).shipping : null;
       return {
         ...o,
+        metrics7d,
+        settlementEstimate:
+          tariff && shipping != null
+            ? {
+                amount: new Decimal(o.price)
+                  .minus(tariff.total)
+                  .minus(shipping)
+                  .toFixed(2),
+                fee: tariff.total,
+                shipping,
+                quotedAt: tariff.quoted_at,
+              }
+            : null,
         // Full media and technical attributes are loaded in the individual ficha.
         ...(o.ml
           ? {
@@ -1049,7 +1112,13 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
                 attributes,
                 variationDetails,
                 ...summary
-              }: Row) => summary)(o.ml),
+              }: Row) => ({
+                ...summary,
+                thumbnailUrl:
+                  pictures
+                    ?.map((p: Row) => safePictureUrl(p.url))
+                    .find(Boolean) || null,
+              }))(o.ml),
             }
           : {}),
         product_name: p.name,
@@ -1091,6 +1160,12 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       if (values.length && !values.includes((o as Row)[field] || "__missing"))
         return false;
     }
+    const listing = query.get("listingKind");
+    if (listing === "catalog" && !o.ml?.catalogListing) return false;
+    if (listing === "traditional" && (!o.ml?.sellerId || o.ml.catalogListing))
+      return false;
+    if (listing === "local" && o.ml?.sellerId && o.origin !== "reference")
+      return false;
     if (query.get("pending") === "yes" && !o.pending.length) return false;
     if (
       query.get("pending") === "costs" &&
@@ -1134,6 +1209,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     user: actor,
     stores: actor.stores,
     offers: filtered,
+    listingCounts: listingCounts(filtered),
     offerChoices: offers,
     products: products.map((p) => ({
       ...p,
@@ -1381,6 +1457,15 @@ export async function deleteRecord(
         "Registro alterado; recarregue antes de excluir",
       );
     if (collection === "offers") {
+      if (
+        (await find("listing_media", { offer_id: documentId })).some((r) =>
+          ["ready", "uploading", "deleting"].includes(r.status),
+        )
+      )
+        throw new HttpError(
+          409,
+          "Remova a mídia em rascunho antes de excluir o anúncio",
+        );
       if (row.ml_apply_until > Date.now() || row.ml_status_uncertain)
         throw new HttpError(
           409,

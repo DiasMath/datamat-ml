@@ -6,6 +6,7 @@ import {
   Children,
   isValidElement,
   cloneElement,
+  useSyncExternalStore,
 } from "react";
 import { X, ArrowUpRight, Inbox, LoaderCircle } from "lucide-react";
 import { displayDate } from "../domain/dates";
@@ -216,12 +217,60 @@ export const nullable = (value: FormDataEntryValue | null) =>
     : String(value).trim().replace(",", ".");
 export const string = (form: FormData, key: string) =>
   String(form.get(key) || "").trim();
+let requests = 0;
+const activitySubscribers = new Set<() => void>();
+function activityChange(change: number) {
+  requests = Math.max(0, requests + change);
+  activitySubscribers.forEach((listener) => listener());
+}
+export async function trackedFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) {
+  activityChange(1);
+  try {
+    return await fetch(input, init);
+  } finally {
+    activityChange(-1);
+  }
+}
+export function RequestLoading({
+  busy = false,
+  label = "Processando…",
+}: {
+  busy?: boolean;
+  label?: string;
+}) {
+  const count = useSyncExternalStore(
+    (listener) => {
+      activitySubscribers.add(listener);
+      return () => {
+        activitySubscribers.delete(listener);
+      };
+    },
+    () => requests,
+    () => 0,
+  );
+  return busy || count > 0 ? (
+    <div
+      className="request-loading"
+      role="progressbar"
+      aria-label="Operação em andamento"
+      aria-valuetext={label}
+    >
+      <div className="request-loading-bar" />
+      <span>
+        <LoaderCircle size={14} className="spin" /> {label}
+      </span>
+    </div>
+  ) : null;
+}
 export const jsonRequest = async <T = any,>(
   url: string,
   body?: unknown,
   method = "POST",
 ): Promise<T> => {
-  const res = await fetch(
+  const res = await trackedFetch(
     url,
     body === undefined
       ? { cache: "no-store" }

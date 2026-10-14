@@ -1,4 +1,5 @@
 "use client";
+import { trackedFetch } from "./ui";
 import { useSmartTable } from "./smart-table";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -135,7 +136,7 @@ export default function Analytics({
       running = true;
       setLoading(true);
       try {
-        const response = await fetch(
+        const response = await trackedFetch(
           `/api/analytics${refresh ? "/refresh" : ""}?${key}`,
           {
             method: refresh ? "POST" : "GET",

@@ -3758,3 +3758,78 @@ h3,
     padding-right: 14px;
   }
 }
+
+.confirmation-modal {
+  width: min(440px, calc(100vw - 32px));
+  padding: 28px;
+}
+.confirmation-modal h2 {
+  font-size: 20px;
+  margin: 16px 0 10px;
+}
+.confirmation-modal p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+.confirmation-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: #bf35351a;
+}
+.confirmation-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.button.danger {
+  color: white;
+  background: #bf3535;
+  border-color: #bf3535;
+}
+.button.danger:hover {
+  background: #a62b2b;
+}
+@media (max-width: 420px) {
+  .confirmation-modal {
+    padding: 22px;
+  }
+  .confirmation-actions .button {
+    flex: 1 1 auto;
+  }
+}
+.drive-card-skeleton {
+  min-height: 204px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.integration-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.integration-url input {
+  flex: 1;
+  min-width: 0;
+}
+.integration-url .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+.drive-settings-form .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.drive-settings-form .integration-permissions summary {
+  cursor: pointer;
+  font-weight: 600;
+}

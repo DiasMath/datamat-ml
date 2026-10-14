@@ -58,6 +58,9 @@ export default function Pricing({
     [conditionsVerified, setConditionsVerified] = useState(false),
     [contentChange, setContentChange] = useState(false),
     [reason, setReason] = useState("");
+  const quoteCache = useRef(new Map<string, Row>());
+  const lastRefresh = useRef(0);
+  const cooldown = useRef(0);
   const request = useRef<{ key: string; id: string } | null>(null);
   const connected =
     mlConnection?.configured &&
@@ -94,7 +97,7 @@ export default function Pricing({
   const useOfficialTariff =
     automaticTariff && connected && !overrides.mlPercent && !overrides.mlFixed;
   const quoteKey = quotePrice
-    ? `${offer.id}:${offer.version}:${quotePrice}`
+    ? `${offer.id}:${offer.version}:${mlConnection?.auth_version || ""}:${quotePrice}`
     : "";
   const activeQuote =
     useOfficialTariff &&
@@ -107,6 +110,24 @@ export default function Pricing({
     setQuoteError("");
     setQuotePending(Boolean(useOfficialTariff && quotePrice));
     if (!useOfficialTariff || !quotePrice) return () => abort.abort();
+    if (lastRefresh.current !== quoteRefresh) {
+      quoteCache.current.delete(quoteKey);
+      lastRefresh.current = quoteRefresh;
+    }
+    const cached = quoteCache.current.get(quoteKey);
+    if (cached && cached.expires_at > Date.now()) {
+      setQuote(cached);
+      setQuotePending(false);
+      return () => abort.abort();
+    }
+    if (cooldown.current > Date.now()) {
+      setQuoteError(
+        "O Mercado Livre limitou temporariamente as consultas. Aguarde um minuto para consultar a tarifa; o cálculo local continua atualizando.",
+      );
+      setQuotePending(false);
+      return () => abort.abort();
+    }
+
     const timer = setTimeout(async () => {
       try {
         const response = await trackedFetch(
@@ -122,9 +143,19 @@ export default function Pricing({
           },
         );
         const data = await response.json();
-        if (!response.ok)
+        if (!response.ok) {
+          if (response.status === 429) cooldown.current = Date.now() + 60000;
           throw new Error(data.error || "Não foi possível consultar a tarifa");
-        if (!abort.signal.aborted) setQuote({ ...data, key: quoteKey });
+        }
+        if (!abort.signal.aborted) {
+          const value = { ...data, key: quoteKey };
+          for (const [key, cached] of quoteCache.current)
+            if (cached.expires_at <= Date.now()) quoteCache.current.delete(key);
+          if (quoteCache.current.size >= 32)
+            quoteCache.current.delete(quoteCache.current.keys().next().value!);
+          quoteCache.current.set(quoteKey, value);
+          setQuote(value);
+        }
       } catch (e) {
         if (!abort.signal.aborted) {
           setQuote(null);

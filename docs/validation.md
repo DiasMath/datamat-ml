@@ -5,9 +5,9 @@ Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta r
 | Verificação              | Resultado                                                                                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                                |
-| Domínio e serviços       | `npm test`: **163 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **170 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                    |
-| Navegador Chromium       | `npm run test:e2e`: **57 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Navegador Chromium       | `npm run test:e2e`: **61 passaram**, nenhuma falha ou teste ignorado                                                                                       |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
 | Responsividade           | 17 telas/abas × 6 larguras: **102 combinações**, sem transbordamento horizontal do documento                                                               |
@@ -147,3 +147,13 @@ Operação e limites: [intelligence.md](intelligence.md). Pesquisa: [avantpro.md
 - A leitura autenticada dos buckets padrão/legado do Firebase Storage retornou 404. Upload está preparado e o site explica como ativar o Storage; não houve upload no bucket real. Fotos do ML funcionam independentemente dessa ativação. Publicação de fotos/vídeos pelo site no ML e consulta completa de Clips permanecem pendentes.
 
 Uso e ativação do armazenamento: [listing-media.md](listing-media.md).
+
+## Tarifas, diálogos e Google Drive — 14/10/2026
+
+- A consulta real de precificação do anúncio informado retornou HTTP 429 (limitação temporária do ML). O servidor explica esse estado sem invalidar a conexão e não repete a consulta imediatamente. A precificação aceita tarifa individual e lista, preservando a validação da decomposição; taxas não são inventadas quando a API falha. A interface mantém o cálculo local imediato, reutiliza cotações válidas por cenário/versão/autorização e aplica uma pausa de um minuto após 429.
+- Confirmações de exclusão e alterações ML usam diálogos acessíveis do site. Cancelar/Escape preservam campos e formulário; descarte precisa de confirmação explícita. O teste de retorno do navegador confirmou a rota e os campos preservados ao cancelar e a saída correta ao confirmar, inclusive para formulário de um módulo filho. O registro de alterações fica no provedor persistente para funcionar entre rotas. Recarregar/fechar a aba conserva o aviso nativo, exigido pelo navegador.
+- Google Drive configurável por loja, com Client ID/segredo criptografado, URI exibida, PKCE, estado/cookie de uso único, consentimento offline, identidade validada e pasta privada criada pelo aplicativo. Credenciais não aparecem em consultas públicas ou recarga do formulário. O navegador percorreu cancelamento real pela rota OAuth sem recarregar a tela principal ou perder a loja.
+- Os testes Drive exercitam envio, reprodução/Range, remoção, isolamento de loja, versões, papéis, confirmação de upload com retorno perdido, identidade dos arquivos e preservação de refresh token omitido na renovação. IDs reservados e checksum verificam o conteúdo; nenhuma conta Drive real foi conectada e nenhum arquivo de teste foi enviado ao Google.
+- Resultado: **170 testes de domínio/serviços e 61 testes Chromium passaram**, sem ignorados. Build de produção e TypeScript passaram. A suíte inicial identificou falhas no método HTTP do formulário e na proteção ao voltar entre rotas; ambas foram corrigidas e exercitadas na suíte completa aprovada. A revisão visual do formulário Drive em desktop/celular compactou a ajuda inicial e alinhou o botão de copiar a URI.
+
+O Drive substitui a ativação do Firebase Storage indicada na revisão anterior. Metadados/banco continuam no Firestore; arquivos anexados são rascunhos e não são publicados automaticamente no ML. Procedimento de ativação: [listing-media.md](listing-media.md).

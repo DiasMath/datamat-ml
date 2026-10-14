@@ -57,8 +57,11 @@ test("competitor CRUD, alerts, observed history and review task persist without 
   await page
     .getByRole("button", { name: "Referência do navegador", exact: true })
     .click();
-  page.once("dialog", (d) => d.accept());
   await dialog
+    .getByRole("button", { name: "Excluir referência", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Excluir referência?" })
     .getByRole("button", { name: "Excluir referência", exact: true })
     .click();
   await expect(dialog).not.toBeVisible();

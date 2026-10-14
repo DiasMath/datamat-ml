@@ -114,7 +114,10 @@ export default function ListingMedia({
   useEffect(() => {
     if (!canWrite || detail.offer.origin === "reference") return;
     let active = true;
-    jsonRequest("/api/media-storage/status")
+    jsonRequest(
+      "/api/media-storage/status?" +
+        new URLSearchParams({ store: detail.offer.store_id }),
+    )
       .then((result) => {
         if (active) setStorage(result);
       })
@@ -319,7 +322,7 @@ export default function ListingMedia({
           </div>
           <p className="small muted">
             JPG, PNG, WebP, MP4 ou WebM · até 3 MB por arquivo · armazenamento
-            privado no Firebase.
+            privado no Google Drive.
           </p>
           {canWrite && (
             <div className="media-storage-status" role="status">
@@ -332,15 +335,9 @@ export default function ListingMedia({
                 <span className="green">Armazenamento pronto para envio.</span>
               ) : (
                 <span>
-                  Ative o Firebase Storage do projeto para enviar arquivos.{" "}
-                  {storage.consoleUrl && (
-                    <a
-                      href={storage.consoleUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Abrir Firebase Storage
-                    </a>
+                  Conecte o Google Drive desta loja para enviar arquivos.{" "}
+                  {storage.configureUrl && (
+                    <a href={storage.configureUrl}>Configurar Google Drive</a>
                   )}
                 </span>
               )}

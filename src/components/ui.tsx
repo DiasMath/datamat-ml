@@ -1,6 +1,7 @@
 "use client";
 import {
   useEffect,
+  useState,
   useRef,
   useId,
   Children,
@@ -10,6 +11,7 @@ import {
 } from "react";
 import { X, ArrowUpRight, Inbox, LoaderCircle } from "lucide-react";
 import { displayDate } from "../domain/dates";
+import { useConfirm, discardChanges, useUnsavedChanges } from "./confirmation";
 import { useToast } from "./toasts";
 
 export const money = (value: unknown) =>
@@ -153,12 +155,25 @@ export function Modal({
   subtitle,
   onClose,
   children,
+  protectChanges = true,
 }: {
   title: string;
   subtitle?: string;
+  protectChanges?: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const confirm = useConfirm();
+  const [changed, setChanged] = useState(false);
+  useUnsavedChanges(changed && protectChanges, () => {
+    setChanged(false);
+    onClose();
+  });
+  async function close() {
+    if (protectChanges && changed && !(await confirm(discardChanges))) return;
+    setChanged(false);
+    onClose();
+  }
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const { setHost } = useToast();
@@ -171,9 +186,10 @@ export function Modal({
       aria-labelledby={titleId}
       aria-describedby={subtitle ? titleId + "-subtitle" : undefined}
       className="modal"
+      onChangeCapture={() => setChanged(true)}
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        void close();
       }}
     >
       <div className="modal-header">
@@ -181,7 +197,7 @@ export function Modal({
           <h2 id={titleId}>{title}</h2>
           {subtitle && <p id={titleId + "-subtitle"}>{subtitle}</p>}
         </div>
-        <button aria-label="Fechar" className="icon-button" onClick={onClose}>
+        <button aria-label="Fechar" className="icon-button" onClick={close}>
           <X size={20} />
         </button>
       </div>

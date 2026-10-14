@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { jsonRequest } from "./ui";
 type Result = { connected: boolean; message?: string };
 export default function useMlAuthorization(options: {
+  provider?: "mercadolivre" | "google-drive";
   disabled: boolean;
   returnTo: string;
   onWorking: (working: boolean) => void;
@@ -21,28 +22,30 @@ export default function useMlAuthorization(options: {
   );
   async function authorize(id: string) {
     if (callbacks.current.disabled || cleanup.current) return;
+    const drive = callbacks.current.provider === "google-drive",
+      prefix = drive ? "drive" : "ml",
+      name = drive ? "Google Drive" : "Mercado Livre";
     const channelKey = crypto.randomUUID();
     const popup = window.open(
       "",
-      "ml-authorization-" + channelKey,
+      prefix + "-authorization-" + channelKey,
       "popup,width=640,height=760",
     );
     if (!popup) {
       callbacks.current.onResult({
         connected: false,
-        message:
-          "Permita a janela de autorização do Mercado Livre no navegador e tente novamente.",
+        message: `Permita a janela de autorização do ${name} no navegador e tente novamente.`,
       });
       return;
     }
-    popup.document.title = "Conectar Mercado Livre";
-    popup.document.body.textContent = "Abrindo autorização do Mercado Livre…";
+    popup.document.title = "Conectar " + name;
+    popup.document.body.textContent = "Abrindo autorização do " + name + "…";
     setConnectionId(id);
     callbacks.current.onWorking(true);
     let done = false;
     const channel =
       typeof BroadcastChannel !== "undefined"
-        ? new BroadcastChannel("datamat-ml-oauth-" + channelKey)
+        ? new BroadcastChannel("datamat-" + prefix + "-oauth-" + channelKey)
         : null;
     let closedAt = 0;
     const finish = (result: Result) => {
@@ -57,7 +60,7 @@ export default function useMlAuthorization(options: {
     };
     const receive = (data: any) => {
       if (
-        data?.type !== "datamat-ml-authorization" ||
+        data?.type !== "datamat-" + prefix + "-authorization" ||
         data.channel !== channelKey ||
         !["connected", "failed"].includes(data.result)
       )
@@ -93,8 +96,7 @@ export default function useMlAuthorization(options: {
       () =>
         finish({
           connected: false,
-          message:
-            "A autorização expirou. Inicie uma nova conexão com o Mercado Livre.",
+          message: `A autorização expirou. Inicie uma nova conexão com o ${name}.`,
         }),
       600000,
     );
@@ -113,10 +115,15 @@ export default function useMlAuthorization(options: {
       });
     };
     try {
-      const result = await jsonRequest(`/api/connections/${id}/authorize`, {
-        returnTo: callbacks.current.returnTo,
-        popupChannel: channelKey,
-      });
+      const result = await jsonRequest(
+        drive
+          ? `/api/google-drive/${id}/authorize`
+          : `/api/connections/${id}/authorize`,
+        {
+          returnTo: callbacks.current.returnTo,
+          popupChannel: channelKey,
+        },
+      );
       if (!done && !popup.closed) popup.location.href = result.url;
     } catch (error) {
       popup.close();

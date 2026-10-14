@@ -267,7 +267,7 @@ test("failed storage saves remain retryable and removal failures preserve the dr
   };
   await assert.rejects(
     uploadMedia(actor, offer.id, values, unavailable),
-    /Firebase Storage/,
+    /Google Drive/,
   );
   assert.equal((await draftMedia(actor, offer.id)).length, 0);
   const asset = await uploadMedia(actor, offer.id, values, memory.adapter);
@@ -278,7 +278,7 @@ test("failed storage saves remain retryable and removal failures preserve the dr
         throw new Error("private");
       },
     }),
-    /Firebase Storage/,
+    /Google Drive/,
   );
   assert.equal((await get("listing_media", asset.id))!.status, "ready");
   const viewer = { ...actor, role: "viewer" as const };

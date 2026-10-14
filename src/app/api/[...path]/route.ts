@@ -6,6 +6,7 @@ import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
 import { oauthPopupResponse } from "@/server/oauth-popup";
 import { refreshListingIndicators } from "@/server/listing-indicators";
+import * as drive from "@/server/google-drive";
 import * as media from "@/server/listing-media";
 import { receiveNotification } from "@/server/ml-notifications";
 import { analyticsReport, refreshAnalytics } from "@/server/analytics";
@@ -106,7 +107,83 @@ async function handle(req: NextRequest, context: Context) {
       path.length === 2 &&
       req.method === "GET"
     )
-      return response(await media.mediaStorageStatus(actor));
+      return response(
+        await media.mediaStorageStatus(
+          actor,
+          req.nextUrl.searchParams.get("store") || actor.stores[0]?.id || "",
+        ),
+      );
+    if (resource === "google-drive") {
+      if (!key && req.method === "GET")
+        return response(
+          await drive.list(
+            actor,
+            req.nextUrl.searchParams.get("store") || "all",
+          ),
+        );
+      if (key === "callback" && req.method === "GET") {
+        const params = req.nextUrl.searchParams,
+          cookie = req.cookies.get("datamat_drive_state")?.value;
+        const state = await drive.authorizationContext(actor, params, cookie);
+        const destination = new URL(
+          "/configuracoes",
+          process.env.APP_URL || "http://localhost:3000",
+        );
+        destination.search = new URLSearchParams({
+          store: state.store_id,
+          configTab: "integrations",
+        }).toString();
+        try {
+          await drive.finishAuthorization(actor, params, cookie);
+          destination.searchParams.set("driveAuthorization", "connected");
+        } catch (error) {
+          destination.searchParams.set("driveAuthorization", "failed");
+          destination.searchParams.set(
+            "driveMessage",
+            error instanceof HttpError
+              ? error.message
+              : "Não foi possível concluir a conexão do Google Drive",
+          );
+        }
+        const html = oauthPopupResponse(
+          destination,
+          state.channel,
+          "google-drive",
+        );
+        const result = new NextResponse(await html.text(), {
+          headers: html.headers,
+        });
+        result.cookies.delete({
+          name: "datamat_drive_state",
+          path: "/api/google-drive/callback",
+        });
+        return result;
+      }
+      if (key && action === "application" && req.method === "PUT")
+        return response(await drive.configure(actor, key, body));
+      if (key && action === "authorize" && req.method === "POST") {
+        const p = z.object({ popupChannel: z.uuid() }).parse(body);
+        const flow = await drive.startAuthorization(actor, key, p.popupChannel);
+        const result = response({ url: flow.url });
+        result.cookies.set("datamat_drive_state", flow.state, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: drive.redirectUri().startsWith("https:"),
+          maxAge: 600,
+          path: "/api/google-drive/callback",
+        });
+        return result;
+      }
+      if (key && action === "disconnect" && req.method === "POST")
+        return response(
+          await drive.disconnect(
+            actor,
+            key,
+            z.object({ version: z.number() }).parse(body).version,
+          ),
+        );
+      throw new HttpError(404, "Operação do Google Drive não encontrada");
+    }
     if (mediaUpload) {
       const reader = req.body?.getReader();
       if (!reader) throw new HttpError(422, "Arquivo ausente");
@@ -589,4 +666,5 @@ async function handle(req: NextRequest, context: Context) {
 export const GET = handle;
 export const POST = handle;
 export const PATCH = handle;
+export const PUT = handle;
 export const DELETE = handle;

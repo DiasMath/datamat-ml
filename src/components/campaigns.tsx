@@ -1,4 +1,5 @@
 "use client";
+import { useConfirm, discardChanges, useUnsavedChanges } from "./confirmation";
 import { useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import {
@@ -82,6 +83,8 @@ export default function Campaigns({
   onChanged: () => void;
 }) {
   const { notify } = useToast();
+  const confirm = useConfirm();
+  const [changed, setChanged] = useState(false);
   const [rows, setRows] = useState<Row[]>([]),
     [loading, setLoading] = useState(true),
     [loaded, setLoaded] = useState(false),
@@ -92,6 +95,11 @@ export default function Campaigns({
     [busy, setBusy] = useState(false),
     [q, setQ] = useState(""),
     [error, setError] = useState("");
+  useUnsavedChanges(Boolean((modal && changed) || preview), () => {
+    setChanged(false);
+    setModal(null);
+    setPreview(null);
+  });
   const operation = useRef(crypto.randomUUID()),
     input = useRef<HTMLInputElement>(null),
     lastQuery = useRef(""),
@@ -212,14 +220,14 @@ export default function Campaigns({
     aligned && totalRevenue !== null && new Decimal(totalRevenue).gt(0)
       ? spend.div(totalRevenue).mul(100).toFixed(2)
       : null;
-  function close() {
+  async function close() {
     if (
       busy ||
-      (editingDirty.current &&
-        !confirm("Descartar alterações ainda não salvas no relatório?"))
+      ((editingDirty.current || preview) && !(await confirm(discardChanges)))
     )
       return;
     editingDirty.current = false;
+    setChanged(false);
     setModal(null);
     setPreview(null);
     operation.current = crypto.randomUUID();
@@ -234,6 +242,7 @@ export default function Campaigns({
       });
       notify(`${values.length} relatório(s) salvo(s).`);
       editingDirty.current = false;
+      setChanged(false);
       setModal(null);
       setPreview(null);
       operation.current = crypto.randomUUID();
@@ -331,6 +340,7 @@ export default function Campaigns({
                 disabled={busy || loading}
                 onClick={() => {
                   editingDirty.current = false;
+                  setChanged(false);
                   setModal({ create: true });
                 }}
               >
@@ -415,6 +425,7 @@ export default function Campaigns({
                               disabled={loading}
                               onClick={() => {
                                 editingDirty.current = false;
+                                setChanged(false);
                                 setModal(r);
                               }}
                             >
@@ -490,6 +501,7 @@ export default function Campaigns({
       )}
       {modal && (
         <Modal
+          protectChanges={false}
           title={modal.create ? "Novo relatório de campanha" : modal.name}
           onClose={close}
         >
@@ -509,6 +521,7 @@ export default function Campaigns({
             canWrite={canWrite}
             onChange={() => {
               editingDirty.current = true;
+              setChanged(true);
               operation.current = crypto.randomUUID();
             }}
             onSave={(v) => save([v], "manual")}
@@ -516,9 +529,13 @@ export default function Campaigns({
               modal.id
                 ? async () => {
                     if (
-                      !confirm(
-                        "Excluir este relatório local? A campanha no ML permanece intacta.",
-                      )
+                      !(await confirm({
+                        title: "Excluir relatório?",
+                        description:
+                          "Este relatório local será excluído. A campanha no Mercado Livre permanece intacta.",
+                        confirmLabel: "Excluir relatório",
+                        danger: true,
+                      }))
                     )
                       return;
                     setBusy(true);
@@ -560,7 +577,11 @@ export default function Campaigns({
         </Modal>
       )}
       {preview && (
-        <Modal title="Conferir importação de campanhas" onClose={close}>
+        <Modal
+          protectChanges={false}
+          title="Conferir importação de campanhas"
+          onClose={close}
+        >
           <p>
             {preview.length} relatório(s). Cada campanha precisa de um
             identificador estável e períodos sem sobreposição. Atualizações
@@ -615,6 +636,8 @@ function CampaignForm({
   onTask?: () => Promise<void>;
 }) {
   const { notify } = useToast();
+  const confirm = useConfirm();
+  const [changed, setChanged] = useState(false);
   const [values, setValues] = useState<Record<string, any>>({ ...initial }),
     [dirty, setDirty] = useState(false);
   useEffect(() => {

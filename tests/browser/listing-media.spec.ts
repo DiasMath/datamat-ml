@@ -230,7 +230,7 @@ test("media gallery previews images/videos, prepares drafts and preserves offici
   await context.route("https://http2.mlstatic.com/datamat-e2e-**", (route) =>
     route.fulfill({ contentType: "image/png", body: png }),
   );
-  await page.route("**/api/media-storage/status", (route) =>
+  await page.route("**/api/media-storage/status*", (route) =>
     route.fulfill({ json: { status: "ready" } }),
   );
   await page.route("**/api/listing-media/*", async (route) => {
@@ -456,7 +456,7 @@ test("media API parses multipart files, rejects invalid and oversized content, a
   expect(large.status()).toBe(413);
   const valid = await upload(png, "image/png");
   expect(valid.status()).toBe(503);
-  expect((await valid.json()).error).toContain("Firebase Storage");
+  expect((await valid.json()).error).toContain("Google Drive");
   const metadata = await db()
     .collection("listing_media")
     .where("offer_id", "==", offer.id)

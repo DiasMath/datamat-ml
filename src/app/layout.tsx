@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/toasts";
+import { ConfirmationProvider } from "@/components/confirmation";
 export const metadata: Metadata = {
   title: "DATAMAT · Gestão de anúncios",
   description:
@@ -17,7 +18,9 @@ export default function RootLayout({
         <link rel="stylesheet" href="/fonts/fonts.css" />
       </head>
       <body>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <ConfirmationProvider>{children}</ConfirmationProvider>
+        </ToastProvider>
       </body>
     </html>
   );

@@ -896,6 +896,30 @@ test("webhooks deduplicate and bound metadata, reject other apps and never trust
     100,
   );
 });
+test("rate-limited quotes do not retry rapidly or disconnect the store", async () => {
+  const o = await importedOffer(),
+    before = (await get("connections", connectionId))!;
+  let requests = 0;
+  await mocked(
+    () => {
+      requests++;
+      return json({ error: "too_many_requests" }, 429);
+    },
+    async () => {
+      await assert.rejects(
+        ml.quoteTariff(actor, o.id, { price: "85", offerVersion: o.version }),
+        (error: any) =>
+          error.status === 429 && /limitou temporariamente/.test(error.message),
+      );
+    },
+  );
+  assert.equal(requests, 1);
+  assert.equal((await get("connections", connectionId))!.status, before.status);
+  assert.equal(
+    (await get("connections", connectionId))!.auth_version,
+    before.auth_version,
+  );
+});
 test("disconnect invalidates unfinished OAuth and in-flight tariff queries without erasing business data", async () => {
   const o = await importedOffer(),
     flow = await ml.startAuthorization(actor, connectionId);

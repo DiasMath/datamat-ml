@@ -1,54 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
-import { getStorage } from "firebase-admin/storage";
-import { getApp } from "firebase-admin/app";
+import { driveStorage, storageStatus } from "./google-drive";
 import { z } from "zod";
 import { canWrite, authorizeStore, HttpError, type Actor } from "./access";
-import { db, get, find, put, transaction, key, now, type Row } from "./db";
+import { get, find, put, transaction, key, now, type Row } from "./db";
 export const MAX_MEDIA_BYTES = 3 * 1024 * 1024;
 export type MediaStorage = {
-  save: (path: string, bytes: Buffer, type: string) => Promise<void>;
+  save: (
+    path: string,
+    bytes: Buffer,
+    type: string,
+    name?: string,
+  ) => Promise<void>;
   read: (path: string) => Promise<Buffer>;
   remove: (path: string) => Promise<void>;
 };
-const storage: MediaStorage = {
-  async save(path, bytes, type) {
-    await bucket()
-      .file(path)
-      .save(bytes, {
-        resumable: false,
-        metadata: { contentType: type, cacheControl: "private, max-age=300" },
-      });
-  },
-  async read(path) {
-    return (await bucket().file(path).download())[0];
-  },
-  async remove(path) {
-    await bucket().file(path).delete({ ignoreNotFound: true });
-  },
-};
-function bucket() {
-  if (process.env.FIRESTORE_EMULATOR_HOST)
-    throw new HttpError(503, "Uploads de teste usam armazenamento isolado");
-  db();
-  const app = getApp("datamat-server");
-  return getStorage(app).bucket(
-    process.env.FIREBASE_STORAGE_BUCKET?.trim() ||
-      `${app.options.projectId}.firebasestorage.app`,
-  );
-}
-export async function mediaStorageStatus(actor: Actor) {
+export async function mediaStorageStatus(actor: Actor, storeId: string) {
   canWrite(actor);
-  let status: "ready" | "missing" | "unavailable" = "ready";
-  try {
-    await bucket().getMetadata();
-  } catch (error) {
-    status =
-      (error as { code?: number }).code === 404 ? "missing" : "unavailable";
-  }
-  return {
-    status,
-    consoleUrl: `https://console.firebase.google.com/project/${encodeURIComponent(process.env.FIREBASE_PROJECT_ID || "")}/storage`,
-  };
+  return storageStatus(actor, storeId);
 }
 async function ownOffer(actor: Actor, offerId: string) {
   const offer = await get("offers", offerId);
@@ -116,7 +84,7 @@ export async function uploadMedia(
   actor: Actor,
   offerId: string,
   values: { file: File; requestId: unknown; offerVersion: unknown },
-  files: MediaStorage = storage,
+  files?: MediaStorage,
 ) {
   canWrite(actor);
   const p = z
@@ -132,6 +100,7 @@ export async function uploadMedia(
   )
     throw new HttpError(413, "Cada foto ou vídeo deve ter até 3 MB");
   const offer = await ownOffer(actor, offerId);
+  files ||= driveStorage(actor, offer.store_id);
   if (offer.version !== p.offerVersion)
     throw new HttpError(
       409,
@@ -206,15 +175,15 @@ export async function uploadMedia(
       // any ready file; each attempt owns a distinct physical object path.
       return current?.object_path !== row.object_path;
     });
-    if (cleanup) await files.remove(row.object_path).catch(() => {});
+    if (cleanup) await files!.remove(row.object_path).catch(() => {});
   }
   try {
-    await files.save(row.object_path, bytes, type);
+    await files!.save(row.object_path, bytes, type, row.name);
   } catch {
     await failed();
     throw new HttpError(
       503,
-      "Não foi possível enviar o arquivo. Confira se o Firebase Storage está ativo no projeto e a conta de serviço possui acesso ao bucket.",
+      "Não foi possível enviar o arquivo. Confira a conexão Google Drive desta loja, o espaço disponível e as permissões da pasta.",
     );
   }
   try {
@@ -264,7 +233,7 @@ export async function readMedia(
   actor: Actor,
   mediaId: string,
   range: string | null,
-  files: MediaStorage = storage,
+  files?: MediaStorage,
 ) {
   const row = await get("listing_media", mediaId);
   if (
@@ -274,13 +243,14 @@ export async function readMedia(
   )
     throw new HttpError(404, "Arquivo não encontrado");
   await ownOffer(actor, row.offer_id);
+  files ||= driveStorage(actor, row.store_id);
   let bytes: Buffer;
   try {
     bytes = await files.read(row.object_path);
   } catch {
     throw new HttpError(
       503,
-      "Não foi possível carregar o arquivo no Firebase Storage",
+      "Não foi possível carregar o arquivo no Google Drive",
     );
   }
   const headers: Record<string, string> = {
@@ -321,13 +291,14 @@ export async function readMedia(
 export async function deleteMedia(
   actor: Actor,
   mediaId: string,
-  files: MediaStorage = storage,
+  files?: MediaStorage,
 ) {
   canWrite(actor);
   const row = await get("listing_media", mediaId);
   if (!row || row.organization_id !== actor.organization_id)
     throw new HttpError(404, "Arquivo não encontrado");
   await ownOffer(actor, row.offer_id);
+  files ||= driveStorage(actor, row.store_id);
   if (row.status === "deleted") return { deleted: true };
   const deleteLease = randomUUID();
   await transaction(async () => {
@@ -346,7 +317,7 @@ export async function deleteMedia(
     });
   });
   try {
-    await files.remove(row.object_path);
+    await files!.remove(row.object_path);
   } catch {
     await transaction(async () => {
       const current = await get("listing_media", mediaId);
@@ -355,7 +326,7 @@ export async function deleteMedia(
     });
     throw new HttpError(
       503,
-      "Não foi possível remover o arquivo no Firebase Storage",
+      "Não foi possível remover o arquivo no Google Drive",
     );
   }
   await transaction(async () => {

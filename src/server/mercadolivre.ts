@@ -385,7 +385,7 @@ async function http(
     );
   }
   if (
-    (response.status === 429 || response.status >= 500) &&
+    response.status >= 500 &&
     (!options.method || options.method === "GET") &&
     !path.includes("/items/search?") &&
     retry < 2
@@ -406,7 +406,11 @@ async function http(
       response.status === 401 ? 401 : response.status === 429 ? 429 : 502,
       response.status === 401
         ? "A conta precisa de nova autorização no Mercado Livre"
-        : `Mercado Livre retornou HTTP ${response.status}; confira as permissões da aplicação e tente novamente`,
+        : response.status === 429
+          ? "O Mercado Livre limitou temporariamente as consultas. Aguarde um minuto e consulte novamente; a conexão continua válida."
+          : response.status >= 500
+            ? "O Mercado Livre está temporariamente indisponível. Tente novamente em instantes."
+            : `Mercado Livre retornou HTTP ${response.status}; confira as permissões da aplicação e tente novamente`,
     );
   }
   try {

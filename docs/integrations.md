@@ -63,3 +63,17 @@ A aplicação de preço elegível usa o DATAMAT após aprovação e confirmaçã
 Fotos/atributos/variações/estoque/qualidade/vídeo legado retornados pelo ML compõem o retrato oficial e sua trilha de mudanças. Consulta opcional de catálogo usa `price_to_win` e não altera preços. Lotes periódicos enquanto o site está visível complementam notificações; edição/diálogos e aba em segundo plano pausam a atualização visual. Clips e Product Ads exigem integração específica. [Detalhes](intelligence.md).
 
 Catálogo, contagens, indicadores operacionais, galeria e uploads em rascunho: [fotos e vídeos](listing-media.md).
+
+## Google Drive por loja
+
+Configuração e autorização ficam em **Configurações → Integrações**, sem credenciais Google nas variáveis da Vercel. Cadastre Client ID, segredo OAuth e nome da pasta. A URI na publicação é `https://datamat-ml.vercel.app/api/google-drive/callback`. Ative a Drive API e configure o cliente Web/tela de consentimento no Google Cloud. O refresh token é recebido automaticamente no consentimento offline e preservado quando o Google o omite na renovação.
+
+O fluxo usa PKCE, estado com expiração de dez minutos e uso único, cookie HttpOnly ligado ao navegador, versão da configuração e segredo/token criptografados. A autorização abre outra janela e comunica resultado à tela original sem recarregá-la. Identidade Google validada serve para manter os rascunhos na mesma conta; não cria login no sistema.
+
+A pasta privada é criada pelo aplicativo com escopo `drive.file`; a integração não precisa de acesso irrestrito a todos os arquivos pessoais. Veja os limites de arquivos e o procedimento em [listing-media.md](listing-media.md).
+
+## Confirmações e tarifas
+
+Confirmações de exclusão, operações ML e descarte usam diálogos do site com foco contido, Escape/cancelar e opção explícita de continuar. Edições não salvas são protegidas ao fechar formulários ou sair por navegação/voltar. Fechar a aba ou recarregar a página exige o aviso nativo do navegador (`beforeunload`); navegadores não permitem substituí-lo por diálogo personalizado.
+
+A tarifa aceita resposta individual e lista da API ML, conferindo os componentes contra o total. Erros 429 indicam limitação temporária, preservam a conexão/filtros e suspendem novas consultas automáticas por um minuto. A precificação local continua imediata. Cotações válidas são reutilizadas no mesmo cenário durante os cinco minutos de validade; não são reaproveitadas em preço/versão diferentes, nem após solicitar nova consulta.

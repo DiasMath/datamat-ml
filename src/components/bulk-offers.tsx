@@ -1,4 +1,5 @@
 "use client";
+import { useConfirm } from "./confirmation";
 import { useRef, useState } from "react";
 import { Field, Submit, jsonRequest, labels } from "./ui";
 import { useToast } from "./toasts";
@@ -23,6 +24,7 @@ export default function BulkOffers({
   onDirty: () => void;
 }) {
   const { notify } = useToast();
+  const confirm = useConfirm();
   const [offers, setOffers] = useState<Row[]>(() =>
     ids
       .map((id) => data.offerChoices.find((o: Row) => o.id === id))
@@ -61,16 +63,22 @@ export default function BulkOffers({
     if (
       ml &&
       !results.length &&
-      !window.confirm(
-        `${action === "ml-active" ? "Ativar" : "Pausar"} ${offers.length} anúncio(s) diretamente no Mercado Livre?`,
-      )
+      !(await confirm({
+        title: action === "ml-active" ? "Ativar anúncios?" : "Pausar anúncios?",
+        description: `Esta ação altera ${offers.length} anúncio(s) diretamente no Mercado Livre.`,
+        confirmLabel:
+          action === "ml-active" ? "Ativar anúncios" : "Pausar anúncios",
+      }))
     )
       return;
     if (
       action === "delete" &&
-      !window.confirm(
-        `Excluir ${offers.length} cadastro(s) local(is)? A exclusão é definitiva e não remove anúncios do Mercado Livre.`,
-      )
+      !(await confirm({
+        title: "Excluir cadastros?",
+        description: `Excluir ${offers.length} cadastro(s) local(is)? A exclusão é definitiva e não remove anúncios do Mercado Livre.`,
+        confirmLabel: "Excluir cadastros",
+        danger: true,
+      }))
     )
       return;
     onBusy(true);

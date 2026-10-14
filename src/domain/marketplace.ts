@@ -8,18 +8,17 @@ export function normalizeTariff(
   price: string,
 ) {
   const amount = z.number().finite().nonnegative();
-  const rows = z
-    .array(
-      z.object({
-        listing_type_id: z.string(),
-        sale_fee_amount: amount,
-        sale_fee_details: z.object({
-          percentage_fee: amount.max(100),
-          fixed_fee: amount,
-        }),
-      }),
-    )
-    .parse(data);
+  const tariff = z.object({
+    listing_type_id: z.string(),
+    sale_fee_amount: amount,
+    sale_fee_details: z.object({
+      percentage_fee: amount.max(100),
+      fixed_fee: amount,
+    }),
+  });
+  // listing_type_id can make the API return a single tariff rather than an array.
+  const result = z.union([tariff, z.array(tariff)]).parse(data);
+  const rows = Array.isArray(result) ? result : [result];
   const row = rows.find((r) => r.listing_type_id === listingType);
   if (!row) throw new Error("A API não retornou a modalidade deste anúncio");
   const total = new Decimal(price)

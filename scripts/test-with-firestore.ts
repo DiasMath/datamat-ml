@@ -93,6 +93,7 @@ async function main() {
             "tests/bulk-operations.test.ts",
             "tests/intelligence.test.ts",
             "tests/listing-media.test.ts",
+            "tests/google-drive.test.ts",
           ]
         : ["playwright", "test", ...process.argv.slice(3)];
     const child = spawn("npx", command, { stdio: "inherit", env });

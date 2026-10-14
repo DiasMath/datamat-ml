@@ -230,8 +230,11 @@ test("campaign reports calculate live, persist updates, deduplicate review tasks
         .get()
     ).size,
   ).toBe(1);
-  page.once("dialog", (d) => d.accept());
   await modal.getByRole("button", { name: "Excluir relatório" }).click();
+  await page
+    .getByRole("dialog", { name: "Excluir relatório?" })
+    .getByRole("button", { name: "Excluir relatório", exact: true })
+    .click();
   await expect(modal).not.toBeVisible();
   expect((await docs[0].ref.get()).exists).toBe(false);
   expect(
@@ -266,7 +269,7 @@ test("campaign Excel import requires a preview and export can update the same re
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer,
   });
-  const modal = page.getByRole("dialog");
+  const modal = page.locator("dialog.modal:not(.confirmation-modal)");
   await expect(modal).toContainText(name);
   expect(
     (await db().collection("campaign_reports").where("name", "==", name).get())

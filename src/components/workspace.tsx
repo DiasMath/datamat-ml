@@ -1,4 +1,10 @@
 "use client";
+import {
+  useConfirm,
+  discardChanges,
+  useUnsavedRegistry,
+  useUnsavedChanges,
+} from "./confirmation";
 import { useSmartTable } from "./smart-table";
 import BulkOffers from "./bulk-offers";
 import { ListingChecklist, MarketplacePerformance } from "./marketplace-panels";
@@ -6,6 +12,7 @@ import Analytics from "./analytics";
 import { useToast, useToastMessage } from "./toasts";
 import ListingMedia, { MediaImage } from "./listing-media";
 import { listingCounts, listingType } from "../domain/listing-table";
+import GoogleDriveSettings from "./google-drive-settings";
 import IntegrationForm from "./integration-form";
 import useMlAuthorization from "./use-ml-authorization";
 import { operationalAttention } from "@/domain/marketplace";
@@ -99,6 +106,8 @@ const descriptions: Record<string, string> = {
   configuracoes: "Lojas, regras financeiras e conexões.",
 };
 export default function Workspace({ view }: { view: string[] }) {
+  const confirm = useConfirm();
+  const { hasUnsaved } = useUnsavedRegistry();
   const { notify, clear: clearToasts } = useToast();
   const setToast = useMemo(
     () => (message: { text: string; error?: boolean }) =>
@@ -306,19 +315,19 @@ export default function Workspace({ view }: { view: string[] }) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
-  function guard() {
+  useUnsavedChanges(dirty, () => {
+    setDirty(false);
+    setModal(null);
+  });
+  async function guard() {
     if (busy) return false;
-    return (
-      !dirty ||
-      window.confirm(
-        "Há alterações ainda não salvas. Deseja descartá-las e continuar?",
-      )
-    );
+    return (!dirty && !hasUnsaved()) || (await confirm(discardChanges));
   }
-  function navigate(path: string, params?: URLSearchParams) {
-    if (!guard()) return;
+  async function navigate(path: string, params?: URLSearchParams) {
+    if (!(await guard())) return;
     setDirty(false);
     setMenu(false);
+    setModal(null);
     startTransition(() =>
       router.push(
         "/" +
@@ -340,8 +349,8 @@ export default function Workspace({ view }: { view: string[] }) {
       p.delete(k);
     navigate(route, p);
   }
-  function changeStore(value: string) {
-    if (!guard()) return;
+  async function changeStore(value: string) {
+    if (!(await guard())) return;
     const p = new URLSearchParams(query);
     p.set("store", value);
     for (const k of [
@@ -397,8 +406,8 @@ export default function Workspace({ view }: { view: string[] }) {
       setBusy(false);
     }
   }
-  function open(type: string, record?: Row) {
-    if (!guard()) return;
+  async function open(type: string, record?: Row) {
+    if (!(await guard())) return;
     setDirty(false);
     clearToasts();
     setModal({
@@ -409,8 +418,8 @@ export default function Workspace({ view }: { view: string[] }) {
           : record,
     });
   }
-  function close() {
-    if (guard()) {
+  async function close() {
+    if (await guard()) {
       setDirty(false);
       setModal(null);
     }
@@ -422,10 +431,10 @@ export default function Workspace({ view }: { view: string[] }) {
     if (initialTab) p.set("tab", initialTab);
     navigate("anuncios/" + key, p);
   }
-  function back() {
+  async function back() {
     const target = search.get("returnTo");
     if (target?.startsWith("/anuncios") && !target.startsWith("//")) {
-      if (guard()) {
+      if (await guard()) {
         setDirty(false);
         router.push(target);
       }
@@ -1215,6 +1224,7 @@ export default function Workspace({ view }: { view: string[] }) {
       </div>
       {modal && data && (
         <Modal
+          protectChanges={false}
           title={modalTitle(modal)}
           subtitle={
             modal.record?.store_id
@@ -3496,6 +3506,7 @@ function Decision({
   onSave: (p: Row) => void;
   onApplyML: () => void;
 }) {
+  const confirm = useConfirm();
   const allowed = ["admin", "approver"].includes(data.user.role);
   const canCancel = allowed || proposal.author_id === data.user.id;
   const canStage = !["application_uncertain", "applying_ml"].includes(
@@ -3598,14 +3609,16 @@ function Decision({
               className="button primary"
               type="button"
               disabled={busy}
-              onClick={() => {
+              onClick={async () => {
                 if (
                   ["application_uncertain", "applying_ml"].includes(
                     proposal.status,
                   ) ||
-                  window.confirm(
-                    `Aplicar o preço ${money(proposal.snapshot.proposed.price)} no Mercado Livre?`,
-                  )
+                  (await confirm({
+                    title: "Aplicar preço no ML?",
+                    description: `O preço será alterado para ${money(proposal.snapshot.proposed.price)} no Mercado Livre.`,
+                    confirmLabel: "Aplicar preço",
+                  }))
                 )
                   onApplyML();
               }}
@@ -3983,6 +3996,11 @@ function Configuration({
               </section>
             ))}
           </div>
+          <GoogleDriveSettings
+            stores={data.stores}
+            query={query}
+            isAdmin={isAdmin}
+          />
           {data.logs.length > 0 && (
             <section className="panel">
               <div className="panel-heading">

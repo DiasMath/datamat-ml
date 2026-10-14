@@ -118,7 +118,7 @@ test("bulk local edits and deletes persist with price intact and no hidden selec
   await page
     .getByRole("button", { name: "Ações em lote", exact: true })
     .click();
-  const modal = page.getByRole("dialog");
+  const modal = page.getByRole("dialog", { name: /Ações em lote/ });
   await modal.getByText("Título e descrição", { exact: true }).click();
   await modal.getByLabel("Adicionar antes do título").fill("Novo");
   await modal.getByLabel("Adicionar depois do título").fill("2026");
@@ -145,9 +145,12 @@ test("bulk local edits and deletes persist with price intact and no hidden selec
     .getByRole("button", { name: "Ações em lote", exact: true })
     .click();
   await modal.getByLabel("Operação em lote").selectOption("delete");
-  page.once("dialog", (d) => d.accept());
   await modal
     .getByRole("button", { name: "Confirmar exclusão em lote" })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Excluir cadastros?" })
+    .getByRole("button", { name: "Excluir cadastros", exact: true })
     .click();
   await expect(modal).not.toBeVisible();
   await expect(page.locator(".offers-table tbody tr")).toHaveCount(0);
@@ -233,10 +236,13 @@ test("ML bulk interface shows partial results, resumes the same operation and su
     await page
       .getByRole("button", { name: "Ações em lote", exact: true })
       .click();
-    const modal = page.getByRole("dialog");
+    const modal = page.getByRole("dialog", { name: /Ações em lote/ });
     await modal.getByLabel("Operação em lote").selectOption("ml-paused");
-    page.once("dialog", (d) => d.accept());
     await modal.getByRole("button", { name: "Confirmar pausa no ML" }).click();
+    await page
+      .getByRole("dialog", { name: "Pausar anúncios?" })
+      .getByRole("button", { name: "Pausar anúncios", exact: true })
+      .click();
     await expect(modal.getByText("Conferir", { exact: true })).toBeVisible();
     await expect(modal.getByText("Falhou", { exact: true })).toBeVisible();
     await expect(modal.getByLabel("Operação em lote")).toBeDisabled();
@@ -247,9 +253,12 @@ test("ML bulk interface shows partial results, resumes the same operation and su
     expect(calls[1]).toEqual(calls[0]);
     await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
     await modal.getByLabel("Operação em lote").selectOption("ml-active");
-    page.once("dialog", (d) => d.accept());
     await modal
       .getByRole("button", { name: "Confirmar ativação no ML" })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Ativar anúncios?" })
+      .getByRole("button", { name: "Ativar anúncios", exact: true })
       .click();
     await expect.poll(() => calls.length).toBe(3);
     await expect(modal.locator(".bulk-results .green")).toHaveCount(3);

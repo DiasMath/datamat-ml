@@ -10,16 +10,22 @@ Clique na foto ou na aba **Fotos e vídeos** para abrir a galeria. As fotos já 
 
 ## Arquivos em rascunho
 
-O upload aceita JPG, PNG, WebP, MP4 e WebM de até **3 MB por arquivo**, com até 30 arquivos por anúncio. São enviados individualmente para respeitar o limite de requisição da Vercel. O servidor valida assinatura/MIME, tamanho, organização, loja, permissão e versão. Metadados ficam no Firestore; os bytes ficam no Firebase Storage e são servidos pela API da aplicação, incluindo Range para vídeo. Envio idempotente, reserva de execução, limpeza de tentativas rejeitadas e exclusão auditada preservam a consistência. Rascunhos ativos precisam ser removidos antes da exclusão do cadastro local.
+O upload aceita JPG, PNG, WebP, MP4 e WebM de até **3 MB por arquivo**, com até 30 arquivos por anúncio. São enviados individualmente para respeitar o limite de requisição da Vercel. O servidor valida assinatura/MIME, tamanho, organização, loja, permissão e versão. Metadados ficam no Firestore; os bytes ficam no Google Drive privado da loja e são servidos pela API da aplicação, incluindo Range para vídeo. Envio idempotente, reserva de execução, limpeza de tentativas rejeitadas e exclusão auditada preservam a consistência. Rascunhos ativos precisam ser removidos antes da exclusão do cadastro local.
 
 **Esses uploads não publicam nem substituem fotos/vídeos no Mercado Livre.** A área identifica claramente rascunho versus publicado. Envio direto ao ML, ordenação/substituição de fotos oficiais e upload de Clips precisam de contratos e permissões específicos e ainda não estão disponíveis.
 
-O bucket padrão é `<FIREBASE_PROJECT_ID>.firebasestorage.app`; instalações com bucket próprio podem usar `FIREBASE_STORAGE_BUCKET`. A conta de serviço já configurada é reutilizada: não há chave por loja nem novo segredo para preencher.
+## Configurar o Google Drive
 
-Nesta revisão, os buckets padrão e legado do projeto retornaram **404** em leitura autenticada. Para ativar uploads:
+1. No Google Cloud, ative a **Google Drive API** e configure a tela de consentimento OAuth. Em modo de teste, inclua o e-mail que autorizará o Drive como usuário de teste.
+2. Crie um cliente OAuth do tipo **Aplicativo da Web**. Cadastre a URI indicada pelo site; na publicação atual: `https://datamat-ml.vercel.app/api/google-drive/callback`.
+3. Em **Configurações → Integrações → Google Drive**, escolha a loja e informe Client ID, segredo OAuth e nome da pasta. O segredo é criptografado no servidor e nunca é retornado ao navegador. Não é necessário cadastrar essas credenciais na Vercel.
+4. Clique em **Conectar Google Drive** e autorize a conta na janela Google. O sistema obtém o refresh token automaticamente e cria a pasta privada da loja. O acesso solicitado é `drive.file`, identidade e e-mail; a integração trabalha com arquivos criados/usados por ela.
+5. Abra **Fotos e vídeos** na ficha do anúncio para anexar arquivos. O botão de upload depende da conexão dessa loja; fotos publicadas no ML continuam independentes do Drive.
 
-1. Abra **Firebase Console → projeto datamat-ml → Storage** e configure o bucket padrão em modo de produção, mantendo o acesso direto de clientes restrito.
-2. Garanta que a conta administrativa do sistema possa ler, criar e remover objetos nesse bucket.
-3. Volte à ficha e recarregue a aba Fotos e vídeos. O botão de upload fica disponível quando a verificação confirma o armazenamento.
+O Drive substitui o Firebase Storage para novos uploads; o banco e os metadados continuam no Firestore. A pasta criada pelo aplicativo evita exigir acesso amplo a todas as pastas da conta. O link **Abrir pasta da loja** permite consultar os arquivos no Google Drive. Não torne essa pasta pública para reproduzir os arquivos: a API do site serve os bytes após conferir organização e loja, incluindo Range para vídeos.
 
-A interface mostra a pendência e o link para o console quando o bucket não está disponível. Fotos do ML continuam funcionando independentemente do Storage. Os testes usam emulador Firestore e armazenamento controlado; nenhum arquivo de teste foi enviado ao bucket real.
+O nome original é preservado no Drive. IDs reservados permitem confirmar um envio cujo retorno se perdeu sem repetir o POST. Tamanho, MIME e checksum são conferidos na leitura; mudanças externas no arquivo exigem um novo rascunho. A exclusão valida que o arquivo pertence ao Datamat e à loja. Trocar o cliente OAuth ou a conta Google com rascunhos ativos é bloqueado para evitar perder o acesso aos arquivos anteriores. Desconectar preserva os arquivos e bloqueia uploads/reprodução até reconectar.
+
+Clientes Google em modo de teste podem ter refresh tokens com validade de sete dias; para operação contínua, publique a tela de consentimento segundo os requisitos do Google. Esta revisão exercita OAuth, renovação, armazenamento e exclusão com respostas controladas. A conexão à conta real e o upload real requerem que o operador cadastre e autorize o cliente OAuth; nenhum arquivo de teste foi enviado ao Drive real.
+
+Referências: [Drive OAuth](https://developers.google.com/workspace/drive/api/guides/api-specific-auth), [uploads](https://developers.google.com/workspace/drive/api/guides/manage-uploads), [IDs reservados](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/generateIds), [OAuth web server](https://developers.google.com/identity/protocols/oauth2/web-server).

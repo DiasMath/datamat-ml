@@ -1,4 +1,5 @@
 "use client";
+import { useConfirm } from "./confirmation";
 import { useSmartTable } from "./smart-table";
 import { useEffect, useRef, useState } from "react";
 import { Download, Plus } from "lucide-react";
@@ -30,6 +31,7 @@ export default function Competitors({
   onChanged: () => void;
 }) {
   const { notify } = useToast();
+  const confirm = useConfirm();
   const [rows, setRows] = useState<Row[] | null>(null),
     [modal, setModal] = useState<Row | null | undefined>(),
     [busy, setBusy] = useState(false),
@@ -493,11 +495,15 @@ export default function Competitors({
               <button
                 className="text-link danger-text"
                 disabled={busy}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    window.confirm(
-                      "Excluir esta referência e seu histórico observado?",
-                    )
+                    await confirm({
+                      title: "Excluir referência?",
+                      description:
+                        "Esta referência e seu histórico observado serão excluídos.",
+                      confirmLabel: "Excluir referência",
+                      danger: true,
+                    })
                   )
                     mutate(
                       `/api/competitors/${modal.id}`,

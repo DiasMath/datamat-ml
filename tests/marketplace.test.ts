@@ -100,3 +100,31 @@ test("advertising ratios share the same period and handle zeros and unavailable 
     tacos: null,
   });
 });
+
+test("tariff accepts the official single-object response when listing_type_id is specified", () => {
+  assert.deepEqual(
+    normalizeTariff(
+      {
+        listing_type_id: "gold_special",
+        sale_fee_amount: 20.5,
+        sale_fee_details: { percentage_fee: 14, fixed_fee: 6.5 },
+      },
+      "gold_special",
+      "100",
+    ),
+    { mlPercent: "14", mlFixed: "6.5", total: "20.50" },
+  );
+  assert.throws(
+    () =>
+      normalizeTariff(
+        {
+          listing_type_id: "gold_special",
+          sale_fee_amount: 25,
+          sale_fee_details: { percentage_fee: 14, fixed_fee: 6.5 },
+        },
+        "gold_special",
+        "100",
+      ),
+    /adicionais/,
+  );
+});

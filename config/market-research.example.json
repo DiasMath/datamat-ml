@@ -1,0 +1,15 @@
+{
+  "store_id": "juntos-data",
+  "application_id": "PREENCHA_APP_ID",
+  "interval_seconds": 2,
+  "max_resources": 200,
+  "target_brands": ["DUTOTEC", "QTMOV", "QTMOV PRIME", "PEZZI"],
+  "seed_item_ids": [],
+  "search_queries": [
+    "Dutotec",
+    "QTMOV",
+    "torre de tomadas",
+    "caixa tomadas mesa",
+    "modulo Pezzi"
+  ]
+}

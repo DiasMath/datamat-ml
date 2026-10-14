@@ -33,9 +33,19 @@ import {
 import { emptyCosts, priceAmount } from "../domain/finance";
 import { normalizeTariff, listingQuality } from "../domain/marketplace";
 import { readFirebaseConfiguration } from "./firebase-configuration";
+import { safeAccessDiagnostic } from "../domain/ml-access-diagnostic";
 
 const API = "https://api.mercadolibre.com";
 const requestDeadline = new AsyncLocalStorage<number>();
+type AccessObservation = Awaited<ReturnType<typeof safeAccessDiagnostic>>;
+const accessObservations = new AsyncLocalStorage<AccessObservation[]>();
+// Request-scoped diagnostics: concurrent accounts cannot mix their observations.
+// Only two fixed resources are inspected, never OAuth or credential responses.
+export async function withMLAccessDiagnostics<T>(read: () => Promise<T>) {
+  const observations: AccessObservation[] = [];
+  const result = await accessObservations.run(observations, read);
+  return { result, observations };
+}
 export const ML_STATE_COOKIE = "datamat-ml-oauth";
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -384,6 +394,15 @@ async function http(
       "O Mercado Livre não respondeu; tente novamente em instantes",
     );
   }
+  const diagnostic = accessObservations.getStore();
+  if (diagnostic && (path === "/users/me" || path === "/sites/MLB"))
+    diagnostic.push(
+      await safeAccessDiagnostic(
+        response,
+        path,
+        new Headers(options.headers).has("authorization"),
+      ),
+    );
   if (
     response.status >= 500 &&
     (!options.method || options.method === "GET") &&

@@ -11,6 +11,7 @@ import { workspaceActor, HttpError } from "@/server/access";
 import { initializeDatabase, DatabaseConfigurationError } from "@/server/db";
 import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
+import * as market from "@/server/market-research";
 import { oauthPopupResponse } from "@/server/oauth-popup";
 import { refreshListingIndicators } from "@/server/listing-indicators";
 import * as drive from "@/server/google-drive";
@@ -108,6 +109,25 @@ async function handle(req: NextRequest, context: Context) {
         "Login e usuários locais foram removidos; o acesso será integrado ao portal",
       );
     const actor = await workspaceActor();
+    if (
+      resource === "market-research" &&
+      path.length === 2 &&
+      req.method === "POST"
+    ) {
+      if (key === "diagnostic")
+        return response(await market.diagnoseMarketAccess(actor, body));
+      if (key === "read") {
+        const p = market.marketRequestSchema.parse(body);
+        return response(
+          await market.readMarketResource(
+            actor,
+            p.storeId,
+            p.applicationId,
+            p.resource,
+          ),
+        );
+      }
+    }
     if (
       resource === "media-storage" &&
       key === "status" &&

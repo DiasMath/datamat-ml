@@ -1,4 +1,6 @@
 import Decimal from "decimal.js";
+import { z } from "zod";
+import { monthlyGoalReport } from "./monthly-goals";
 import { db, get, key, type Row } from "./db";
 import { authorizeStore, HttpError, type Actor } from "./access";
 import { analyticsSources } from "./analytics";
@@ -73,7 +75,7 @@ async function scopedRows(collection: keyof typeof fields, ids: string[]) {
   }
   return rows;
 }
-export async function todayReport(
+async function buildTodayReport(
   actor: Actor,
   query: URLSearchParams,
   clock = new Date(),
@@ -101,6 +103,7 @@ export async function todayReport(
     connections,
     dailySources,
     weeklySources,
+    monthlyGoal,
   ] = await Promise.all([
     scopedRows("offers", ids),
     scopedRows("costs", ids),
@@ -111,6 +114,7 @@ export async function todayReport(
     Promise.all(ids.map((id) => get("connections", key(id, "mercadolivre")))),
     analyticsSources(actor, new URLSearchParams({ store, from: day, to: day })),
     analyticsSources(actor, weeklyQuery),
+    monthlyGoalReport(actor, store, clock),
   ]);
   const scoped = (r: Row) =>
     !r.organization_id || r.organization_id === actor.organization_id;
@@ -305,8 +309,179 @@ export async function todayReport(
       day,
     },
     queue,
+    monthlyGoal,
     highlights,
     changes,
     weeklyRange: { from: weeklyQuery.get("from"), to: weeklyQuery.get("to") },
+  };
+}
+
+// Cache computation, not permissions. Revisions are committed atomically with
+// writes and read on every request, so separate Vercel instances see mutations.
+const reportCache = new Map<
+  string,
+  { until: number; promise: ReturnType<typeof buildTodayReport> }
+>();
+async function cachedToday(actor: Actor, store: string, clock: Date) {
+  if (store !== "all") authorizeStore(actor, store);
+  const selected = actor.stores.filter(
+    (s) => store === "all" || s.id === store,
+  );
+  const revisions = await Promise.all(
+    selected.map((s) => get("_today_revisions", s.id)),
+  );
+  const scope = JSON.stringify([
+    actor.organization_id,
+    actor.id,
+    actor.role,
+    actor.name,
+    actor.stores.map((s) => [s.id, s.name]),
+    store,
+    businessDay(clock),
+    Math.floor(clock.getTime() / 20000),
+    revisions.map((r) => r?.revision || 0),
+  ]);
+  const entry = reportCache.get(scope);
+  if (entry && entry.until > Date.now()) return entry.promise;
+  for (const [key, value] of reportCache)
+    if (value.until <= Date.now()) reportCache.delete(key);
+  if (reportCache.size >= 16)
+    reportCache.delete(reportCache.keys().next().value!);
+  const promise = buildTodayReport(
+    actor,
+    new URLSearchParams({ store }),
+    clock,
+  );
+  reportCache.set(scope, { until: Date.now() + 20000, promise });
+  try {
+    return await promise;
+  } catch (error) {
+    reportCache.delete(scope);
+    throw error;
+  }
+}
+const queueSchema = z
+  .object({
+    store: z.string().min(1).max(200).default("all"),
+    focus: z.enum(["urgent", "review", "prepare"]).optional(),
+    decisions: z.boolean().default(false),
+    page: z.number().int().min(1).max(100000).default(1),
+    showDeferred: z.boolean().default(false),
+    deferred: z
+      .record(
+        z.string().max(200),
+        z.object({
+          signature: z.string().max(2000),
+          until: z.number().finite(),
+        }),
+      )
+      .default({}),
+  })
+  .refine(
+    (p) => Object.keys(p.deferred).length <= 1000,
+    "Excesso de revisões adiadas",
+  );
+function queueSelection(
+  report: Awaited<ReturnType<typeof buildTodayReport>>,
+  options: z.infer<typeof queueSchema>,
+  clock: Date,
+) {
+  const focus =
+    options.focus ||
+    (report.summary.urgent
+      ? "urgent"
+      : report.summary.review
+        ? "review"
+        : "prepare");
+  const all = report.queue.filter((q) =>
+    options.decisions ? !!q.proposalId : q.severity === focus,
+  );
+  const isDeferred = (q: (typeof all)[number]) =>
+    q.severity !== "urgent" &&
+    options.deferred[q.id]?.until > clock.getTime() &&
+    options.deferred[q.id]?.signature ===
+      q.reason + ":" + q.evidence + ":" + q.proposalId;
+  const postponed = all.filter(isDeferred).length;
+  const rows = all.filter((q) => options.showDeferred || !isDeferred(q));
+  const pages = Math.max(1, Math.ceil(rows.length / 5)),
+    page = Math.min(options.page, pages);
+  return {
+    rows,
+    queue: rows.slice((page - 1) * 5, page * 5),
+    queuePage: {
+      focus,
+      decisions: options.decisions,
+      page,
+      pages,
+      total: rows.length,
+      postponed,
+      showDeferred: options.showDeferred,
+    },
+  };
+}
+export async function todayReport(
+  actor: Actor,
+  query: URLSearchParams,
+  clock = new Date(),
+) {
+  const report = await cachedToday(actor, query.get("store") || "all", clock);
+  const options = queueSchema.parse({
+    store: query.get("store") || "all",
+    focus: query.get("todayFocus") || undefined,
+    page: query.has("todayPage") ? Number(query.get("todayPage")) : 1,
+    decisions: query.get("todayDecisions") === "yes",
+  });
+  const { rows: _rows, ...page } = queueSelection(report, options, clock);
+  return { ...report, user: actor, stores: actor.stores, ...page };
+}
+export async function todayQueuePage(
+  actor: Actor,
+  payload: unknown,
+  clock = new Date(),
+) {
+  const options = queueSchema.parse(payload);
+  const report = await cachedToday(actor, options.store, clock);
+  const { rows: _rows, ...page } = queueSelection(report, options, clock);
+  return page;
+}
+export async function nextTodayOffer(
+  actor: Actor,
+  payload: unknown,
+  clock = new Date(),
+) {
+  const p = z
+    .object({
+      store: z.string().min(1).max(200),
+      focus: z.enum(["urgent", "review", "prepare"]),
+      decisions: z.boolean().default(false),
+      currentId: z.string().max(200).optional(),
+      skipped: z.array(z.string().min(1).max(200)).max(5000).default([]),
+    })
+    .parse(payload);
+  authorizeStore(actor, p.store);
+  if (p.currentId) {
+    const current = await get("offers", p.currentId);
+    if (
+      !current ||
+      current.store_id !== p.store ||
+      (current.organization_id &&
+        current.organization_id !== actor.organization_id)
+    )
+      throw new HttpError(404, "Anúncio indisponível nesta loja");
+  }
+  const report = await cachedToday(actor, p.store, clock);
+  const skipped = new Set([...p.skipped, p.currentId]);
+  const rows = report.queue.filter(
+    (q) =>
+      q.tab === "costs" &&
+      (p.decisions ? !!q.proposalId : q.severity === p.focus) &&
+      !skipped.has(q.id),
+  );
+  const next = rows[0];
+  return {
+    next: next
+      ? { id: next.id, title: next.title, storeId: next.storeId }
+      : null,
+    remaining: rows.length,
   };
 }

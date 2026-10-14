@@ -1,4 +1,9 @@
-import { todayReport } from "@/server/today";
+import { todayReport, todayQueuePage, nextTodayOffer } from "@/server/today";
+import {
+  saveMonthlyGoal,
+  deleteMonthlyGoal,
+  refreshMonthlyGoals,
+} from "@/server/monthly-goals";
 import { navigationReport, searchOffers } from "@/server/navigation";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -475,7 +480,27 @@ async function handle(req: NextRequest, context: Context) {
         );
       }
     }
+    if (
+      req.method === "DELETE" &&
+      resource === "today" &&
+      key === "goal" &&
+      path.length === 2
+    )
+      return response(await deleteMonthlyGoal(actor, body));
     if (req.method === "POST" || req.method === "PATCH") {
+      if (resource === "today" && path.length === 2 && req.method === "POST") {
+        if (key === "queue") return response(await todayQueuePage(actor, body));
+        if (key === "next") return response(await nextTodayOffer(actor, body));
+        if (key === "goal") return response(await saveMonthlyGoal(actor, body));
+        if (key === "monthly-refresh") {
+          await refreshMonthlyGoals(
+            actor,
+            req.nextUrl.searchParams.get("store") || "all",
+            z.object({ force: z.boolean().default(false) }).parse(body).force,
+          );
+          return response(await todayReport(actor, req.nextUrl.searchParams));
+        }
+      }
       if (
         resource === "today" &&
         key === "refresh" &&
@@ -483,6 +508,10 @@ async function handle(req: NextRequest, context: Context) {
         req.method === "POST"
       ) {
         await refreshRoutine(actor, req.nextUrl.searchParams, 55000, true);
+        await refreshMonthlyGoals(
+          actor,
+          req.nextUrl.searchParams.get("store") || "all",
+        );
         return response(await todayReport(actor, req.nextUrl.searchParams));
       }
 

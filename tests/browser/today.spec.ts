@@ -206,6 +206,15 @@ test("Hoje distinguishes an urgent margin problem from an approved proposal when
   const fixture = {
     ...initial,
     summary: { totalOffers: 1, urgent: 1, review: 0, prepare: 0, decisions: 1 },
+    queuePage: {
+      focus: "urgent",
+      decisions: false,
+      page: 1,
+      pages: 1,
+      total: 1,
+      postponed: 0,
+      showDeferred: false,
+    },
     portfolio: {
       active: 1,
       paused: 0,
@@ -250,6 +259,19 @@ test("Hoje distinguishes an urgent margin problem from an approved proposal when
   await page.route("**/api/today?*", (route) =>
     route.fulfill({ json: fixture }),
   );
+  await page.route("**/api/today/queue", async (route) => {
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        queue: fixture.queue,
+        queuePage: {
+          ...fixture.queuePage,
+          focus: body.focus,
+          decisions: body.decisions,
+        },
+      },
+    });
+  });
   await page.goto(`/?store=${storeId}`);
   const row = page.locator(".today-queue-row");
   await expect(row.locator(".today-listing-facts")).toContainText("R$ 100,00");

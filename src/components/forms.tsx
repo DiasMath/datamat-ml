@@ -351,6 +351,7 @@ export function CostsForm({
   parameters,
   busy,
   onSave,
+  onSaveAndNext,
   onDirty,
   onDraft,
   price,
@@ -359,6 +360,7 @@ export function CostsForm({
   parameters: Row;
   busy: boolean;
   onSave: (data: Row) => void;
+  onSaveAndNext?: (data: Row) => void;
   onDirty: () => void;
   onDraft: (costs: Costs | null) => void;
   price: string | null;
@@ -385,7 +387,11 @@ export function CostsForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSave(read(e.currentTarget));
+        const next =
+          (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
+            "data-next",
+          ) === "true";
+        (next && onSaveAndNext ? onSaveAndNext : onSave)(read(e.currentTarget));
       }}
       onChange={(e) => {
         const parsed = costSchema.safeParse(read(e.currentTarget));
@@ -460,7 +466,19 @@ export function CostsForm({
         <span>
           Resultados mudam ao digitar. Salvar atualiza os custos cadastrados.
         </span>
-        <Submit busy={busy} label="Salvar custos" />
+        <div className="sequence-save-actions">
+          <Submit busy={busy} label="Salvar custos" />
+          {onSaveAndNext && (
+            <button
+              type="submit"
+              data-next="true"
+              className="button"
+              disabled={busy}
+            >
+              {busy ? "Salvando…" : "Salvar e próximo"}
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );

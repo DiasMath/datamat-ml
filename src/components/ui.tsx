@@ -157,10 +157,12 @@ export function Modal({
   onClose,
   children,
   protectChanges = true,
+  busy = false,
 }: {
   title: string;
   subtitle?: string;
   protectChanges?: boolean;
+  busy?: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -171,6 +173,7 @@ export function Modal({
     onClose();
   });
   async function close() {
+    if (busy) return;
     if (protectChanges && changed && !(await confirm(discardChanges))) return;
     setChanged(false);
     onClose();
@@ -200,7 +203,12 @@ export function Modal({
           <h2 id={titleId}>{title}</h2>
           {subtitle && <p id={titleId + "-subtitle"}>{subtitle}</p>}
         </div>
-        <button aria-label="Fechar" className="icon-button" onClick={close}>
+        <button
+          aria-label="Fechar"
+          className="icon-button"
+          onClick={close}
+          disabled={busy}
+        >
           <X size={20} />
         </button>
       </div>

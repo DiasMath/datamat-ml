@@ -5260,3 +5260,140 @@ button.today-metric:hover {
     padding-bottom: 10px;
   }
 }
+
+.today-monthly-goal {
+  padding: 16px 18px;
+}
+.today-monthly-goal > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.today-monthly-goal h3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+.today-monthly-goal h3 svg {
+  color: var(--orange);
+}
+.today-monthly-goal h3 small {
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 400;
+}
+.monthly-goal-values {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.monthly-goal-values strong {
+  font-size: 21px;
+}
+.monthly-goal-values > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.monthly-goal-values b {
+  margin-left: auto;
+  color: var(--orange);
+  font-size: 11px;
+}
+.today-monthly-goal meter {
+  width: 100%;
+  height: 6px;
+  display: block;
+  margin: 8px 0;
+}
+.today-monthly-goal meter::-webkit-meter-bar {
+  background: var(--surface2);
+  border: 0;
+  border-radius: 5px;
+}
+.today-monthly-goal meter::-webkit-meter-optimum-value {
+  background: var(--orange);
+  border-radius: 5px;
+}
+.monthly-goal-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.today-monthly-goal > p {
+  margin: 8px 0 0;
+}
+.goal-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.today-sequence-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 10px;
+  font-size: 11px;
+}
+.today-queue.is-updating {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.sequence-save-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.preview-sequence-label {
+  color: var(--muted);
+  font-size: 10px;
+}
+.preview-footer:has(.preview-sequence-label) {
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .preview-sequence-label {
+    order: -1;
+    flex-basis: 100%;
+  }
+}
+
+.today-monthly-goal meter::-moz-meter-bar {
+  background: var(--orange);
+  border-radius: 5px;
+}
+.today-queue-skeleton {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+.today-queue-skeleton > span {
+  display: block;
+  height: 52px;
+  border-radius: 7px;
+  background: var(--surface2);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .today-queue-skeleton > span {
+    animation: none;
+  }
+}
+
+.monthly-goal-time {
+  display: block;
+  margin-top: 4px;
+  font-size: 9px;
+}

@@ -33,6 +33,7 @@ import {
 import { money, jsonRequest, percent, labels } from "./ui";
 import { MediaImage } from "./listing-media";
 import { useToast } from "./toasts";
+import MonthlyGoal from "./monthly-goal";
 import type { TodayFocus, TodayItem } from "../domain/today";
 type Row = Record<string, any>;
 const focusLabels = {
@@ -52,6 +53,7 @@ export default function Today({
   onUpdated,
   onOpen,
   onPreview,
+  onReview,
   onTask,
   navigate,
 }: {
@@ -61,6 +63,7 @@ export default function Today({
   onUpdated: (data: Row) => void;
   onOpen: (id: string, tab?: string) => void;
   onPreview: (id: string, tab?: string) => void;
+  onReview: (item: TodayItem, focus: TodayFocus, decisions: boolean) => void;
   onTask: (task: Row) => void;
   navigate: (path: string, query?: URLSearchParams) => void;
 }) {
@@ -238,14 +241,77 @@ export default function Today({
     item.severity !== "urgent" &&
     deferred[item.id]?.until > Date.now() &&
     deferred[item.id]?.signature === signature(item);
-  const all = (data.queue as TodayItem[]).filter((q) =>
+  const [queueData, setQueueData] = useState<Row>(data),
+    [queueLoading, setQueueLoading] = useState(false),
+    [queueError, setQueueError] = useState(false),
+    [queueRetry, setQueueRetry] = useState(0);
+  const activeDeferred = Object.fromEntries(
+    Object.entries(deferred).filter(([, v]) => v.until > Date.now()),
+  );
+  const requestBody = JSON.stringify({
+    store,
+    focus,
+    decisions: decisionsOnly,
+    page,
+    showDeferred,
+    deferred: activeDeferred,
+  });
+  useEffect(() => {
+    if (!data.queuePage) return;
+    const info = data.queuePage;
+    if (
+      !Object.keys(activeDeferred).length &&
+      info.focus === focus &&
+      info.decisions === decisionsOnly &&
+      info.page === page &&
+      !showDeferred
+    ) {
+      setQueueData(data);
+      setQueueLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setQueueLoading(true);
+    setQueueError(false);
+    jsonRequest(
+      "/api/today/queue",
+      JSON.parse(requestBody),
+      "POST",
+      controller.signal,
+    )
+      .then((next) => {
+        if (!controller.signal.aborted) setQueueData(next);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) {
+          setQueueError(true);
+          notify(e.message, "error");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setQueueLoading(false);
+      });
+    return () => controller.abort();
+  }, [data, requestBody, notify, queueRetry]);
+  const serverPaged = !!data.queuePage;
+  const sourceQueue = serverPaged ? queueData.queue : data.queue;
+  const all = (sourceQueue as TodayItem[]).filter((q) =>
     decisionsOnly ? !!q.proposalId : q.severity === focus,
   );
-  const postponed = all.filter(isDeferred).length;
+  const postponed = serverPaged
+    ? queueData.queuePage.postponed
+    : all.filter(isDeferred).length;
   const rows = all.filter((q) => showDeferred || !isDeferred(q));
-  const lastPage = Math.max(1, Math.ceil(rows.length / 5)),
-    activePage = Math.min(page, lastPage),
-    visible = rows.slice((activePage - 1) * 5, activePage * 5);
+  const totalRows = serverPaged ? queueData.queuePage.total : rows.length;
+  const lastPage = serverPaged
+      ? queueData.queuePage.pages
+      : Math.max(1, Math.ceil(totalRows / 5)),
+    activePage = serverPaged
+      ? queueData.queuePage.page
+      : Math.min(page, lastPage),
+    visible = serverPaged
+      ? rows
+      : rows.slice((activePage - 1) * 5, activePage * 5);
   const queueRef = useRef<HTMLDivElement>(null);
   const queueScrollKey = `${storageKey}:scroll:${focus}:${activePage}:${decisionsOnly}`;
   useEffect(() => {
@@ -567,9 +633,33 @@ export default function Today({
               Próximos anúncios
             </h2>
             <span className="small muted">
+              {queueLoading && (
+                <LoaderCircle
+                  size={13}
+                  className="spin"
+                  aria-label="Atualizando fila"
+                />
+              )}
               {data.summary.totalOffers} no cadastro
             </span>
           </div>
+          {visible.some((item) => item.tab === "costs") &&
+            data.user.role !== "viewer" && (
+              <button
+                className="text-link today-sequence-start"
+                disabled={queueLoading || blocked}
+                onClick={() =>
+                  onReview(
+                    visible.find((item) => item.tab === "costs")!,
+                    focus,
+                    decisionsOnly,
+                  )
+                }
+              >
+                <Calculator size={13} /> Revisar em sequência{" "}
+                <ChevronRight size={13} />
+              </button>
+            )}
           <div
             className="today-focus"
             role="tablist"
@@ -618,7 +708,8 @@ export default function Today({
             id="today-queue"
             role="tabpanel"
             aria-labelledby={"today-tab-" + focus}
-            className="today-queue"
+            className={"today-queue" + (queueLoading ? " is-updating" : "")}
+            aria-busy={queueLoading}
             ref={queueRef}
             onScroll={(event) => {
               try {
@@ -640,7 +731,17 @@ export default function Today({
                 </button>
               </div>
             )}
-            {visible.length ? (
+            {queueLoading && !visible.length ? (
+              <div
+                className="today-queue-skeleton"
+                role="status"
+                aria-label="Carregando anúncios"
+              >
+                <span />
+                <span />
+                <span />
+              </div>
+            ) : visible.length ? (
               visible.map((item) => (
                 <div
                   className={"today-queue-row " + item.severity}
@@ -800,10 +901,18 @@ export default function Today({
               </div>
             )}
           </div>
+          {queueError && (
+            <button
+              className="text-link"
+              onClick={() => setQueueRetry((n) => n + 1)}
+            >
+              Recarregar fila
+            </button>
+          )}
           <div className="today-queue-footer">
             <span>
-              {rows.length
-                ? `${(activePage - 1) * 5 + 1}–${Math.min(activePage * 5, rows.length)} de ${rows.length}`
+              {totalRows
+                ? `${(activePage - 1) * 5 + 1}–${Math.min(activePage * 5, totalRows)} de ${totalRows}`
                 : "0 anúncios"}
               {postponed > 0 && (
                 <button
@@ -818,7 +927,7 @@ export default function Today({
               <button
                 className="icon-button"
                 aria-label="Anúncios anteriores"
-                disabled={activePage === 1}
+                disabled={queueLoading || activePage === 1}
                 onClick={() =>
                   changeFocus(focus, decisionsOnly, activePage - 1)
                 }
@@ -828,7 +937,7 @@ export default function Today({
               <button
                 className="icon-button"
                 aria-label="Próximos anúncios da fila"
-                disabled={activePage === lastPage}
+                disabled={queueLoading || activePage === lastPage}
                 onClick={() =>
                   changeFocus(focus, decisionsOnly, activePage + 1)
                 }
@@ -839,6 +948,14 @@ export default function Today({
           </div>
         </section>
         <div className="today-insights">
+          {data.monthlyGoal && (
+            <MonthlyGoal
+              data={data}
+              store={store}
+              blocked={blocked}
+              onUpdated={onUpdated}
+            />
+          )}
           <details
             className="panel today-chart-panel"
             open={graphOpen}

@@ -26,6 +26,7 @@ export default function OfferPreview({
   onClose,
   onView,
   onChanged,
+  onNext,
 }: {
   id: string;
   initialTab?: string;
@@ -33,6 +34,7 @@ export default function OfferPreview({
   onClose: () => void;
   onView: (id: string, tab: string) => void;
   onChanged: () => void;
+  onNext?: () => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     titleId = useId();
@@ -93,17 +95,26 @@ export default function OfferPreview({
     setTab(next);
     return true;
   }
-  async function save(url: string, body: Row, message: string) {
+  async function save(
+    url: string,
+    body: Row,
+    message: string,
+    advance = false,
+  ) {
     if (busy || loading || !detail) return false;
     setBusy(true);
+    let persisted = false;
     try {
       await jsonRequest(url, body);
-      setDirty(false);
+      persisted = true;
+      flushSync(() => setDirty(false));
       notify(message);
-      setRevision((n) => n + 1);
       onChanged();
+      if (advance && onNext) await onNext();
+      else setRevision((n) => n + 1);
       return true;
     } catch (e) {
+      if (persisted) setRevision((n) => n + 1);
       notify((e as Error).message, "error");
       return false;
     } finally {
@@ -290,6 +301,28 @@ export default function OfferPreview({
                         "Custos salvos; histórico preservado.",
                       )
                     }
+                    onSaveCostsAndNext={
+                      onNext
+                        ? (p) =>
+                            void save(
+                              `/api/offers/${id}/costs`,
+                              { ...p, offerVersion: detail.offer.version },
+                              "Custos salvos.",
+                              true,
+                            )
+                        : undefined
+                    }
+                    onProposalAndNext={
+                      onNext
+                        ? (p) =>
+                            save(
+                              "/api/proposals",
+                              p,
+                              "Proposta salva para revisão. O preço atual foi preservado.",
+                              true,
+                            )
+                        : undefined
+                    }
                     onProposal={(p) =>
                       save(
                         "/api/proposals",
@@ -329,6 +362,11 @@ export default function OfferPreview({
           )}
           Conferir cadastro
         </button>
+        {onNext && (
+          <span className="preview-sequence-label">
+            Revisão em sequência · mesma loja
+          </span>
+        )}
         <button
           className="button primary"
           disabled={busy || !detail}

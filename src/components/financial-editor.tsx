@@ -9,13 +9,17 @@ export default function FinancialEditor({
   busy,
   onDirty,
   onSaveCosts,
+  onSaveCostsAndNext,
   onProposal,
+  onProposalAndNext,
 }: {
   detail: Row;
   busy: boolean;
   onDirty: () => void;
   onSaveCosts: (data: Row) => void;
+  onSaveCostsAndNext?: (data: Row) => void;
   onProposal: (data: Row) => Promise<boolean>;
+  onProposalAndNext?: (data: Row) => Promise<boolean>;
 }) {
   const [draftCosts, setDraftCosts] = useState<Costs | null>(detail.costs);
   return (
@@ -29,6 +33,7 @@ export default function FinancialEditor({
       busy={busy}
       onDirty={onDirty}
       onProposal={onProposal}
+      onProposalAndNext={onProposalAndNext}
       costEditor={
         <details className="expand pricing-cost-editor" open>
           <summary>Custos da oferta</summary>
@@ -40,6 +45,7 @@ export default function FinancialEditor({
             onDirty={onDirty}
             onDraft={setDraftCosts}
             onSave={onSaveCosts}
+            onSaveAndNext={onSaveCostsAndNext}
           />
         </details>
       }

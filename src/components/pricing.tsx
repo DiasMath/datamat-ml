@@ -26,6 +26,7 @@ export default function Pricing({
   offer,
   busy,
   onProposal,
+  onProposalAndNext,
   onDirty,
   costs,
   parameters,
@@ -37,6 +38,7 @@ export default function Pricing({
   offer: Row;
   busy: boolean;
   onProposal: (data: Row) => Promise<boolean>;
+  onProposalAndNext?: (data: Row) => Promise<boolean>;
   onDirty: () => void;
   costs: Costs;
   parameters: Parameters;
@@ -546,7 +548,13 @@ export default function Pricing({
                 });
                 if (request.current?.key !== key)
                   request.current = { key, id: crypto.randomUUID() };
-                const saved = await onProposal({
+                const next =
+                  (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
+                    "data-next",
+                  ) === "true";
+                const saved = await (
+                  next && onProposalAndNext ? onProposalAndNext : onProposal
+                )({
                   offerId: offer.id,
                   input: result.input,
                   reason,
@@ -588,6 +596,24 @@ export default function Pricing({
                 <Save size={15} />
                 {busy ? "Salvando…" : "Salvar para revisão"}
               </button>
+              {onProposalAndNext && (
+                <button
+                  className="button"
+                  type="submit"
+                  data-next="true"
+                  disabled={
+                    busy ||
+                    (useOfficialTariff && (!activeQuote || quotePending)) ||
+                    Boolean(offer.ml?.variablePrices) ||
+                    !result.proposed.price ||
+                    (mode === "discount" && result.input.discount === null) ||
+                    offer.origin === "reference"
+                  }
+                >
+                  <Save size={15} />{" "}
+                  {busy ? "Salvando…" : "Salvar proposta e próximo"}
+                </button>
+              )}
               {offer.origin === "reference" && (
                 <p className="muted small">
                   Referências externas não recebem propostas operacionais.

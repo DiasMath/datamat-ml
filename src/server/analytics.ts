@@ -42,10 +42,14 @@ const pageSchema = z.object({
   paging: z.object({ total: z.number().int().nonnegative() }),
   results: z.array(orderSchema).max(50),
 });
-export function rangeFromQuery(query: URLSearchParams) {
-  const today = businessDay();
+export function rangeFromQuery(query: URLSearchParams, clock = new Date()) {
+  const today = businessDay(clock);
   try {
-    return analysisRange(query.get("from") ?? today, query.get("to") ?? today);
+    return analysisRange(
+      query.get("from") ?? today,
+      query.get("to") ?? today,
+      clock,
+    );
   } catch (e) {
     throw new HttpError(422, (e as Error).message);
   }
@@ -95,8 +99,12 @@ function blank(store: Row, connection?: Row): StoreAnalysis {
     error: null,
   };
 }
-export async function analyticsSources(actor: Actor, query: URLSearchParams) {
-  const range = rangeFromQuery(query);
+export async function analyticsSources(
+  actor: Actor,
+  query: URLSearchParams,
+  clock = new Date(),
+) {
+  const range = rangeFromQuery(query, clock);
   const sources: StoreAnalysis[] = [];
   for (const store of selectedStores(actor, query)) {
     const connection = await get("connections", key(store.id, "mercadolivre"));

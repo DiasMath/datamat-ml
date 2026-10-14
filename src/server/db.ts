@@ -12,6 +12,7 @@ import {
 } from "firebase-admin/app";
 import {
   initializeFirestore,
+  FieldValue,
   type Firestore,
   type Transaction,
   type Query,
@@ -125,17 +126,65 @@ export async function find(
   }
   return [...rows.values()].slice(0, limit);
 }
+const todayCollections = new Set([
+  "offers",
+  "costs",
+  "parameters",
+  "connections",
+  "ml_analytics",
+  "ml_competition",
+  "proposals",
+  "tasks",
+  "monthly_goals",
+  "stores",
+]);
+function affectedStore(
+  collection: string,
+  documentId: string,
+  row?: Row | null,
+) {
+  if (!todayCollections.has(collection)) return undefined;
+  return collection === "stores" ? documentId : row?.store_id;
+}
+function revisionWrite(storeId: string) {
+  return db().collection("_today_revisions").doc(storeId);
+}
 export async function put(collection: string, documentId: string, row: Row) {
   const data = clean({ ...row, id: documentId }),
     c = context.getStore();
   if (c) c.writes.set(doc(collection, documentId).path, data);
-  else await doc(collection, documentId).set(data);
+  else {
+    const storeId = affectedStore(collection, documentId, data);
+    const batch = db().batch();
+    batch.set(doc(collection, documentId), data);
+    if (storeId)
+      batch.set(
+        revisionWrite(storeId),
+        { revision: FieldValue.increment(1) },
+        { merge: true },
+      );
+    await batch.commit();
+  }
   return data;
 }
 export async function remove(collection: string, documentId: string) {
   const c = context.getStore();
   if (c) c.writes.set(doc(collection, documentId).path, null);
-  else await doc(collection, documentId).delete();
+  else {
+    const previous = todayCollections.has(collection)
+      ? await get(collection, documentId)
+      : undefined;
+    const storeId = affectedStore(collection, documentId, previous);
+    const batch = db().batch();
+    batch.delete(doc(collection, documentId));
+    if (storeId)
+      batch.set(
+        revisionWrite(storeId),
+        { revision: FieldValue.increment(1) },
+        { merge: true },
+      );
+    await batch.commit();
+  }
 }
 export async function transaction<T>(fn: () => Promise<T>): Promise<T> {
   if (context.getStore()) return fn();
@@ -152,12 +201,30 @@ export async function transaction<T>(fn: () => Promise<T>): Promise<T> {
           throw new Error(
             "Operação excede o limite transacional; reduza o lote",
           );
+        const changedStores = new Set<string>();
+        for (const [path, row] of c.writes) {
+          const [collection, documentId] = path.split("/");
+          for (const candidate of [row, c.reads.get(path)]) {
+            const storeId = affectedStore(collection, documentId, candidate);
+            if (storeId) changedStores.add(storeId);
+          }
+        }
+        if (c.writes.size + changedStores.size > 500)
+          throw new Error(
+            "Operação excede o limite transacional; reduza o lote",
+          );
         // Stage writes: Firestore requires ALL reads to precede ALL writes.
         for (const [path, row] of c.writes) {
           const ref = db().doc(path);
           if (row === null) tx.delete(ref);
           else tx.set(ref, row);
         }
+        for (const storeId of changedStores)
+          tx.set(
+            revisionWrite(storeId),
+            { revision: FieldValue.increment(1) },
+            { merge: true },
+          );
         return result;
       });
     },

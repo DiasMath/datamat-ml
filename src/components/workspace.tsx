@@ -138,6 +138,12 @@ export default function Workspace({ view }: { view: string[] }) {
       id: string;
       tab?: string;
       canEdit: boolean;
+      sequence?: {
+        store: string;
+        focus: "urgent" | "review" | "prepare";
+        decisions: boolean;
+        skipped: string[];
+      };
     } | null>(null),
     [searchOpen, setSearchOpen] = useState(false),
     [detail, setDetail] = useState<Row | null>(null),
@@ -574,6 +580,49 @@ export default function Workspace({ view }: { view: string[] }) {
       canEdit:
         !!chrome && chrome.user.role !== "viewer" && !dirty && !hasUnsaved(),
     });
+  }
+  function startReview(
+    item: { id: string; storeId: string },
+    focus: "urgent" | "review" | "prepare",
+    decisions: boolean,
+  ) {
+    if (
+      busy ||
+      modal ||
+      dirty ||
+      hasUnsaved() ||
+      chrome?.user.role === "viewer"
+    )
+      return;
+    setPreview({
+      id: item.id,
+      tab: "costs",
+      canEdit: true,
+      sequence: { store: item.storeId, focus, decisions, skipped: [] },
+    });
+  }
+  async function nextPreview() {
+    if (!preview?.sequence) return;
+    const sequence = preview.sequence;
+    const skipped = [...sequence.skipped, preview.id];
+    const result = await jsonRequest("/api/today/next", {
+      ...sequence,
+      skipped,
+      currentId: preview.id,
+    });
+    if (result.next)
+      setPreview({
+        ...preview,
+        id: result.next.id,
+        tab: "costs",
+        sequence: { ...sequence, skipped },
+      });
+    else {
+      closePreview();
+      notify(
+        "Fim da sequência nesta loja. As pendências restantes continuam na Hoje.",
+      );
+    }
   }
   function closePreview() {
     setPreview(null);
@@ -1022,6 +1071,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   }}
                   onOpen={openOffer}
                   onPreview={openPreview}
+                  onReview={startReview}
                   onTask={(t: Row) => open("task", t)}
                   navigate={navigate}
                 />
@@ -1498,6 +1548,7 @@ export default function Workspace({ view }: { view: string[] }) {
           initialTab={preview.tab}
           canEdit={preview.canEdit}
           onClose={closePreview}
+          onNext={preview.sequence ? nextPreview : undefined}
           onChanged={() => {
             previewChanged.current = true;
           }}
@@ -3295,6 +3346,7 @@ function fieldLabel(v: string) {
         "note.update": "Edição de nota",
         "product.update": "Dados do produto",
         "store.update": "Nome da loja",
+        "goal.monthly": "Meta mensal de faturamento",
         costs: "Custos",
         parameters: "Parâmetros financeiros",
         price: "Preço",

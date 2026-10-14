@@ -95,6 +95,7 @@ async function main() {
             "tests/listing-media.test.ts",
             "tests/google-drive.test.ts",
             "tests/today.test.ts",
+            "tests/today-improvements.test.ts",
             "tests/navigation-search.test.ts",
           ]
         : ["playwright", "test", ...process.argv.slice(3)];

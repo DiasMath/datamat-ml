@@ -2,7 +2,7 @@
 import { useState } from "react";
 import AutocompleteInput from "./autocomplete";
 import { useToastMessage } from "./toasts";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, LoaderCircle } from "lucide-react";
 import { Field, Submit, labels, string, nullable, money, percent } from "./ui";
 import {
   calculate,
@@ -541,16 +541,30 @@ function Override({
     </>
   );
 }
-export function TaskForm({ data, initial, busy, onSave, onDirty }: Props) {
+export function TaskForm({
+  data,
+  initial,
+  busy,
+  onSave,
+  onDirty,
+  choicesLoading = false,
+  onStoreChange,
+}: Props & {
+  choicesLoading?: boolean;
+  onStoreChange?: (store: string) => void;
+}) {
   const [store, setStore] = useState(
     initial?.store_id || data.selectedStore || data.stores[0]?.id,
+  );
+  const [related, setRelated] = useState(
+    initial?.offer_id || data.initialOffer || "",
   );
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     onSave({
       storeId: store,
-      offerId: string(f, "offerId") || null,
+      offerId: related || null,
       title: string(f, "title"),
       description: string(f, "description"),
       type: string(f, "type"),
@@ -571,7 +585,11 @@ export function TaskForm({ data, initial, busy, onSave, onDirty }: Props) {
           <select
             value={store}
             disabled={!!initial}
-            onChange={(e) => setStore(e.target.value)}
+            onChange={(e) => {
+              setStore(e.target.value);
+              setRelated("");
+              onStoreChange?.(e.target.value);
+            }}
           >
             {data.stores.map((s: Row) => (
               <option key={s.id} value={s.id}>
@@ -584,9 +602,15 @@ export function TaskForm({ data, initial, busy, onSave, onDirty }: Props) {
           <select
             key={store}
             name="offerId"
-            defaultValue={initial?.offer_id || data.initialOffer || ""}
+            value={related}
+            disabled={choicesLoading}
+            onChange={(e) => setRelated(e.target.value)}
           >
             <option value="">Tarefa geral da loja</option>
+            {related &&
+              !data.offerChoices.some((o: Row) => o.id === related) && (
+                <option value={related}>Anúncio vinculado</option>
+              )}
             {data.offerChoices
               .filter((o: Row) => o.store_id === store)
               .map((o: Row) => (
@@ -595,6 +619,16 @@ export function TaskForm({ data, initial, busy, onSave, onDirty }: Props) {
                 </option>
               ))}
           </select>
+          {choicesLoading && (
+            <small className="task-options-loading">
+              <LoaderCircle
+                size={12}
+                className="spin"
+                aria-label="Carregando anúncios relacionados"
+              />{" "}
+              Carregando vínculos; você já pode preencher a ação.
+            </small>
+          )}
         </Field>
         <Field label="Título *" wide>
           <AutocompleteInput

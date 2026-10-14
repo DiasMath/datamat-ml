@@ -383,8 +383,8 @@ export default function Today({
                 <h3>Consultas de vendas</h3>
                 <p>
                   Os totais usam as consultas disponíveis das lojas
-                  selecionadas. A comparação com ontem exige uma consulta
-                  completa de todas elas.
+                  selecionadas. Os indicadores mensais exigem uma consulta
+                  completa de todas elas para confirmar a cobertura.
                 </p>
                 <ul>
                   {data.sales.stores.map((source: Row) => (
@@ -474,14 +474,14 @@ export default function Today({
           </button>
         </div>
       </div>
-      <div className="today-metrics" aria-label="Resumo de hoje">
+      <div className="today-metrics" aria-label="Resumo do mês">
         <div
           className="today-metric revenue"
           title="Receita dos produtos em pedidos pagos; não é o repasse líquido"
         >
           <span className="today-metric-label">
             <Wallet size={16} aria-hidden="true" />
-            Receita de hoje
+            Receita do mês
           </span>
           <strong
             title={
@@ -490,29 +490,12 @@ export default function Today({
           >
             {data.sales.revenue == null ? "—" : money(data.sales.revenue)}
           </strong>
-          {data.sales.change != null ? (
-            <small
-              className={
-                Number(data.sales.change) < 0
-                  ? "trend negative"
-                  : "trend positive"
-              }
-            >
-              {Number(data.sales.change) < 0 ? (
-                <TrendingDown size={12} aria-hidden="true" />
-              ) : (
-                <TrendingUp size={12} aria-hidden="true" />
-              )}
-              {`${Number(data.sales.change) > 0 ? "+" : ""}${percent(data.sales.change)} vs. ontem até a consulta`}
-            </small>
-          ) : (
-            <small>Produtos em pedidos pagos</small>
-          )}
+          <small>Produtos em pedidos pagos no mês</small>
         </div>
         <div className="today-metric orders">
           <span className="today-metric-label">
             <ShoppingBag size={16} aria-hidden="true" />
-            Pedidos pagos
+            Pedidos no mês
           </span>
           <strong>{data.sales.orders ?? "—"}</strong>
           <small>
@@ -968,25 +951,23 @@ export default function Today({
             >
               <b>
                 <TrendingUp size={16} aria-hidden="true" />
-                Ritmo de vendas
+                Evolução do mês
               </b>{" "}
-              <span className="small muted">
-                Hoje × ontem até o mesmo horário
-              </span>
+              <span className="small muted">Faturamento acumulado no mês</span>
             </summary>
             <TodayChart
-              hours={data.sales.hours}
+              days={data.sales.days || []}
               available={data.sales.available}
               complete={data.sales.complete}
             />
           </details>
           <section
             className="panel today-financial"
-            aria-label="Resultado financeiro do dia"
+            aria-label="Resultado financeiro do mês"
           >
             <h2>
               <Calculator size={15} aria-hidden="true" />
-              Resultado do dia
+              Resultado do mês
             </h2>
             <div className="today-financial-values">
               <div>
@@ -1035,7 +1016,7 @@ export default function Today({
             <summary>
               <TrendingUp size={15} aria-hidden="true" />
               Anúncios em destaque{" "}
-              <span className="small muted">7 dias completos</span>
+              <span className="small muted">Mês corrente</span>
             </summary>
             <div className="today-mini-list">
               {data.highlights.map((item: Row) => (
@@ -1126,11 +1107,11 @@ export default function Today({
   );
 }
 function TodayChart({
-  hours,
+  days,
   available,
   complete,
 }: {
-  hours: Row[];
+  days: Row[];
   available: boolean;
   complete: boolean;
 }) {
@@ -1141,31 +1122,22 @@ function TodayChart({
     left = 32,
     bottom = 162,
     top = 18;
-  const max = Math.max(
-    1,
-    ...hours.flatMap((h) => [Number(h.revenue || 0), Number(h.previous || 0)]),
-  );
+  const max = Math.max(1, ...days.map((h) => Number(h.revenue || 0)));
   const x = (i: number) =>
-      left + (i * (width - left - 16)) / Math.max(1, hours.length - 1),
+      left + (i * (width - left - 16)) / Math.max(1, days.length - 1),
     y = (v: number) => bottom - (v / max) * (bottom - top);
   const path = (key: string) =>
-    hours
+    days
       .map((h, i) => `${i ? "L" : "M"}${x(i)},${y(Number(h[key] || 0))}`)
       .join(" ");
-  const point = selected == null ? null : hours[selected];
+  const point = selected == null ? null : days[selected];
   return (
     <div className="today-chart">
       <div className="today-chart-legend">
         <span>
           <i />
-          Hoje
+          Acumulado mensal
         </span>
-        {complete && (
-          <span>
-            <i className="previous" />
-            Ontem
-          </span>
-        )}
       </div>
       {!available ? (
         <div className="today-chart-empty">
@@ -1175,9 +1147,9 @@ function TodayChart({
         <svg
           viewBox={`0 0 ${width} ${height}`}
           role="img"
-          aria-label="Receita por hora de hoje e ontem até o mesmo horário"
+          aria-label="Faturamento acumulado no mês por dia"
         >
-          <title>Receita por hora</title>
+          <title>Faturamento acumulado no mês</title>
           <defs>
             <linearGradient id={gradient} x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor="#ffb03f" stopOpacity="0.25" />
@@ -1201,20 +1173,19 @@ function TodayChart({
               </text>
             </g>
           ))}
-          {hours.length > 1 && (
+          {days.length > 1 && (
             <path
-              d={`${path("revenue")} L${x(hours.length - 1)},${bottom} L${x(0)},${bottom} Z`}
+              d={`${path("revenue")} L${x(days.length - 1)},${bottom} L${x(0)},${bottom} Z`}
               fill={`url(#${gradient})`}
             />
           )}
-          {complete && <path d={path("previous")} className="chart-previous" />}
           <path d={path("revenue")} className="chart-current" />
-          {hours.map((h, i) => (
-            <g key={h.hour}>
-              {(i % Math.max(1, Math.ceil(hours.length / 5)) === 0 ||
-                i === hours.length - 1) && (
+          {days.map((h, i) => (
+            <g key={h.day}>
+              {(i % Math.max(1, Math.ceil(days.length / 5)) === 0 ||
+                i === days.length - 1) && (
                 <text x={x(i)} y={bottom + 20} textAnchor="middle">
-                  {h.hour}h
+                  {Number(h.day.slice(8))}
                 </text>
               )}
               <circle
@@ -1224,7 +1195,7 @@ function TodayChart({
                 className="chart-dot"
                 tabIndex={0}
                 role="button"
-                aria-label={`${h.hour} horas: hoje ${money(h.revenue)}${complete ? `, ontem ${money(h.previous)}` : ""}`}
+                aria-label={`Dia ${Number(h.day.slice(8))}: acumulado ${money(h.revenue)}`}
                 onFocus={() => setSelected(i)}
                 onClick={() => setSelected(i)}
                 onKeyDown={(event) => {
@@ -1241,9 +1212,11 @@ function TodayChart({
       )}
       <div className="today-chart-value">
         {point
-          ? `${point.hour}h · ${money(point.revenue)}${complete ? ` / ontem ${money(point.previous)}` : ""}`
+          ? `Dia ${Number(point.day.slice(8))} · acumulado ${money(point.revenue)}`
           : available
-            ? "Valores por hora · produtos em pedidos pagos"
+            ? complete
+              ? "Acumulado de vendas pagas no mês"
+              : "Acumulado das vendas consultadas · dados parciais"
             : "Dados indisponíveis não são tratados como zero."}
       </div>
     </div>

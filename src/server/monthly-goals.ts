@@ -7,6 +7,7 @@ import {
   aggregateAnalytics,
   analysisRange,
   businessDay,
+  type StoreAnalysis,
 } from "../domain/analytics";
 
 const schema = z.object({
@@ -95,6 +96,7 @@ export async function monthlyGoalReport(
   actor: Actor,
   store: string,
   clock = new Date(),
+  monthlySources?: StoreAnalysis[],
 ) {
   if (store !== "all") authorizeStore(actor, store);
   const day = businessDay(clock),
@@ -109,13 +111,15 @@ export async function monthlyGoalReport(
   ).filter((g): g is Row => !!g && g.organization_id === actor.organization_id);
   const ids = new Set(goals.map((g) => g!.store_id));
   const scoped = { ...actor, stores: stores.filter((s) => ids.has(s.id)) };
-  const sources = goals.length
-    ? await analyticsSources(
-        scoped,
-        new URLSearchParams({ from: month + "-01", to: day }),
-        clock,
-      )
-    : [];
+  const sources = monthlySources
+    ? monthlySources.filter((s) => ids.has(s.storeId))
+    : goals.length
+      ? await analyticsSources(
+          scoped,
+          new URLSearchParams({ from: month + "-01", to: day }),
+          clock,
+        )
+      : [];
   const report = aggregateAnalytics(
     sources,
     analysisRange(month + "-01", day, clock),

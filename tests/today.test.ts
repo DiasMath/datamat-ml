@@ -350,7 +350,7 @@ test("Today actionable facts hide outdated stock and cost estimates", () => {
   assert.equal(stale.minPrice, null);
 });
 
-test("Today cuts the previous-day comparison at the actual oldest observation, not the current clock", async () => {
+test("Today reports the current month without inventing daily comparisons", async () => {
   process.env.ML_CLIENT_ID = "123456";
   process.env.ML_CLIENT_SECRET = "test-only";
   process.env.ML_REDIRECT_URI =
@@ -358,7 +358,7 @@ test("Today cuts the previous-day comparison at the actual oldest observation, n
   process.env.APP_URL = "http://localhost:3000";
   process.env.ML_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
   const { businessDay, shiftDay } = await import("../src/domain/analytics");
-  const now = new Date(),
+  const now = new Date("2026-10-14T15:00:00Z"),
     day = businessDay(now),
     start = Date.parse(day + "T00:00:00-03:00");
   const observed = new Date(Math.max(start + 1000, now.getTime() - 60000));
@@ -391,7 +391,7 @@ test("Today cuts the previous-day comparison at the actual oldest observation, n
       ],
     },
     {
-      id: "after-cache-cutoff",
+      id: "earlier-this-month",
       storeId,
       created: new Date(observed.getTime() - 86400000 + 30000).toISOString(),
       status: "paid",
@@ -409,10 +409,14 @@ test("Today cuts the previous-day comparison at the actual oldest observation, n
       ],
     },
   ];
+  orders.push(
+    { ...orders[0], id: "outside-month", created: "2026-09-30T23:59:00-03:00" },
+    { ...orders[0], id: "cancelled", status: "cancelled" },
+  );
   const snapshot = key(
     actor.organization_id,
     storeId,
-    day,
+    day.slice(0, 7) + "-01",
     day,
     "77",
     "test-day-seller",
@@ -435,8 +439,12 @@ test("Today cuts the previous-day comparison at the actual oldest observation, n
     new URLSearchParams({ store: storeId }),
     now,
   );
-  assert.equal(report.sales.revenue, "100.00");
-  assert.equal(report.sales.previousRevenue, "0.00");
+  assert.equal(report.sales.revenue, "600.00");
+  assert.equal(report.sales.period, "month");
+  assert.equal(report.sales.orders, 2);
+  assert.equal(report.sales.days.at(-2)!.revenue, "500.00");
+  assert.equal(report.sales.days.at(-1)!.revenue, "600.00");
+  assert.equal(report.sales.previousRevenue, null);
   assert.equal(report.sales.change, null);
   await put("connections", connectionId, old);
 });

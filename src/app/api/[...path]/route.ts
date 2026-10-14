@@ -4,7 +4,11 @@ import {
   deleteMonthlyGoal,
   refreshMonthlyGoals,
 } from "@/server/monthly-goals";
-import { navigationReport, searchOffers } from "@/server/navigation";
+import {
+  navigationReport,
+  searchOffers,
+  taskOptions,
+} from "@/server/navigation";
 import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { workspaceActor, HttpError } from "@/server/access";
@@ -403,6 +407,8 @@ async function handle(req: NextRequest, context: Context) {
         return response(await analyticsReport(actor, req.nextUrl.searchParams));
       if (resource === "today" && !key && path.length === 1)
         return response(await todayReport(actor, req.nextUrl.searchParams));
+      if (resource === "task-options" && path.length === 1)
+        return response(await taskOptions(actor, req.nextUrl.searchParams));
       if (resource === "navigation" && path.length === 1)
         return response(
           await navigationReport(actor, req.nextUrl.searchParams),
@@ -507,7 +513,13 @@ async function handle(req: NextRequest, context: Context) {
         path.length === 2 &&
         req.method === "POST"
       ) {
-        await refreshRoutine(actor, req.nextUrl.searchParams, 55000, true);
+        await refreshRoutine(
+          actor,
+          req.nextUrl.searchParams,
+          55000,
+          true,
+          "month",
+        );
         await refreshMonthlyGoals(
           actor,
           req.nextUrl.searchParams.get("store") || "all",

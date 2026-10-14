@@ -8,15 +8,9 @@ import {
   aggregateAnalytics,
   analysisRange,
   businessDay,
-  shiftDay,
 } from "../domain/analytics";
 import { calculate, emptyCosts } from "../domain/finance";
-import {
-  pendingDecisions,
-  todayQueue,
-  todayHours,
-  todayWindow,
-} from "../domain/today";
+import { pendingDecisions, todayQueue, todayWindow } from "../domain/today";
 import { safePictureUrl, publicConnection } from "./mercadolivre";
 const fields = {
   offers: [
@@ -49,6 +43,10 @@ const fields = {
     "priority",
     "due_date",
     "description",
+    "type",
+    "reason",
+    "result",
+    "evidence",
     "version",
     "assignee",
   ],
@@ -88,10 +86,11 @@ async function buildTodayReport(
     ids = selected.map((s) => s.id as string);
   const day = businessDay(clock),
     todayRange = todayWindow(clock);
-  const weeklyQuery = new URLSearchParams({
+  const month = day.slice(0, 7);
+  const monthQuery = new URLSearchParams({
     store,
-    from: shiftDay(day, -7),
-    to: shiftDay(day, -1),
+    from: month + "-01",
+    to: day,
   });
   const [
     raw,
@@ -101,9 +100,7 @@ async function buildTodayReport(
     tasks,
     competition,
     connections,
-    dailySources,
-    weeklySources,
-    monthlyGoal,
+    monthlySources,
   ] = await Promise.all([
     scopedRows("offers", ids),
     scopedRows("costs", ids),
@@ -112,9 +109,7 @@ async function buildTodayReport(
     scopedRows("tasks", ids),
     scopedRows("ml_competition", ids),
     Promise.all(ids.map((id) => get("connections", key(id, "mercadolivre")))),
-    analyticsSources(actor, new URLSearchParams({ store, from: day, to: day })),
-    analyticsSources(actor, weeklyQuery),
-    monthlyGoalReport(actor, store, clock),
+    analyticsSources(actor, monthQuery, clock),
   ]);
   const scoped = (r: Row) =>
     !r.organization_id || r.organization_id === actor.organization_id;
@@ -161,23 +156,22 @@ async function buildTodayReport(
       competition: competitionMap.get(o.id),
     };
   });
-  const observedTimes = dailySources
-    .map((s) => {
-      const through = s.collectedThrough || s.observedAt;
-      return through ? Date.parse(through) : NaN;
-    })
-    .filter(
-      (t) =>
-        Number.isFinite(t) && t >= todayRange.start && t <= clock.getTime(),
-    );
-  const cutoff = new Date(
-    observedTimes.length ? Math.min(...observedTimes) : clock.getTime(),
+  const report = aggregateAnalytics(
+    monthlySources,
+    analysisRange(month + "-01", day, clock),
   );
-  const report = aggregateAnalytics(dailySources, todayWindow(cutoff)),
-    weekly = aggregateAnalytics(
-      weeklySources,
-      analysisRange(weeklyQuery.get("from")!, weeklyQuery.get("to")!, clock),
-    );
+  const monthlyGoal = await monthlyGoalReport(
+    actor,
+    store,
+    clock,
+    monthlySources,
+  );
+  // Monthly priorities use observed revenue for ranking. Daily/weekly decline
+  // comparisons remain in Analytics; do not substitute another period here.
+  const priorityReport = {
+    ...report,
+    previous: { ...report.previous, products: [] },
+  };
   const ownIds = new Set(
     offers.filter((o) => o.origin !== "reference").map((o) => o.id),
   );
@@ -185,13 +179,13 @@ async function buildTodayReport(
     (p) =>
       scoped(p) && ownIds.has(p.offer_id) && pendingDecisions.has(p.status),
   );
-  const queue = todayQueue(offers, pending, weekly, clock.getTime());
+  const queue = todayQueue(offers, pending, priorityReport, clock.getTime());
   const offerMap = new Map(offers.map((o) => [o.store_id + ":" + o.ml_id, o]));
-  const highlights = weekly.complete
-    ? weekly.current.products
+  const highlights = report.complete
+    ? report.current.products
         .flatMap((p) => {
           const offer = offerMap.get(p.storeId + ":" + p.id),
-            source = weekly.stores.find((s) => s.storeId === p.storeId);
+            source = report.stores.find((s) => s.storeId === p.storeId);
           if (
             !offer ||
             !offer.matched ||
@@ -301,18 +295,32 @@ async function buildTodayReport(
       contributionCoverage: report.available
         ? report.current.contributionCoverage
         : null,
-      previousRevenue: report.complete ? report.previous.revenue : null,
-      change: report.changes?.revenue ?? null,
+      period: "month" as const,
+      month,
+      previousRevenue: null,
+      change: null,
       observedAt: observations[0] || null,
       stores: publicStores,
-      hours: todayHours(report, cutoff),
+      hours: [],
+      days: Array.from({ length: Number(day.slice(8)) }, (_, index) => {
+        const date = month + "-" + String(index + 1).padStart(2, "0");
+        const rows = report.current.daily.filter((d) => d.day <= date);
+        return {
+          day: date,
+          revenue: report.available
+            ? rows
+                .reduce((sum, d) => sum.plus(d.revenue), new Decimal(0))
+                .toFixed(2)
+            : null,
+        };
+      }),
       day,
     },
     queue,
     monthlyGoal,
     highlights,
     changes,
-    weeklyRange: { from: weeklyQuery.get("from"), to: weeklyQuery.get("to") },
+    monthlyRange: { from: month + "-01", to: day },
   };
 }
 

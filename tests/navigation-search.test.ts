@@ -2,7 +2,11 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { initializeDatabase, put, key } from "../src/server/db";
 import { workspaceActor, type Actor } from "../src/server/access";
-import { searchOffers, navigationReport } from "../src/server/navigation";
+import {
+  searchOffers,
+  navigationReport,
+  taskOptions,
+} from "../src/server/navigation";
 import { quickSearch } from "../src/domain/quick-search";
 let actor: Actor;
 before(async () => {
@@ -112,5 +116,35 @@ test("navigation metadata ignores listing filters and exposes only public connec
   await assert.rejects(
     navigationReport(actor, new URLSearchParams({ store: "not-authorized" })),
     /Loja/,
+  );
+});
+
+test("task options are lightweight, authorized and scoped to the selected store", async () => {
+  const result = await taskOptions(
+    actor,
+    new URLSearchParams({ store: "juntos-com" }),
+  );
+  const own = result.offerChoices.find((o) => o.id === "search-own")!;
+  assert.deepEqual(own, {
+    id: "search-own",
+    store_id: "juntos-com",
+    title: "Busca escopo",
+  });
+  const json = JSON.stringify(result);
+  for (const value of [
+    "PRIVATE-DESCRIPTION",
+    "PRIVATE-ATTRIBUTES",
+    "PRIVATE-TOKEN",
+    "FOREIGN-ORG",
+    "OTHER-STORE",
+  ])
+    assert.ok(!json.includes(value));
+  await assert.rejects(
+    taskOptions(actor, new URLSearchParams({ store: "not-authorized" })),
+    /Loja/,
+  );
+  assert.deepEqual(
+    await taskOptions({ ...actor, stores: [] }, new URLSearchParams()),
+    { offerChoices: [], tasks: [], truncated: false },
   );
 });

@@ -100,10 +100,10 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
       stores: [
         { id: "juntos-com", name: "juntos.com", connected: true, error: null },
       ],
-      hours: [
-        { hour: 0, revenue: "20", previous: "10" },
-        { hour: 1, revenue: "50", previous: "40" },
-        { hour: 2, revenue: "30", previous: "30" },
+      days: [
+        { day: "2026-10-01", revenue: "20" },
+        { day: "2026-10-02", revenue: "70" },
+        { day: "2026-10-03", revenue: "100" },
       ],
     },
   };
@@ -131,7 +131,7 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
     const panel = page.locator(".today-dashboard");
     await expect.poll(() => requests).toBe(1);
     await expect(
-      panel.locator(".today-metric").filter({ hasText: "Receita de hoje" }),
+      panel.locator(".today-metric").filter({ hasText: "Receita do mês" }),
     ).toContainText("R$ 100,00");
     await expect(
       page.getByRole("progressbar", { name: "Operação em andamento" }),

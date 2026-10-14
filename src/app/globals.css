@@ -5397,3 +5397,124 @@ button.today-metric:hover {
   margin-top: 4px;
   font-size: 9px;
 }
+
+/* Essential activity indicators stay animated even when decorative motion is reduced. */
+.spin,
+.analytics-spinning {
+  animation: spin 1s linear infinite !important;
+}
+.topbar {
+  height: 58px;
+  gap: 16px;
+}
+.detail-heading {
+  top: 58px;
+}
+.header-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.workspace-clock {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--muted);
+  min-width: 0;
+}
+.workspace-clock small {
+  color: var(--dim);
+  font-size: 9px;
+}
+.header-new-action {
+  min-height: 32px;
+  padding: 7px 12px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.topbar-actions {
+  flex: 0 1 auto;
+  max-width: none;
+}
+.topbar .global-store {
+  min-width: 0;
+  max-width: 225px;
+}
+.topbar .global-store select {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.today-content .page-heading .eyebrow,
+.today-content .page-heading .heading-actions:empty {
+  display: none;
+}
+.task-options-loading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+@media (max-width: 1100px) {
+  .workspace-clock {
+    font-size: 10px;
+  }
+  .topbar .global-store {
+    max-width: 175px;
+  }
+}
+@media (max-width: 620px) {
+  .topbar {
+    height: auto;
+    min-height: 94px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .header-context {
+    flex-basis: 100%;
+  }
+  .workspace-clock {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .topbar-actions {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 100%;
+    gap: 6px;
+  }
+  .topbar .global-store {
+    flex: 1;
+    max-width: none;
+    padding: 0 6px;
+  }
+  .topbar .global-store select {
+    max-width: 100%;
+    width: 100%;
+  }
+  .nav-search {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .header-new-action {
+    min-height: 44px;
+    padding: 6px 9px;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .topbar-actions .request-loading {
+    position: absolute;
+    top: 9px;
+    right: 14px;
+  }
+  .detail-heading {
+    top: 94px;
+  }
+}

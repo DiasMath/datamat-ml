@@ -81,6 +81,7 @@ test("Hoje is compact, distinguishes preparation from urgency, paginates and loa
   await expect(page).toHaveURL(new RegExp(`/anuncios/${offers[5].id}`));
   await expect(page.getByLabel("Preço proposto (R$)")).toBeVisible();
   expect(workspaceReads).toBe(1);
+  await expect(page.locator(".detail-heading")).toHaveCSS("top", "58px");
   await page
     .getByRole("button", { name: "Voltar à Hoje", exact: true })
     .click();
@@ -139,7 +140,7 @@ test("Hoje loads task editing metadata lazily, persists the task, and keeps the 
   await expect(
     page.getByRole("button", { name: /Revisar anúncio prioritário/ }),
   ).toBeVisible();
-  expect(workspaceReads).toBe(1);
+  expect(workspaceReads).toBe(0);
   expect(
     (await db().collection("tasks").where("store_id", "==", storeId).get())
       .size,
@@ -174,6 +175,7 @@ test("Hoje remains readable with five priorities at mobile, tablet and desktop w
     .getByRole("button", { name: "Completar custos", exact: true })
     .click();
   await expect(page.getByLabel("Preço proposto (R$)")).toBeVisible();
+  await expect(page.locator(".detail-heading")).toHaveCSS("top", "94px");
   await page
     .getByRole("button", { name: "Voltar à Hoje", exact: true })
     .click();
@@ -374,4 +376,149 @@ test("partial sales identifies the unavailable store in an accessible popover wi
     fullPage: true,
   });
   await page.keyboard.press("Escape");
+});
+
+test("Nova ação opens before options arrive, preserves typing and animates its loader with reduced motion", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/task-options?*", async (route) => {
+    await pending;
+    await route.fulfill({
+      json: { offerChoices: [], tasks: [], truncated: false },
+    });
+  });
+  await page.goto(`/?store=${storeId}`);
+  await expect(page.locator(".today-dashboard")).toBeVisible();
+  await page.getByRole("button", { name: "Nova ação", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Nova ação", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByLabel("Título *", { exact: true })
+    .fill("Digitar durante consulta");
+  const spinner = dialog.getByLabel("Carregando anúncios relacionados");
+  await expect(spinner).toBeVisible();
+  const rotating = await spinner.evaluate(async (element) => {
+    const before = getComputedStyle(element).transform;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    return getComputedStyle(element).transform !== before;
+  });
+  expect(rotating).toBe(true);
+  await expect(
+    dialog.getByRole("button", { name: "Salvar tarefa", exact: true }),
+  ).toBeEnabled();
+  release();
+  await expect(spinner).not.toBeVisible();
+  await expect(dialog.getByLabel("Título *", { exact: true })).toHaveValue(
+    "Digitar durante consulta",
+  );
+  await dialog
+    .getByRole("button", { name: "Salvar tarefa", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+});
+
+test.describe("Brasília clock", () => {
+  test.use({ timezoneId: "Asia/Tokyo" });
+  test("header follows Brasília across midnight, removes redundant blocks and orders its controls", async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date("2026-10-15T02:59:00Z") });
+    await page.goto(`/?store=${storeId}`);
+    await expect(page.locator(".today-dashboard")).toBeVisible();
+    const clock = page.getByLabel("Data e hora de Brasília");
+    await expect(clock).toContainText("14 de outubro");
+    await expect(clock).toContainText("23:59");
+    await page.clock.fastForward(60000);
+    await expect(clock).toContainText("15 de outubro");
+    await expect(clock).toContainText("00:00");
+    await expect(
+      page.locator(".breadcrumb,.sidebar-bottom,.user-card"),
+    ).toHaveCount(0);
+    const controls = await page.locator(".topbar-actions").evaluate((element) =>
+      Array.from(element.children)
+        .slice(0, 3)
+        .map((child) => child.className),
+    );
+    expect(controls).toEqual([
+      "nav-search",
+      "global-store",
+      "button primary header-new-action",
+    ]);
+    for (const width of [320, 390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      await expect(
+        page.getByRole("button", { name: "Nova ação", exact: true }),
+      ).toBeVisible();
+    }
+  });
+});
+
+test("Editing an action during options loading preserves its listing and existing details", async ({
+  page,
+  request,
+}) => {
+  const [offer] = await listings(request, 1);
+  const task = await post(request, "/api/tasks", {
+    storeId,
+    offerId: offer.id,
+    title: "Revisar foto vinculada",
+    type: "conteúdo",
+    reason: "Foto pouco clara",
+    result: "Conferir resolução",
+    evidence: "Comparação das fotos",
+    priority: "high",
+    status: "todo",
+    description: "Manter detalhes",
+  });
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/task-options?*", async (route) => {
+    await pending;
+    await route
+      .fulfill({ json: { offerChoices: [], tasks: [], truncated: false } })
+      .catch(() => {});
+  });
+  try {
+    await page.goto(`/?store=${storeId}`);
+    await page.getByText("Ações em aberto", { exact: false }).click();
+    await page.getByRole("button", { name: /Revisar foto vinculada/ }).click();
+    const dialog = page.getByRole("dialog", {
+      name: "Editar ação",
+      exact: true,
+    });
+    await expect(
+      dialog.getByLabel("Carregando anúncios relacionados"),
+    ).toBeVisible();
+    await dialog
+      .getByLabel("Título *", { exact: true })
+      .fill("Revisar foto vinculada hoje");
+    await dialog
+      .getByRole("button", { name: "Salvar tarefa", exact: true })
+      .click();
+    await expect(dialog).not.toBeVisible();
+    const saved = (await db().collection("tasks").doc(task.id).get()).data()!;
+    expect(saved).toMatchObject({
+      offer_id: offer.id,
+      title: "Revisar foto vinculada hoje",
+      type: "conteúdo",
+      reason: "Foto pouco clara",
+      result: "Conferir resolução",
+      evidence: "Comparação das fotos",
+      description: "Manter detalhes",
+    });
+  } finally {
+    release();
+  }
 });

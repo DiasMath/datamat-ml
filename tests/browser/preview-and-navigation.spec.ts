@@ -70,7 +70,7 @@ test("the same sidebar and navbar survive delayed filters and navigation between
       (window as any).__sidebar = document.querySelector(".sidebar");
       (window as any).__navbar = document.querySelector(".topbar");
     });
-    const profile = await page.locator(".user-card").innerText();
+    await expect(page.locator(".user-card, .sidebar-bottom")).toHaveCount(0);
     const options = await page
       .getByLabel("Loja global")
       .locator("option")
@@ -78,9 +78,7 @@ test("the same sidebar and navbar survive delayed filters and navigation between
     await page.getByLabel("Buscar anúncios", { exact: true }).fill("Segundo");
     await page.getByRole("button", { name: "Buscar", exact: true }).click();
     await expect.poll(() => pending).toBe(true);
-    await expect(page.locator(".user-card")).toHaveText(profile, {
-      useInnerText: true,
-    });
+    await expect(page.locator(".user-card, .sidebar-bottom")).toHaveCount(0);
     await expect(page.locator(".sidebar .nav-count")).toHaveText("1");
     expect(await page.getByLabel("Loja global").locator("option").count()).toBe(
       options,

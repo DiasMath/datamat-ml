@@ -457,6 +457,32 @@ test("routine verifies official webhook resources, imports catalog, refreshes sa
     () => refreshRoutine(actor, query),
   );
   assert.equal(calls, before);
+  // Switching to monthly sales bypasses a daily cooldown and persists the scope.
+  const monthlyStarts: number[] = [];
+  await mocked(
+    (url) => {
+      if (url.pathname === "/orders/search")
+        monthlyStarts.push(
+          Date.parse(url.searchParams.get("order.date_created.from")!),
+        );
+      return routineResponse(url);
+    },
+    () => refreshRoutine(actor, query, 180000, true, "month"),
+  );
+  assert.ok(
+    monthlyStarts.includes(
+      analysisRange(businessDay().slice(0, 7) + "-01", businessDay())
+        .previousStart,
+    ),
+  );
+  assert.equal(monthlyStarts.length, 1);
+  assert.equal((await get("ml_routine", connectionId))!.sales_period, "month");
+  await mocked(
+    () => {
+      throw new Error("Não consultar novamente o mesmo mês durante cooldown");
+    },
+    () => refreshRoutine(actor, query, 180000, true, "month"),
+  );
   const task = await routineTask(actor, {
       storeId: "juntos-com",
       kind: "question",

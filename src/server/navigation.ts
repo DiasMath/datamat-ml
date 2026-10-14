@@ -109,3 +109,35 @@ export async function searchOffers(actor: Actor, query: URLSearchParams) {
       })),
   };
 }
+
+export async function taskOptions(actor: Actor, query: URLSearchParams) {
+  const selected = stores(actor, query),
+    ids = selected.map((s) => s.id);
+  const [offers, tasks] = await Promise.all([
+    projected(
+      actor,
+      "offers",
+      ids,
+      ["organization_id", "store_id", "title"],
+      5000,
+    ),
+    projected(
+      actor,
+      "tasks",
+      ids,
+      ["organization_id", "store_id", "title", "type", "assignee"],
+      1000,
+    ),
+  ]);
+  return {
+    offerChoices: offers.rows
+      .map((o) => ({
+        id: o.id,
+        store_id: o.store_id,
+        title: String(o.title || "Anúncio sem título"),
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title, "pt-BR")),
+    tasks: tasks.rows,
+    truncated: offers.truncated || tasks.truncated,
+  };
+}

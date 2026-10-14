@@ -78,6 +78,7 @@ export async function refreshRoutine(
   query: URLSearchParams,
   budget = 180000,
   salesOnly = false,
+  salesPeriod: "day" | "month" = "day",
 ) {
   canWrite(actor);
   const deadline = Date.now() + Math.min(budget, 220000);
@@ -92,6 +93,7 @@ export async function refreshRoutine(
       if (
         job?.until > Date.now() ||
         (job?.auth_version === c.auth_version &&
+          (job?.sales_period || "day") === salesPeriod &&
           job?.next_attempt_at > Date.now())
       )
         return false;
@@ -100,6 +102,7 @@ export async function refreshRoutine(
         lease,
         until: deadline + 5000,
         auth_version: c.auth_version,
+        sales_period: salesPeriod,
       });
       return true;
     });
@@ -197,11 +200,15 @@ export async function refreshRoutine(
           deadline,
         );
       const window = windows(store.id);
+      if (salesPeriod === "month")
+        window.today.set("from", businessDay().slice(0, 7) + "-01");
       await refreshAnalytics(actor, window.today, deadline, salesOnly);
-      const history = await analyticsReport(actor, window.stock);
-      const observed = history.stores[0]?.observedAt;
-      if (!observed || Date.now() - Date.parse(observed) > 6 * 3600000)
-        await refreshAnalytics(actor, window.stock, deadline, salesOnly);
+      if (salesPeriod === "day") {
+        const history = await analyticsReport(actor, window.stock);
+        const observed = history.stores[0]?.observedAt;
+        if (!observed || Date.now() - Date.parse(observed) > 6 * 3600000)
+          await refreshAnalytics(actor, window.stock, deadline, salesOnly);
+      }
       const current = await analyticsReport(actor, window.today);
       if (current.stores.some((s) => s.error || !s.observedAt))
         throw new HttpError(
@@ -245,6 +252,7 @@ export async function refreshRoutine(
           lease: null,
           until: 0,
           auth_version: c.auth_version,
+          sales_period: salesPeriod,
           last_success_at: now(),
           error: signalErrors.length
             ? [...new Set(signalErrors)].join(" · ")

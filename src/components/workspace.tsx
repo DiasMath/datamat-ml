@@ -91,6 +91,8 @@ import { TitleWorkbench } from "./listing-diagnostics";
 import useCatalogPolling from "./use-catalog-polling";
 import OfferPreview from "./offer-preview";
 import CommandSearch from "./command-search";
+import WorkspaceClock from "./workspace-clock";
+import QuickTaskForm from "./quick-task-form";
 
 type Row = Record<string, any>;
 const navigation = [
@@ -527,7 +529,7 @@ export default function Workspace({ view }: { view: string[] }) {
   }
   async function open(type: string, record?: Row) {
     if (!(await guard())) return;
-    if (home) {
+    if (home && type !== "task") {
       setBusy(true);
       try {
         setFormWorkspace(
@@ -658,6 +660,8 @@ export default function Workspace({ view }: { view: string[] }) {
   const formData = data
     ? {
         ...(home ? formWorkspace || data : data),
+        offerChoices: (home ? formWorkspace : data)?.offerChoices || [],
+        tasks: (home ? formWorkspace : data)?.tasks || data.tasks || [],
         selectedStore:
           detail?.offer.store_id || (store === "all" ? undefined : store),
         initialOffer: offerId,
@@ -690,6 +694,7 @@ export default function Workspace({ view }: { view: string[] }) {
       restoredPosition.current = "";
     };
   }, [loading, contentReady, offerId, route, query]);
+  const TaskEditor = home ? QuickTaskForm : TaskForm;
   const canWrite = contentReady && !!data && data.user.role !== "viewer";
   const title = offerId
     ? "Ficha do anúncio"
@@ -783,64 +788,6 @@ export default function Workspace({ view }: { view: string[] }) {
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="integration-note">
-            <span
-              className={
-                "dot " +
-                (chrome?.connections.some(
-                  (c: Row) =>
-                    c.provider === "mercadolivre" && c.status === "connected",
-                )
-                  ? "green-dot"
-                  : "orange-dot")
-              }
-            />
-            <span>
-              Integrações
-              <small>
-                {chrome?.connections.some(
-                  (c: Row) =>
-                    c.provider === "mercadolivre" && c.status === "connected",
-                )
-                  ? "Mercado Livre conectado"
-                  : "Configure as contas"}
-              </small>
-            </span>
-            <button
-              className="icon-button"
-              aria-label="Configurar integrações"
-              onClick={() => {
-                const p = new URLSearchParams({
-                  store,
-                  configTab: "integrations",
-                });
-                navigate("configuracoes", p);
-              }}
-            >
-              <ArrowUpRight size={16} />
-            </button>
-          </div>
-          <div className="user-card">
-            <div className="avatar">
-              {chrome?.user.name?.slice(0, 2).toUpperCase() || "DM"}
-            </div>
-            <span>
-              {chrome?.user.name || "DATAMAT"}
-              <small>
-                {chrome ? (
-                  labels[chrome.user.role]
-                ) : (
-                  <LoaderCircle
-                    size={12}
-                    className="spin"
-                    aria-label="Carregando perfil"
-                  />
-                )}
-              </small>
-            </span>
-          </div>
-        </div>
       </aside>
       {mobile && menu && (
         <div
@@ -851,7 +798,7 @@ export default function Workspace({ view }: { view: string[] }) {
       )}
       <div className="main-shell" inert={mobile && menu}>
         <header className="topbar">
-          <div className="breadcrumb">
+          <div className="header-context">
             <button
               className="icon-button mobile-menu"
               aria-label="Abrir navegação"
@@ -861,9 +808,7 @@ export default function Workspace({ view }: { view: string[] }) {
             >
               <Menu size={20} />
             </button>
-            <span>Gestão de anúncios</span>
-            <ChevronRight size={14} />
-            <strong>{title}</strong>
+            <WorkspaceClock />
           </div>
           <div className="topbar-actions">
             <button
@@ -879,14 +824,6 @@ export default function Workspace({ view }: { view: string[] }) {
               <span>Buscar anúncios</span>
               <kbd>Ctrl K</kbd>
             </button>
-            <RequestLoading
-              busy={loading || !contentReady || busy || transitioning}
-              label={
-                mlAuthorization.connectionId
-                  ? "Aguardando autorização…"
-                  : indicatorProgress
-              }
-            />
             <label className="global-store">
               <Store size={16} />
               <span className="sr-only">Loja global</span>
@@ -904,6 +841,23 @@ export default function Workspace({ view }: { view: string[] }) {
                 ))}
               </select>
             </label>
+            {home && (chrome?.user.role || data?.user.role) !== "viewer" && (
+              <button
+                className="button primary header-new-action"
+                disabled={busy || loading || !canWrite}
+                onClick={() => open("task")}
+              >
+                <Plus size={15} /> Nova ação
+              </button>
+            )}
+            <RequestLoading
+              busy={loading || !contentReady || busy || transitioning}
+              label={
+                mlAuthorization.connectionId
+                  ? "Aguardando autorização…"
+                  : indicatorProgress
+              }
+            />
           </div>
         </header>
         <main
@@ -915,14 +869,7 @@ export default function Workspace({ view }: { view: string[] }) {
               <div>
                 <div className="eyebrow">
                   {section === ""
-                    ? new Intl.DateTimeFormat("pt-BR", {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        timeZone: "America/Sao_Paulo",
-                      })
-                        .format(new Date())
-                        .toUpperCase()
+                    ? ""
                     : "OPERAÇÃO · " +
                       (store === "all"
                         ? "TODAS AS LOJAS"
@@ -937,16 +884,6 @@ export default function Workspace({ view }: { view: string[] }) {
                 </p>
               </div>
               <div className="heading-actions">
-                {section === "" && canWrite && (
-                  <button
-                    className="button primary"
-                    disabled={busy}
-                    onClick={() => open("task")}
-                  >
-                    <Plus size={16} />
-                    Nova ação
-                  </button>
-                )}
                 {section === "anuncios" && (
                   <>
                     <button
@@ -1649,7 +1586,7 @@ export default function Workspace({ view }: { view: string[] }) {
             />
           )}
           {modal.type === "task" && (
-            <TaskForm
+            <TaskEditor
               data={formData!}
               initial={modal.record}
               busy={busy}

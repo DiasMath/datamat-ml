@@ -414,14 +414,23 @@ async function http(
     throw new HttpError(502, "Resposta inválida recebida do Mercado Livre");
   }
 }
+// Numeric JSON strings are equivalent to integers here; never coerce null,
+// booleans, fractions or unsafe seller identifiers into valid credentials.
+const oauthInteger = z.preprocess(
+  (value) =>
+    typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value,
+  z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+);
 const tokenSchema = z.object({
-  access_token: z.string().min(1),
-  refresh_token: z.string().min(1),
-  token_type: z.string().refine((v) => v.toLowerCase() === "bearer"),
-  expires_in: z.number().int().positive(),
-  user_id: z.number().int().positive(),
-  scope: z.string().optional(),
+  access_token: z.string().trim().min(1),
+  refresh_token: z.string().trim().min(1),
+  token_type: z.string().trim().toLowerCase().pipe(z.literal("bearer")),
+  expires_in: oauthInteger,
+  user_id: oauthInteger,
+  // Scope and other provider metadata are unused; their shape must not reject
+  // otherwise valid credentials. Zod strips them before protected storage.
 });
+class TokenResponseError extends HttpError {}
 async function exchange(connection: Row, values: Record<string, string>) {
   const c = await applicationConfig(connection);
   const raw = await http("/oauth/token", {
@@ -434,14 +443,96 @@ async function exchange(connection: Row, values: Record<string, string>) {
     }),
   });
   const parsed = tokenSchema.safeParse(raw);
-  if (!parsed.success)
-    throw new HttpError(
+  if (!parsed.success) {
+    const fields = [
+      ...new Set(
+        parsed.error.issues.map((i) => String(i.path[0] || "resposta")),
+      ),
+    ];
+    const operation =
+      values.grant_type === "refresh_token" ? "renovar" : "conectar";
+    const missingRefresh = fields.includes("refresh_token");
+    throw new TokenResponseError(
       502,
-      "O Mercado Livre não retornou credenciais válidas para renovar a conta",
+      `O Mercado Livre retornou campos ausentes ou inválidos ao ${operation} a conta: ${fields.join(", ")}. ` +
+        (missingRefresh
+          ? "Confira a permissão offline_access na aplicação Mercado Livre e autorize a conta novamente."
+          : "Autorize a conta novamente; se persistir, informe os nomes dos campos deste aviso."),
     );
+  }
   return parsed.data;
 }
-export async function startAuthorization(actor: Actor, connectionId: string) {
+function authorizationReturnPath(
+  actor: Actor,
+  storeId: string,
+  value?: unknown,
+) {
+  const fallback = `/configuracoes?configTab=integrations&store=${encodeURIComponent(storeId)}`;
+  if (
+    typeof value !== "string" ||
+    value.length > 8000 ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    /[\\\u0000-\u001f]/.test(value)
+  )
+    return fallback;
+  const base = "https://workspace.invalid";
+  const url = new URL(value, base);
+  if (
+    url.origin !== base ||
+    !/^\/(?:anuncios(?:\/[a-zA-Z0-9_-]+)?|precificacao|analises(?:\/ao-vivo)?|concorrencia|acoes|historico|estudos|configuracoes)?$/.test(
+      url.pathname,
+    )
+  )
+    return fallback;
+  for (const name of [
+    "code",
+    "state",
+    "error",
+    "error_description",
+    "mlAuthorization",
+    "mlMessage",
+  ])
+    url.searchParams.delete(name);
+  const store = url.searchParams.get("store");
+  if (!store || (store !== "all" && !actor.stores.some((s) => s.id === store)))
+    url.searchParams.set("store", storeId);
+  url.hash = "";
+  return url.pathname + (url.searchParams.size ? "?" + url.searchParams : "");
+}
+
+// Read only the navigation context, bound to the same actor and browser as
+// OAuth. Keep it available for denied/expired/failed flows as well as success.
+export async function authorizationReturn(
+  actor: Actor,
+  params: URLSearchParams,
+  cookie: string | undefined,
+) {
+  const fallback = "/configuracoes?configTab=integrations";
+  const state = params.get("state");
+  if (
+    !state ||
+    state.length > 200 ||
+    !cookie ||
+    digest(cookie) !== digest(state)
+  )
+    return fallback;
+  const row = await get("ml_oauth_states", digest(state));
+  if (
+    !row ||
+    row.organization_id !== actor.organization_id ||
+    row.actor_id !== actor.id
+  )
+    return fallback;
+  const c = await connection(actor, row.connection_id);
+  return authorizationReturnPath(actor, c.store_id, row.return_to);
+}
+
+export async function startAuthorization(
+  actor: Actor,
+  connectionId: string,
+  returnTo?: unknown,
+) {
   admin(actor);
   const c = await connection(actor, connectionId),
     cfg = await applicationConfig(c),
@@ -452,6 +543,7 @@ export async function startAuthorization(actor: Actor, connectionId: string) {
     organization_id: actor.organization_id,
     actor_id: actor.id,
     auth_version: c.auth_version || 0,
+    return_to: authorizationReturnPath(actor, c.store_id, returnTo),
     secret: encryptSecret(verifier),
     expires_at: Date.now() + 600000,
     status: "pending",
@@ -532,7 +624,7 @@ export async function finishAuthorization(
     });
     const user = z
       .object({
-        id: z.number().int().positive(),
+        id: oauthInteger,
         nickname: z.string(),
         site_id: z.string(),
       })
@@ -632,6 +724,7 @@ async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
     if (
       !row ||
       !current?.external_account ||
+      current.status === "unauthorized" ||
       row.auth_version !== c.auth_version ||
       current.auth_version !== c.auth_version
     )
@@ -704,7 +797,12 @@ async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
           refresh_lease: null,
           refresh_until: 0,
         });
-        if (e instanceof HttpError && e.status === 401)
+        // A successful token POST can consume the old refresh token even if
+        // its response is unusable. Stop reusing it and request fresh consent.
+        if (
+          e instanceof HttpError &&
+          (e.status === 401 || e instanceof TokenResponseError)
+        )
           await put("connections", c.id, {
             ...current,
             status: "unauthorized",

@@ -203,3 +203,93 @@ test("application configuration rejects writes from an unrelated origin", async 
   );
   expect(response.status()).toBe(403);
 });
+
+test("OAuth failure restores the selected store and every filter before showing the toast", async ({
+  page,
+}) => {
+  const target =
+    "/configuracoes?store=juntos-com&configTab=integrations&brand=Marca+A&brand=Marca+B&q=produto&page=3&pageSize=50";
+  await page.route(
+    "https://auth.mercadolivre.com.br/authorization?**",
+    async (route) => {
+      const state = new URL(route.request().url()).searchParams.get("state")!;
+      await route.fulfill({
+        status: 302,
+        headers: {
+          Location:
+            "http://localhost:3100/api/mercadolivre/callback?" +
+            new URLSearchParams({ state, error: "access_denied" }),
+        },
+      });
+    },
+  );
+  await page.goto(target);
+  const authorize = page.waitForResponse(
+    (r) => r.url().endsWith("/authorize") && r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Conectar conta ML", exact: true })
+    .click();
+  const response = await authorize;
+  expect(response.status()).toBe(200);
+  expect(response.request().postDataJSON().returnTo).toBe(target);
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Autorização não concedida" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+  await expect
+    .poll(() => new URL(page.url()).search)
+    .toBe(new URL(target, "http://localhost:3100").search);
+  await expect(
+    page.getByRole("button", { name: "Conectar conta ML", exact: true }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+  expect(new URL(page.url()).search).toBe(
+    new URL(target, "http://localhost:3100").search,
+  );
+});
+
+test("an ML consultation error does not change the selected store, filters or table position", async ({
+  page,
+}) => {
+  const connection = db()
+    .collection("connections")
+    .doc(key("juntos-data", "mercadolivre"));
+  const previous = (await connection.get()).data()!;
+  await connection.set(
+    { external_account: "222", status: "connected" },
+    { merge: true },
+  );
+  try {
+    const target =
+      "/configuracoes?store=juntos-data&configTab=integrations&q=produto&page=2";
+    await page.route("**/api/connections/*", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await route.fulfill({
+        status: 502,
+        json: {
+          error:
+            "O Mercado Livre não retornou credenciais válidas para renovar a conta",
+        },
+      });
+    });
+    await page.goto(target);
+    const before = (await page.locator(".page-heading").boundingBox())!;
+    await page
+      .getByRole("button", { name: "Sincronizar anúncios", exact: true })
+      .click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "credenciais válidas" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Loja global")).toHaveValue("juntos-data");
+    expect(new URL(page.url()).search).toBe(
+      new URL(target, "http://localhost:3100").search,
+    );
+    expect((await page.locator(".page-heading").boundingBox())!.y).toBe(
+      before.y,
+    );
+  } finally {
+    await connection.set(previous);
+  }
+});

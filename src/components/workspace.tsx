@@ -1060,7 +1060,7 @@ export default function Workspace({ view }: { view: string[] }) {
                     try {
                       const result = await jsonRequest(
                         `/api/connections/${c.id}/authorize`,
-                        {},
+                        { returnTo: "/" + route + (query ? "?" + query : "") },
                       );
                       window.location.assign(result.url);
                     } catch (e) {

@@ -5,9 +5,9 @@ Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. Esta r
 | Verificação              | Resultado                                                                                                                                                  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | TypeScript               | `npm run typecheck`: passou                                                                                                                                |
-| Domínio e serviços       | `npm test`: **150 passaram**, nenhuma falha ou teste ignorado                                                                                              |
+| Domínio e serviços       | `npm test`: **154 passaram**, nenhuma falha ou teste ignorado                                                                                              |
 | Build de produção        | `npm run build`: passou                                                                                                                                    |
-| Navegador Chromium       | `npm run test:e2e`: **51 passaram**, nenhuma falha ou teste ignorado                                                                                       |
+| Navegador Chromium       | `npm run test:e2e`: **53 passaram**, nenhuma falha ou teste ignorado                                                                                       |
 | Formatação               | Prettier em código, scripts, testes e documentação: passou                                                                                                 |
 | Dependências de produção | `npm audit --omit=dev`: **0 vulnerabilidades reportadas**                                                                                                  |
 | Responsividade           | 17 telas/abas × 6 larguras: **102 combinações**, sem transbordamento horizontal do documento                                                               |
@@ -126,3 +126,11 @@ Uso, limites e diferenças entre cadastro local e marketplace: [tables-and-bulk.
 - Os relatórios locais de campanhas usam Firestore real no emulador. Consulta de competição, mudança oficial de mídia e polling usam respostas controladas; nenhuma campanha, preço ou anúncio real foi alterado. Product Ads automático e Clips completos continuam pendentes; recursos públicos do Avantpro foram pesquisados, sem instalação/inspeção da versão paga ou alegação de paridade completa.
 
 Operação e limites: [intelligence.md](intelligence.md). Pesquisa: [avantpro.md](avantpro.md) e [research-mercado-livre.md](research-mercado-livre.md).
+
+## Correção da autorização ML e preservação dos filtros
+
+- A mensagem anterior dizia “renovar” também na conexão inicial. A validação agora distingue as duas operações, aceita inteiros seguros em texto e `Bearer` com diferenças de caixa/espaços, ignora metadados não utilizados e indica somente nomes dos campos inválidos. `refresh_token` continua obrigatório; sua ausência orienta conferir `offline_access`, sem inventar credenciais.
+- Quatro novos testes de serviço cobrem resposta válida alternativa, nove entradas inválidas, identidade divergente, proteção dos tokens anteriores, contexto preservado no sucesso/negação/expiração, destinos externos recusados e renovação interrompida após resposta inutilizável. Nova autorização restaura a conexão nos contratos controlados.
+- Dois cenários novos Chromium percorrem o retorno real da rota OAuth após negação e uma consulta com HTTP 502. Loja, busca, filtros repetidos, paginação e posição do conteúdo são preservados; recarregar mantém a seleção e a mensagem aparece em toast.
+- `npm test`: **154 passaram**; `npm run test:e2e`: **53 passaram**; TypeScript e build de produção passaram, sem falhas ou testes ignorados. Todas as gravações desses testes ocorreram no emulador isolado; respostas do ML foram controladas.
+- Leitura de produção antes da correção: `/api/workspace` HTTP 200; aplicações das duas lojas configuradas, vendedores ainda `unauthorized`, sem sincronização anterior. O payload real que causou a falha não está disponível; não foi realizada autorização em nome do usuário. É necessário iniciar uma nova conexão pelo site para conferir a conta real. Se persistir uma resposta inválida, a nova mensagem identifica os campos sem expor seus valores.

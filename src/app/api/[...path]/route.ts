@@ -165,8 +165,16 @@ async function handle(req: NextRequest, context: Context) {
       key === "callback" &&
       req.method === "GET"
     ) {
+      let returnPath = "/configuracoes?configTab=integrations";
+      try {
+        returnPath = await ml.authorizationReturn(
+          actor,
+          req.nextUrl.searchParams,
+          req.cookies.get(ml.ML_STATE_COOKIE)?.value,
+        );
+      } catch {}
       const destination = new URL(
-        "/configuracoes?configTab=integrations",
+        returnPath,
         process.env.APP_URL || "http://localhost:3000",
       );
       try {
@@ -175,7 +183,8 @@ async function handle(req: NextRequest, context: Context) {
           req.nextUrl.searchParams,
           req.cookies.get(ml.ML_STATE_COOKIE)?.value,
         );
-        destination.searchParams.set("store", result.storeId);
+        if (!destination.searchParams.has("store"))
+          destination.searchParams.set("store", result.storeId);
         destination.searchParams.set("mlAuthorization", "connected");
       } catch (e) {
         destination.searchParams.set("mlAuthorization", "failed");
@@ -375,7 +384,12 @@ async function handle(req: NextRequest, context: Context) {
         action === "authorize" &&
         req.method === "POST"
       ) {
-        const { state, url } = await ml.startAuthorization(actor, key);
+        const { state, url } = await ml.startAuthorization(
+          actor,
+          key,
+          z.object({ returnTo: z.string().max(8000).optional() }).parse(body)
+            .returnTo,
+        );
         const result = response({ url });
         result.cookies.set(ml.ML_STATE_COOKIE, state, {
           httpOnly: true,

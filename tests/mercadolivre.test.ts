@@ -230,6 +230,198 @@ test("expired, denied and cross-store OAuth cannot connect a seller twice", asyn
     /administrador/,
   );
 });
+test("OAuth normalizes numeric strings and bearer casing without validating unused metadata", async () => {
+  await mocked(
+    async (url, init) => {
+      const response = oauth(url, init);
+      const payload = await response.json();
+      return json(
+        url.pathname === "/oauth/token"
+          ? {
+              ...payload,
+              user_id: "111",
+              expires_in: "21600",
+              token_type: " Bearer ",
+              scope: ["read", "write", "offline_access"],
+            }
+          : { ...payload, id: "111" },
+      );
+    },
+    async () => {
+      const flow = await ml.startAuthorization(actor, connectionId);
+      await ml.finishAuthorization(
+        actor,
+        new URLSearchParams({ code: "111", state: flow.state }),
+        flow.state,
+      );
+    },
+  );
+  const tokens = ml.decryptSecret(
+    (await get("ml_tokens", connectionId))!.encrypted,
+  );
+  assert.equal(tokens.user_id, 111);
+  assert.equal(tokens.expires_in, 21600);
+  assert.equal(tokens.token_type, "bearer");
+  assert.equal(tokens.scope, undefined);
+  assert.equal(
+    (await get("connections", connectionId))?.external_account,
+    "111",
+  );
+});
+test("invalid OAuth fields produce actionable sanitized errors and never overwrite previous credentials", async () => {
+  const previous = (await get("ml_tokens", connectionId))!.encrypted;
+  for (const invalid of [
+    { field: "refresh_token", value: undefined },
+    { field: "expires_in", value: null },
+    { field: "expires_in", value: true },
+    { field: "expires_in", value: "1.5" },
+    { field: "expires_in", value: 0 },
+    { field: "user_id", value: "9007199254740993" },
+    { field: "user_id", value: "111oops" },
+    { field: "token_type", value: "secret-invalid-token-type" },
+    { field: "access_token", value: " " },
+  ]) {
+    let requests = 0;
+    await mocked(
+      async (url, init) => {
+        requests++;
+        assert.equal(url.pathname, "/oauth/token");
+        const payload = await oauth(url, init).json();
+        return json({ ...payload, [invalid.field]: invalid.value });
+      },
+      async () => {
+        const flow = await ml.startAuthorization(actor, connectionId);
+        await assert.rejects(
+          ml.finishAuthorization(
+            actor,
+            new URLSearchParams({ code: "111", state: flow.state }),
+            flow.state,
+          ),
+          (error: any) => {
+            assert.equal(error.status, 502);
+            assert.match(error.message, /ao conectar/);
+            assert.ok(error.message.includes(invalid.field));
+            if (invalid.field === "refresh_token")
+              assert.match(error.message, /offline_access/);
+            for (const secret of [
+              "access-111",
+              "refresh-111",
+              "test-secret-not-real",
+              "secret-invalid-token-type",
+            ])
+              assert.ok(!error.message.includes(secret));
+            return true;
+          },
+        );
+      },
+    );
+    assert.equal(requests, 1);
+    assert.equal((await get("ml_tokens", connectionId))!.encrypted, previous);
+  }
+  await mocked(
+    async (url, init) => {
+      const payload = await oauth(url, init).json();
+      return json(
+        url.pathname === "/users/me" ? { ...payload, id: "222" } : payload,
+      );
+    },
+    async () => {
+      const flow = await ml.startAuthorization(actor, connectionId);
+      await assert.rejects(
+        ml.finishAuthorization(
+          actor,
+          new URLSearchParams({ code: "111", state: flow.state }),
+          flow.state,
+        ),
+        /conta vendedora/,
+      );
+    },
+  );
+  assert.equal((await get("ml_tokens", connectionId))!.encrypted, previous);
+});
+test("OAuth navigation preserves filters on success, denial and expiration and rejects untrusted returns", async () => {
+  const target =
+    "/configuracoes?store=juntos-com&configTab=integrations&brand=A&brand=B&q=busca&page=3&pageSize=50";
+  const flow = await ml.startAuthorization(actor, connectionId, target);
+  const params = new URLSearchParams({
+    state: flow.state,
+    error: "access_denied",
+  });
+  assert.equal(await ml.authorizationReturn(actor, params, flow.state), target);
+  await assert.rejects(
+    ml.finishAuthorization(actor, params, flow.state),
+    /não concedida/,
+  );
+  assert.equal(await ml.authorizationReturn(actor, params, flow.state), target);
+  assert.equal(
+    await ml.authorizationReturn(actor, params, "other-browser"),
+    "/configuracoes?configTab=integrations",
+  );
+  assert.equal(
+    await ml.authorizationReturn(
+      { ...actor, id: "other-actor" },
+      params,
+      flow.state,
+    ),
+    "/configuracoes?configTab=integrations",
+  );
+  const expired = await ml.startAuthorization(actor, connectionId, target);
+  const row = (
+    await find("ml_oauth_states", { connection_id: connectionId })
+  ).find((r) => r.status === "pending" && r.return_to === target)!;
+  await put("ml_oauth_states", row.id, { ...row, expires_at: 0 });
+  assert.equal(
+    await ml.authorizationReturn(
+      actor,
+      new URLSearchParams({ state: expired.state }),
+      expired.state,
+    ),
+    target,
+  );
+  await assert.rejects(
+    ml.finishAuthorization(
+      actor,
+      new URLSearchParams({ state: expired.state, code: "111" }),
+      expired.state,
+    ),
+    /expirada/,
+  );
+  for (const value of [
+    "https://evil.example/",
+    "//evil.example/",
+    "/api/mercadolivre/callback",
+    "/configuracoes\\evil",
+    "javascript:evil",
+    "x".repeat(8001),
+  ]) {
+    const next = await ml.startAuthorization(actor, connectionId, value);
+    assert.equal(
+      await ml.authorizationReturn(
+        actor,
+        new URLSearchParams({ state: next.state }),
+        next.state,
+      ),
+      "/configuracoes?configTab=integrations&store=juntos-com",
+    );
+  }
+  const all = await ml.startAuthorization(
+    actor,
+    connectionId,
+    "/configuracoes?store=all&code=private&state=private&mlMessage=old&error=old",
+  );
+  const allParams = new URLSearchParams({ state: all.state, code: "111" });
+  assert.equal(
+    await ml.authorizationReturn(actor, allParams, all.state),
+    "/configuracoes?store=all",
+  );
+  await mocked(oauth, () =>
+    ml.finishAuthorization(actor, allParams, all.state),
+  );
+  assert.equal(
+    await ml.authorizationReturn(actor, allParams, all.state),
+    "/configuracoes?store=all",
+  );
+});
 test("listing import is idempotent, detects real quality gaps and preserves local costs and tasks", async () => {
   const requestId = randomUUID();
   await mocked(listings([item()]), async () => {
@@ -491,6 +683,58 @@ test("token refresh is protected from concurrent exchanges and persists the rene
     },
   );
   assert.ok((await get("ml_tokens", connectionId))!.expires_at > Date.now());
+});
+test("refresh normalizes numeric strings, stops after unusable rotating credentials and permits fresh consent", async () => {
+  await put("ml_tokens", connectionId, {
+    ...(await get("ml_tokens", connectionId))!,
+    expires_at: 0,
+  });
+  await mocked(
+    async (url, init) => {
+      const payload = await oauth(url, init).json();
+      return json({
+        ...payload,
+        user_id: "111",
+        expires_in: "21600",
+        scope: null,
+      });
+    },
+    () =>
+      ml.withSellerData(actor, connectionId, (request) => request("/users/me")),
+  );
+  assert.ok((await get("ml_tokens", connectionId))!.expires_at > Date.now());
+  await put("ml_tokens", connectionId, {
+    ...(await get("ml_tokens", connectionId))!,
+    expires_at: 0,
+  });
+  let exchanges = 0;
+  await mocked(
+    async (url, init) => {
+      if (url.pathname === "/oauth/token") exchanges++;
+      const payload = await oauth(url, init).json();
+      return json({ ...payload, refresh_token: undefined });
+    },
+    async () => {
+      await assert.rejects(
+        ml.withSellerData(actor, connectionId, (request) =>
+          request("/users/me"),
+        ),
+        /ao renovar.*refresh_token.*offline_access/,
+      );
+      assert.equal(
+        (await get("connections", connectionId))!.status,
+        "unauthorized",
+      );
+      await assert.rejects(
+        ml.withSellerData(actor, connectionId, (request) =>
+          request("/users/me"),
+        ),
+        /Conecte/,
+      );
+    },
+  );
+  assert.equal(exchanges, 1);
+  await connect();
 });
 test("metrics use the visits interval and paid orders, never lifetime sales or duplicate orders", async () => {
   const o = await importedOffer();

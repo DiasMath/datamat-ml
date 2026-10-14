@@ -272,3 +272,84 @@ test("Hoje distinguishes an urgent margin problem from an approved proposal when
     row.getByRole("button", { name: "Abrir proposta", exact: true }),
   ).toBeVisible();
 });
+
+test("partial sales identifies the unavailable store in an accessible popover without shifting the dashboard", async ({
+  page,
+  request,
+}) => {
+  const initial = await (
+    await request.get("/api/today?store=" + storeId)
+  ).json();
+  const observedAt = new Date().toISOString();
+  const fixture = {
+    ...initial,
+    sales: {
+      ...initial.sales,
+      available: true,
+      complete: false,
+      revenue: "100.00",
+      orders: 2,
+      observedAt,
+      stores: [
+        {
+          id: storeId,
+          name: "Loja conectada",
+          connected: true,
+          complete: true,
+          observedAt,
+          error: null,
+          warnings: [],
+        },
+        {
+          id: "fixture-offline",
+          name: "Loja sem conexão",
+          connected: false,
+          complete: false,
+          observedAt: null,
+          error: null,
+          warnings: [],
+        },
+      ],
+    },
+  };
+  await page.route("**/api/today?*", (route) =>
+    route.fulfill({ json: fixture }),
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/?store=${storeId}`);
+  await expect(page.locator(".today-freshness")).toContainText(
+    "Vendas de 1/2 lojas",
+  );
+  await expect(page.locator(".today-metric.revenue")).toContainText(
+    "R$ 100,00",
+  );
+  const help = page.getByRole("button", {
+    name: "Ver cobertura das consultas de vendas",
+  });
+  const before = await page.locator(".today-metrics").boundingBox();
+  await help.click();
+  const popover = page.locator(".today-coverage-popover");
+  await expect(popover).toBeVisible();
+  await expect(popover).toContainText("Loja sem conexão");
+  await expect(popover).toContainText("Conta ML não conectada.");
+  const after = await page.locator(".today-metrics").boundingBox();
+  expect(after!.y).toBeCloseTo(before!.y, 0);
+  await page.keyboard.press("Escape");
+  await expect(popover).not.toBeVisible();
+  await page.screenshot({
+    path: "test-results/today-full-accent-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 320, height: 800 });
+  await help.focus();
+  await page.keyboard.press("Enter");
+  await expect(popover).toBeVisible();
+  const bounds = (await popover.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(320);
+  await page.screenshot({
+    path: "test-results/today-coverage-mobile.png",
+    fullPage: true,
+  });
+  await page.keyboard.press("Escape");
+});

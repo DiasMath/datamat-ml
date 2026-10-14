@@ -239,8 +239,10 @@ export async function todayReport(
     id: s.storeId,
     name: s.storeName,
     connected: s.connected,
+    complete: s.complete,
     observedAt: s.observedAt,
     error: s.error,
+    warnings: s.warnings,
   }));
   const own = offers.filter(
     (o) => o.origin !== "reference" && o.status !== "closed",

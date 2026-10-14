@@ -16,6 +16,8 @@ O indicador global é somente um spinner no cabeçalho, com espaço reservado e 
 
 A comparação de receita usa o mesmo horário de Brasília nos dois dias, limitado ao menor horário efetivamente consultado entre as lojas. Consultas parciais ocultam a comparação. Mudanças no ML são as últimas diferenças observadas por anúncio desde esta versão, com data, campos alterados e autorização compatível; não reconstituem alterações anteriores à implantação.
 
+Quando alguma loja selecionada está sem conexão/consulta, o status informa **Vendas de X/Y lojas**. O ícone de informação abre um popover sem deslocar o conteúdo e identifica a situação de cada loja, com acesso às integrações. Uma consulta incompleta do próprio ML mantém **Dados parciais**, com os avisos disponíveis. Essa cobertura se refere às vendas, independentemente dos custos cadastrados. Por exemplo, todas as lojas pode incluir uma conta desconectada; filtrar somente a loja com consulta completa remove essa parcialidade.
+
 ## Fontes e limites
 
 - **Contribuição prevista:** preço vendido e custos atuais completos/recentes do cadastro. **Contribuição ajustada:** substitui comissão estimada pela `sale_fee` informada por unidade no pedido. Mercadoria, embalagem, frete, publicidade, impostos e gestão continuam estimados. Não é lucro conciliado nem repasse recebido.

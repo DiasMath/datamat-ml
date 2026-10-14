@@ -12,12 +12,44 @@
   --green: #83c9a3;
   --red: #f29494;
   --radius: 10px;
+  --scroll-thumb: #484850;
+  --scroll-thumb-hover: #686873;
+  color-scheme: dark;
   --font:
     "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
 }
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+*:hover {
+  scrollbar-color: var(--scroll-thumb-hover) transparent;
+}
+/* Fallback for browsers using the WebKit scrollbar pseudo-elements. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+@media (forced-colors: active) {
+  * {
+    scrollbar-color: auto;
+  }
 }
 html {
   scrollbar-gutter: stable;
@@ -283,9 +315,16 @@ tbody tr:hover {
 .brand img {
   display: block;
   max-height: 36px;
-  width: 28px;
+  width: 132px;
+  min-width: 0;
+  flex: 0 1 132px;
   object-fit: contain;
   object-position: left;
+}
+.brand img.brand-symbol {
+  width: 28px;
+  flex: none;
+  object-position: center;
 }
 .brand > span {
   font-size: 7.5px;
@@ -343,7 +382,6 @@ tbody tr:hover {
   overflow-y: auto;
   overscroll-behavior: contain;
   margin-bottom: 12px;
-  scrollbar-width: thin;
 }
 .nav-item {
   position: relative;
@@ -1369,16 +1407,12 @@ fieldset.form-grid {
   max-height: 68vh;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: #3c3c44 transparent;
 }
 .collection-scroll {
   max-height: min(62dvh, 680px);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: #3c3c44 transparent;
 }
 .collection-scroll > .table-wrap {
   max-height: none;
@@ -4205,7 +4239,6 @@ button.today-metric:hover {
   max-height: 470px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 .today-queue-row {
   display: flex;

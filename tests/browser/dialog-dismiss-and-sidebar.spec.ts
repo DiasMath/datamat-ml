@@ -67,7 +67,7 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
   const sidebar = page.locator(".sidebar");
   await expect(sidebar.locator(".brand img")).toHaveAttribute(
     "src",
-    "/icon.svg",
+    "/datamat.svg",
   );
   await page
     .getByRole("button", { name: "Recolher menu", exact: true })
@@ -76,6 +76,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
     page.getByRole("button", { name: "Expandir menu", exact: true }),
   ).toHaveAttribute("aria-expanded", "false");
   expect((await sidebar.boundingBox())!.width).toBe(76);
+  await expect(sidebar.locator(".brand img")).toHaveAttribute(
+    "src",
+    "/icon.svg",
+  );
   await expect(sidebar.locator(".nav-item > span").first()).not.toBeVisible();
   await page.reload();
   await expect(
@@ -94,6 +98,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
     await trigger.click();
     await expect(sidebar).toHaveClass(/is-open/);
     expect((await sidebar.boundingBox())!.width).toBeGreaterThan(76);
+    await expect(sidebar.locator(".brand img")).toHaveAttribute(
+      "src",
+      "/datamat.svg",
+    );
     await expect(page.locator(".main-shell")).toHaveAttribute("inert", "");
     await expect(
       sidebar.getByRole("button", { name: "Recolher menu", exact: true }),
@@ -134,5 +142,10 @@ test("sidebar collapse persists, preserves navigation, and the mobile drawer scr
     .getByRole("button", { name: "Expandir menu", exact: true })
     .click();
   expect((await sidebar.boundingBox())!.width).toBe(232);
+  await expect(sidebar.locator(".brand img")).toHaveAttribute(
+    "src",
+    "/datamat.svg",
+  );
+  await page.screenshot({ path: "test-results/sidebar-expanded.png" });
   await expect(sidebar.locator(".nav-item > span").first()).toBeVisible();
 });

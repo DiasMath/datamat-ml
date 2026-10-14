@@ -657,7 +657,15 @@ export default function Workspace({ view }: { view: string[] }) {
         className={`sidebar ${menu ? "is-open" : ""}`}
       >
         <div className="brand">
-          <img src="/icon.svg" width={28} height={36} alt="DATAMAT" />
+          <img
+            src={sidebarCollapsed && !mobile ? "/icon.svg" : "/datamat.svg"}
+            className={
+              sidebarCollapsed && !mobile ? "brand-symbol" : "brand-logo"
+            }
+            width={sidebarCollapsed && !mobile ? 28 : 132}
+            height={36}
+            alt="DATAMAT"
+          />
           <button
             className="icon-button sidebar-toggle"
             aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}

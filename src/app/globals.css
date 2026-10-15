@@ -5518,3 +5518,40 @@ button.today-metric:hover {
     top: 94px;
   }
 }
+
+/* Today keeps its clock and sales freshness together in the shared header. */
+.header-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.workspace-clock {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.workspace-clock small {
+  font-size: inherit;
+}
+.header-summary .today-freshness {
+  font-size: 10px;
+  line-height: 1.4;
+  min-height: 20px;
+}
+.header-summary .today-coverage-help {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 2px;
+}
+.header-status-skeleton {
+  width: 180px;
+  height: 12px;
+  margin: 4px 0;
+}
+.today-toolbar {
+  justify-content: flex-end;
+}

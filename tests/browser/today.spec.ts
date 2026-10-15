@@ -433,6 +433,17 @@ test.describe("Brasília clock", () => {
     const clock = page.getByLabel("Data e hora de Brasília");
     await expect(clock).toContainText("14 de outubro");
     await expect(clock).toContainText("23:59");
+    await expect(clock).not.toContainText("Brasília");
+    await expect(page.locator(".topbar h1")).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Hoje", exact: true }),
+    ).toHaveClass("sr-only");
+    await expect(page.locator("main .page-heading")).toHaveCount(0);
+    await expect(page.locator(".topbar .today-freshness")).toHaveCount(1);
+    await expect(page.locator(".today-chart-panel")).toHaveAttribute(
+      "open",
+      "",
+    );
     await page.clock.fastForward(60000);
     await expect(clock).toContainText("15 de outubro");
     await expect(clock).toContainText("00:00");

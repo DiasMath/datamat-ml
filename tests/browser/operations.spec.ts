@@ -73,7 +73,7 @@ test("competitor CRUD, alerts, observed history and review task persist without 
   );
 });
 
-test("Hoje retains sales during refresh, preserves scope on failure and pauses automatic polling", async ({
+test("Hoje retains sales during refresh, preserves scope on failure and keeps automatic polling enabled", async ({
   page,
   request,
 }) => {
@@ -127,9 +127,21 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
   });
   try {
     await page.setViewportSize({ width: 320, height: 800 });
+    await page.clock.install();
     await page.goto("/?store=juntos-com&todayFocus=prepare");
     const panel = page.locator(".today-dashboard");
     await expect.poll(() => requests).toBe(1);
+    await expect(page.locator(".today-chart-panel")).toHaveAttribute(
+      "open",
+      "",
+    );
+    await expect(page.locator(".topbar h1")).toHaveCount(0);
+    await expect(page.locator(".topbar .today-freshness")).toContainText(
+      "Dados completos",
+    );
+    await expect(page.locator(".workspace-clock")).not.toContainText(
+      "Brasília",
+    );
     await expect(
       panel.locator(".today-metric").filter({ hasText: "Receita do mês" }),
     ).toContainText("R$ 100,00");
@@ -153,7 +165,6 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
       fullPage: true,
     });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.locator(".today-chart-panel > summary").click();
     await expect(page.locator(".today-chart-panel")).toHaveAttribute(
       "open",
       "",
@@ -188,14 +199,49 @@ test("Hoje retains sales during refresh, preserves scope on failure and pauses a
     ).toBeVisible();
     await expect(panel).toContainText("R$ 100,00");
     await expect(page).toHaveURL(/store=juntos-com&todayFocus=prepare/);
-    await panel.getByLabel("Pausar atualização automática").click();
     await expect(
-      panel.getByLabel("Retomar atualização automática"),
-    ).toBeVisible();
+      page.getByRole("button", {
+        name: /Pausar atualização automática|Retomar atualização automática/,
+      }),
+    ).toHaveCount(0);
     await expect(panel).toHaveAttribute("aria-busy", "false");
-    await page.clock.install();
     await page.clock.fastForward(61000);
-    expect(requests).toBe(3);
+    await expect.poll(() => requests).toBe(4);
+    await expect(page.locator(".topbar .today-freshness")).toContainText(
+      "Dados completos",
+    );
+    await expect(page.locator(".today-chart-panel")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.clock.fastForward(120000);
+    expect(requests).toBe(4);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => false,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect.poll(() => requests).toBe(5);
+    await expect(panel).toHaveAttribute("aria-busy", "false");
+    await page.getByRole("button", { name: "Nova ação", exact: true }).click();
+    const form = page.getByRole("dialog", { name: "Nova ação", exact: true });
+    await expect(form).toBeVisible();
+    await page.clock.fastForward(61000);
+    expect(requests).toBe(5);
+    await page.keyboard.press("Escape");
+    await expect(form).not.toBeVisible();
+    await page.clock.fastForward(61000);
+    await expect.poll(() => requests).toBe(6);
+
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

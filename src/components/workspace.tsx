@@ -92,6 +92,7 @@ import useCatalogPolling from "./use-catalog-polling";
 import OfferPreview from "./offer-preview";
 import CommandSearch from "./command-search";
 import WorkspaceClock from "./workspace-clock";
+import TodayFreshness from "./today-freshness";
 import QuickTaskForm from "./quick-task-form";
 
 type Row = Record<string, any>;
@@ -808,7 +809,22 @@ export default function Workspace({ view }: { view: string[] }) {
             >
               <Menu size={20} />
             </button>
-            <WorkspaceClock />
+            <div className="header-summary">
+              <WorkspaceClock />
+              {home &&
+                (contentReady && data?.sales ? (
+                  <TodayFreshness
+                    sales={data.sales}
+                    store={store}
+                    navigate={navigate}
+                  />
+                ) : (
+                  <span
+                    className="header-status-skeleton skeleton-bone"
+                    aria-hidden="true"
+                  />
+                ))}
+            </div>
           </div>
           <div className="topbar-actions">
             <button
@@ -864,7 +880,8 @@ export default function Workspace({ view }: { view: string[] }) {
           className={"content " + (home ? "today-content" : "")}
           aria-busy={loading || !contentReady || busy}
         >
-          {!offerId && (
+          {home && <h1 className="sr-only">Hoje</h1>}
+          {!offerId && !home && (
             <div className="page-heading">
               <div>
                 <div className="eyebrow">

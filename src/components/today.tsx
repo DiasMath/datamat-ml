@@ -6,8 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  Pause,
-  Play,
   RefreshCw,
   CheckCircle2,
   LoaderCircle,
@@ -21,14 +19,12 @@ import {
   Calculator,
   ListChecks,
   TrendingUp,
-  TrendingDown,
   Sparkles,
   Package,
   Images,
   History,
   Banknote,
   ExternalLink,
-  Info,
 } from "lucide-react";
 import { money, jsonRequest, percent, labels } from "./ui";
 import { MediaImage } from "./listing-media";
@@ -36,6 +32,12 @@ import { useToast } from "./toasts";
 import MonthlyGoal from "./monthly-goal";
 import type { TodayFocus, TodayItem } from "../domain/today";
 type Row = Record<string, any>;
+const dateTime = (v: string) =>
+  new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(v));
 const focusLabels = {
   urgent: "Urgentes",
   review: "Revisar",
@@ -86,33 +88,17 @@ export default function Today({
     Number.isSafeInteger(requestedPage) && requestedPage > 0
       ? requestedPage
       : 1;
-  const [paused, setPaused] = useState(false),
-    [working, setWorking] = useState(false),
+  const [working, setWorking] = useState(false),
     [showDeferred, setShowDeferred] = useState(false),
     [deferred, setDeferred] = useState<
       Record<string, { until: number; signature: string }>
     >({}),
     [tick, setTick] = useState(0);
-  const [graphOpen, setGraphOpen] = useState(
-    () =>
-      data.sales.available &&
-      (typeof window === "undefined" || window.innerWidth > 850),
-  );
-  const graphTouched = useRef(false);
-  const coverageId = useId();
-  const coverageRef = useRef<HTMLDivElement>(null);
+  const [graphOpen, setGraphOpen] = useState(true);
   const running = useRef(false),
     trigger = useRef<() => void>(() => {});
-  const latest = useRef({ data, blocked, paused, onUpdated });
-  latest.current = { data, blocked, paused, onUpdated };
-  useEffect(() => {
-    if (
-      data.sales.available &&
-      !graphTouched.current &&
-      window.innerWidth > 850
-    )
-      setGraphOpen(true);
-  }, [data.sales.available]);
+  const latest = useRef({ data, blocked, onUpdated });
+  latest.current = { data, blocked, onUpdated };
   const storageKey = `datamat:today-deferred:${data.user.organization_id}:${store}`;
   const signature = (item: TodayItem) =>
     item.reason + ":" + item.evidence + ":" + item.proposalId;
@@ -165,11 +151,11 @@ export default function Today({
       !document.querySelector("dialog[open]");
     const schedule = () => {
       clearTimeout(timer);
-      if (active && !latest.current.paused && !document.hidden)
+      if (active && !document.hidden)
         timer = setTimeout(() => void refresh(false), 60000);
     };
     async function refresh(manual: boolean) {
-      if (running.current || !safe() || (!manual && latest.current.paused)) {
+      if (running.current || !safe()) {
         schedule();
         return;
       }
@@ -204,12 +190,11 @@ export default function Today({
     trigger.current = () => void refresh(true);
     const visibility = () => {
       if (document.hidden) clearTimeout(timer);
-      else schedule();
+      else void refresh(false);
     };
     document.addEventListener("visibilitychange", visibility);
     // One coordinator handles sales and catalogue; no second polling loop.
-    if (!latest.current.paused) void refresh(false);
-    else schedule();
+    void refresh(false);
     return () => {
       active = false;
       controller.abort();
@@ -327,129 +312,12 @@ export default function Today({
     });
     return () => cancelAnimationFrame(frame);
   }, [queueScrollKey]);
-  const dateTime = (v: string) =>
-    new Intl.DateTimeFormat("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(v));
-  const availableStores = data.sales.stores.filter(
-    (s: Row) => s.connected && s.observedAt,
-  );
-  const missingStores = availableStores.length < data.sales.stores.length;
-  const status = data.sales.stores.some((s: Row) => s.error)
-    ? "Atualização pendente"
-    : data.sales.available
-      ? data.sales.complete
-        ? "Dados completos"
-        : missingStores
-          ? `Vendas de ${availableStores.length}/${data.sales.stores.length} lojas`
-          : "Dados parciais"
-      : "Sem consulta de vendas";
   return (
     <div className="today-dashboard" aria-busy={working}>
       <div className="today-toolbar">
-        <div className="today-freshness">
-          <span
-            className={"dot " + (data.sales.complete ? "is-current" : "")}
-          />
-          {data.sales.observedAt
-            ? `Consultado às ${dateTime(data.sales.observedAt)} · `
-            : ""}
-          {status}
-          {!data.sales.complete && (
-            <>
-              <button
-                className="icon-button today-coverage-help"
-                aria-label="Ver cobertura das consultas de vendas"
-                popoverTarget={coverageId}
-                onClick={(event) => {
-                  const bounds = event.currentTarget.getBoundingClientRect();
-                  if (coverageRef.current) {
-                    const width = Math.min(340, window.innerWidth - 24);
-                    coverageRef.current.style.left = `${Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12))}px`;
-                    coverageRef.current.style.top = `${Math.max(12, Math.min(bounds.bottom + 8, window.innerHeight / 2))}px`;
-                  }
-                }}
-              >
-                <Info size={14} aria-hidden="true" />
-              </button>
-              <div
-                className="today-coverage-popover"
-                id={coverageId}
-                popover="auto"
-                ref={coverageRef}
-              >
-                <h3>Consultas de vendas</h3>
-                <p>
-                  Os totais usam as consultas disponíveis das lojas
-                  selecionadas. Os indicadores mensais exigem uma consulta
-                  completa de todas elas para confirmar a cobertura.
-                </p>
-                <ul>
-                  {data.sales.stores.map((source: Row) => (
-                    <li key={source.id}>
-                      <strong>{source.name}</strong>
-                      <span>
-                        {!source.connected
-                          ? "Conta ML não conectada."
-                          : source.error
-                            ? source.error
-                            : !source.observedAt
-                              ? "A primeira consulta de vendas ainda não foi concluída."
-                              : source.complete === false
-                                ? "A consulta do ML retornou somente parte dos pedidos."
-                                : "Consulta disponível."}
-                      </span>
-                      {source.connected &&
-                        !source.error &&
-                        source.complete === false &&
-                        source.warnings?.map((warning: string) => (
-                          <small key={warning}>{warning}</small>
-                        ))}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  className="text-link"
-                  popoverTarget={coverageId}
-                  popoverTargetAction="hide"
-                  onClick={() =>
-                    navigate(
-                      "configuracoes",
-                      new URLSearchParams({ store, configTab: "integrations" }),
-                    )
-                  }
-                >
-                  Conferir integrações
-                  <ArrowUpRight size={13} aria-hidden="true" />
-                </button>
-              </div>
-            </>
-          )}
-        </div>
         <div className="heading-actions">
           {canRefresh && (
             <>
-              <button
-                className="icon-button"
-                title={
-                  paused
-                    ? "Retomar atualização automática"
-                    : "Pausar atualização automática"
-                }
-                aria-label={
-                  paused
-                    ? "Retomar atualização automática"
-                    : "Pausar atualização automática"
-                }
-                onClick={() => {
-                  setPaused((v) => !v);
-                  if (paused) trigger.current();
-                }}
-              >
-                {paused ? <Play size={15} /> : <Pause size={15} />}
-              </button>
               <button
                 className="button compact"
                 disabled={working || blocked}
@@ -944,11 +812,7 @@ export default function Today({
             open={graphOpen}
             onToggle={(e) => setGraphOpen(e.currentTarget.open)}
           >
-            <summary
-              onClick={() => {
-                graphTouched.current = true;
-              }}
-            >
+            <summary>
               <b>
                 <TrendingUp size={16} aria-hidden="true" />
                 Evolução do mês

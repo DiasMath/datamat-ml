@@ -31,8 +31,7 @@ export default function WorkspaceClock() {
               hour: "2-digit",
               minute: "2-digit",
               timeZone,
-            }).format(clock)}{" "}
-            · Brasília
+            }).format(clock)}
           </small>
         </>
       ) : (

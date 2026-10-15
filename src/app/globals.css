@@ -940,15 +940,6 @@ tbody tr:hover {
   gap: 4px;
   font-size: 11px;
 }
-.page-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 15px;
-  font-size: 9px;
-  color: var(--dim);
-  padding-top: 24px;
-  margin-top: auto;
-}
 .toast-viewport {
   position: fixed;
   z-index: 1000;
@@ -2553,14 +2544,6 @@ fieldset.form-grid {
   .history-top > span:last-child {
     width: 100%;
     margin: 0;
-  }
-  .page-footer {
-    font-size: 8px;
-    align-items: flex-start;
-  }
-  .page-footer > span:last-child {
-    text-align: right;
-    max-width: 150px;
   }
   .notes-grid {
     grid-template-columns: 1fr;

@@ -1482,10 +1482,6 @@ export default function Workspace({ view }: { view: string[] }) {
               )}
             </fieldset>
           )}
-          <footer className="page-footer">
-            <span>DATAMAT · Gestão de marketplace</span>
-            <span>Decisões e histórico preservados</span>
-          </footer>
         </main>
       </div>
       <CommandSearch

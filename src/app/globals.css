@@ -3811,6 +3811,124 @@ h3,
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.offers-toolbar {
+  gap: 7px;
+  padding: 10px 12px;
+}
+.offers-toolbar .search-input {
+  min-width: 180px;
+  max-width: 360px;
+  flex: 1 1 220px;
+}
+.offers-toolbar .multi-filter summary {
+  gap: 5px;
+  padding-inline: 8px;
+}
+.offers-toolbar .filter-select {
+  padding-inline: 7px;
+  min-width: 0;
+}
+.offers-toolbar .filter-select select {
+  max-width: 120px;
+  text-overflow: ellipsis;
+}
+.offers-toolbar .sort-label select {
+  max-width: 115px;
+  padding: 8px 0;
+}
+.listing-counts.offers-counts {
+  display: block;
+  position: relative;
+  padding: 0;
+  flex-shrink: 0;
+  z-index: 6;
+  font-size: 10px;
+}
+.offers-counts > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 0;
+  list-style: none;
+}
+.offers-counts > summary::marker {
+  content: "";
+}
+.offers-counts > summary::after {
+  content: none;
+}
+.offers-counts > summary::-webkit-details-marker {
+  display: none;
+}
+.offers-counts-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(340px, calc(100vw - 16px));
+  max-height: min(400px, 65dvh);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface2);
+  box-shadow: 0 12px 30px #0006;
+}
+.offers-counts-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.offers-counts-popover > p {
+  margin: 12px 0 0;
+  line-height: 1.6;
+  font-size: 11px;
+  color: var(--muted);
+}
+.offers-counts-popover .filter-chips {
+  padding: 12px 0 0;
+  border: 0;
+}
+.offers-filter-count {
+  border-radius: 4px;
+  background: #ffb03f18;
+  color: var(--orange);
+  padding: 1px 4px;
+  font-size: 9px;
+}
+.offers-toolbar .offers-refresh {
+  padding: 8px;
+}
+.offers-selected {
+  font-size: 10px;
+}
+.offers-table th:not(.offer-align-left):not(.offer-align-right),
+.offers-table td:not(.offer-product-col):not(.numeric) {
+  text-align: center;
+}
+.offers-table th:not(.offer-align-left):not(.offer-align-right) .column-sort {
+  justify-content: center;
+  text-align: center;
+}
+.offers-table th.offer-align-right .column-sort {
+  justify-content: flex-end;
+  text-align: right;
+}
+.offers-table
+  td:not(.offer-product-col):not(.numeric)
+  :is(.listing-cost-link, .pending-count, .listing-metrics) {
+  margin-inline: auto;
+  justify-content: center;
+  text-align: center;
+}
+@media (max-width: 620px) {
+  .offers-toolbar .search-input {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .offers-toolbar :is(button, summary, select) {
+    min-height: 36px;
+  }
+}
 @media (max-width: 600px) {
   .listing-counts {
     padding-left: 14px;

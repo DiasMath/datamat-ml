@@ -1868,6 +1868,33 @@ function Offers({
   const q = new URLSearchParams(query),
     [input, setInput] = useState(q.get("q") || "");
   const scrollArea = useRef<HTMLDivElement>(null);
+  const toolbar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      for (const details of toolbar.current?.querySelectorAll<HTMLDetailsElement>(
+        "details[open]",
+      ) || []) {
+        if (
+          event instanceof KeyboardEvent ||
+          !details.contains(event.target as Node)
+        ) {
+          if (
+            event instanceof KeyboardEvent &&
+            details.contains(document.activeElement)
+          )
+            details.querySelector("summary")?.focus();
+          details.open = false;
+        }
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
   const selectionQuery = new URLSearchParams(query);
   for (const key of ["page", "pageSize", "sort", "sortDir"])
     selectionQuery.delete(key);
@@ -1885,7 +1912,7 @@ function Offers({
         ? Math.floor(Number(q.get("page"))) || 1
         : 1,
     ),
-    size = pageSize(q.get("pageSize"));
+    size = pageSize(q.get("pageSize") ?? "50");
   const operational = q.get("tableView")
     ? q.get("tableView") === "operational"
     : data.offers.some((o: Row) => !!o.ml);
@@ -1903,6 +1930,7 @@ function Offers({
         : []),
       {
         id: "name",
+        className: "offer-align-left",
         label: "Anúncio / produto",
         width: operational ? 260 : 290,
         value: (o: Row) => o.title,
@@ -1938,6 +1966,7 @@ function Offers({
         : []),
       {
         id: "price",
+        className: "offer-align-right",
         label: "Preço atual",
         width: operational ? 100 : 140,
         kind: "number" as const,
@@ -1953,6 +1982,7 @@ function Offers({
             },
             {
               id: "settlement",
+              className: "offer-align-right",
               label: "Recebe (estim.)",
               width: 155,
               kind: "number" as const,
@@ -2060,7 +2090,7 @@ function Offers({
   );
   return (
     <section className="panel offers-panel">
-      <div className="filter-toolbar">
+      <div className="filter-toolbar offers-toolbar" ref={toolbar}>
         <form
           className="search-input"
           onSubmit={(e) => {
@@ -2162,163 +2192,155 @@ function Offers({
             <option value="ready">Margem calculável</option>
           </select>
         </label>
-      </div>
-      {chips.length > 0 && (
-        <div className="filter-chips">
-          {chips.map(([k, v], i) => (
-            <button
-              className="filter-chip"
-              key={k + v + i}
-              onClick={() =>
-                update(
-                  k,
-                  q.getAll(k).filter((x) => x !== v),
-                )
-              }
-            >
-              {
-                (
-                  {
-                    q: "Busca",
-                    brand: "Marca",
-                    category: "Categoria",
-                    status: "Situação",
-                    type: "Tipo",
-                    pending: "Pendência",
-                    listingKind: "Publicação",
-                  } as Row
-                )[k]
-              }
-              :{" "}
-              {labels[v] ||
-                (
-                  {
-                    __missing: "Não informado",
-                    yes: "Qualquer",
-                    costs: "Custos",
-                    ml: "Tarifa / frete a conferir",
-                    ownCosts: "Custos próprios pendentes",
-                    ready: "Margem calculável",
-                    catalog: "Catálogo",
-                    traditional: "Tradicionais",
-                    local: "Cadastros locais / referências",
-                  } as Row
-                )[v] ||
-                v}
-              <X size={12} />
-            </button>
-          ))}
-          <button
-            className="text-link small"
-            onClick={() =>
-              navigate(
-                "anuncios",
-                new URLSearchParams({ store: q.get("store") || "all" }),
-              )
-            }
+
+        <details
+          className="listing-counts offers-counts"
+          onToggle={(event) => {
+            if (!event.currentTarget.open) return;
+            const popup = event.currentTarget.querySelector<HTMLElement>(
+              ".offers-counts-popover",
+            );
+            if (!popup) return;
+            popup.style.transform = "";
+            const box = popup.getBoundingClientRect();
+            const offset =
+              box.left < 8
+                ? 8 - box.left
+                : box.right > innerWidth - 8
+                  ? innerWidth - 8 - box.right
+                  : 0;
+            popup.style.transform = `translateX(${offset}px)`;
+          }}
+        >
+          <summary aria-label="Contagem e filtros ativos dos anúncios">
+            <strong>{data.offers.length}</strong>{" "}
+            {data.offers.length === 1 ? "anúncio" : "anúncios"}
+            {chips.length > 0 && (
+              <span className="offers-filter-count" title="Filtros ativos">
+                {chips.length}
+              </span>
+            )}
+            <Info size={13} />
+          </summary>
+          <div className="offers-counts-popover">
+            {counts.mlIds > 0 && (
+              <>
+                <div className="offers-counts-stats">
+                  <span>
+                    <strong>{counts.mlIds}</strong> IDs ML
+                  </span>
+                  <span>
+                    <strong>{counts.titles}</strong>{" "}
+                    {counts.titles === 1
+                      ? "título distinto"
+                      : "títulos distintos"}
+                  </span>
+                  <span>
+                    {counts.catalog} catálogo · {counts.traditional}{" "}
+                    tradicionais
+                    {counts.local
+                      ? ` · ${counts.local} locais/referências`
+                      : ""}
+                  </span>
+                </div>
+                <p>
+                  Um registro por ID do ML. Publicações com títulos iguais podem
+                  ter condições diferentes. O painel do ML pode usar outros
+                  agrupamentos e filtros; anúncios não são unidos por título.
+                </p>
+              </>
+            )}
+            {chips.length > 0 && (
+              <div className="filter-chips">
+                {chips.map(([k, v], i) => (
+                  <button
+                    className="filter-chip"
+                    key={k + v + i}
+                    onClick={() =>
+                      update(
+                        k,
+                        q.getAll(k).filter((x) => x !== v),
+                      )
+                    }
+                  >
+                    {
+                      (
+                        {
+                          q: "Busca",
+                          brand: "Marca",
+                          category: "Categoria",
+                          status: "Situação",
+                          type: "Tipo",
+                          pending: "Pendência",
+                          listingKind: "Publicação",
+                        } as Row
+                      )[k]
+                    }
+                    :{" "}
+                    {labels[v] ||
+                      (
+                        {
+                          __missing: "Não informado",
+                          yes: "Qualquer",
+                          costs: "Custos",
+                          ml: "Tarifa / frete a conferir",
+                          ownCosts: "Custos próprios pendentes",
+                          ready: "Margem calculável",
+                          catalog: "Catálogo",
+                          traditional: "Tradicionais",
+                          local: "Cadastros locais / referências",
+                        } as Row
+                      )[v] ||
+                      v}
+                    <X size={12} />
+                  </button>
+                ))}
+                <button
+                  className="text-link small"
+                  onClick={() =>
+                    navigate(
+                      "anuncios",
+                      new URLSearchParams({ store: q.get("store") || "all" }),
+                    )
+                  }
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            )}
+          </div>
+        </details>
+        <label className="sort-label">
+          <select
+            aria-label="Visão da tabela"
+            value={operational ? "operational" : "registry"}
+            onChange={(e) => update("tableView", [e.target.value])}
           >
-            Limpar filtros
+            <option value="operational">Operacional ML</option>
+            <option value="registry">Cadastro</option>
+          </select>
+        </label>
+        {eligible.length > 0 && canWrite && (
+          <button
+            className="button compact offers-refresh"
+            aria-label="Consultar indicadores ML"
+            title="Consultar tarifas, frete e indicadores ML dos anúncios filtrados ou selecionados"
+            disabled={busy}
+            onClick={() => onIndicators(eligible.map((o: Row) => o.id))}
+          >
+            <RefreshCw className={busy ? "spin" : ""} size={15} />
           </button>
-        </div>
-      )}
-      {counts.mlIds > 0 && (
-        <div className="listing-counts" aria-label="Contagem de publicações ML">
-          <span>
-            <strong>{counts.mlIds}</strong> IDs ML
+        )}
+        {selected.length > 0 && (
+          <span className="offers-selected orange">
+            {selected.length} selecionados
           </span>
-          <span>
-            <strong>{counts.titles}</strong>{" "}
-            {counts.titles === 1 ? "título distinto" : "títulos distintos"}
-          </span>
-          <span>
-            {counts.catalog} catálogo · {counts.traditional} tradicionais
-            {counts.local ? ` · ${counts.local} locais/referências` : ""}
-          </span>
-          <details>
-            <summary>Por que os totais podem diferir?</summary>
-            <p>
-              O sistema mantém um registro para cada ID do Mercado Livre.
-              Publicações com o mesmo título, inclusive as de catálogo, podem
-              ter IDs, preços e condições diferentes. Títulos iguais não
-              comprovam que se trata do mesmo produto. A contagem da tela do ML
-              também depende de agrupamentos e filtros. Nenhum anúncio é unido
-              ou excluído por ter título igual.
-            </p>
-          </details>
-        </div>
-      )}
-      <div className="table-heading">
-        <span>
-          <strong>{data.offers.length}</strong>{" "}
-          {data.offers.length === 1 ? "anúncio" : "anúncios"}{" "}
-          {chips.length
-            ? data.offers.length === 1
-              ? "encontrado"
-              : "encontrados"
-            : data.offers.length === 1
-              ? "cadastrado"
-              : "cadastrados"}
-          {selected.length > 0 && (
-            <span className="orange"> · {selected.length} selecionados</span>
-          )}
-        </span>
-        <div>
-          <label className="sort-label">
-            Visão
-            <select
-              aria-label="Visão da tabela"
-              value={operational ? "operational" : "registry"}
-              onChange={(e) => update("tableView", [e.target.value])}
-            >
-              <option value="operational">Operacional ML</option>
-              <option value="registry">Cadastro</option>
-            </select>
-          </label>
-          {eligible.length > 0 && canWrite && (
-            <button
-              className="button compact"
-              disabled={busy}
-              onClick={() => onIndicators(eligible.map((o: Row) => o.id))}
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}Consultar
-              indicadores ML
-            </button>
-          )}
-          {selected.length > 0 && canWrite && (
-            <button className="button compact" onClick={onBatch}>
-              Ações em lote
-            </button>
-          )}
-          <label className="sort-label">
-            Ordenar por{" "}
-            <select
-              aria-label="Ordenação"
-              value={sort}
-              onChange={(e) => update("sort", [e.target.value])}
-            >
-              <option value="updated">Última atualização</option>
-              <option value="name">Produto A–Z</option>
-              <option value="price">Preço</option>
-              {!operational && (
-                <>
-                  <option value="store">Loja</option>
-                  <option value="brand">Marca / categoria</option>
-                  <option value="sku">SKU / código ML</option>
-                </>
-              )}
-              {operational && (
-                <>
-                  <option value="conditions">Condições</option>
-                  <option value="settlement">Recebe (estim.)</option>
-                  <option value="metrics">Pedidos · últimos 7 dias</option>
-                  <option value="quality">Qualidade ML</option>
-                </>
-              )}
-              <option value="status">Situação</option>
-              <option value="pending">Pendências</option>
-            </select>
-          </label>
-        </div>
+        )}
+        {selected.length > 0 && canWrite && (
+          <button className="button compact" onClick={onBatch}>
+            Ações em lote
+          </button>
+        )}
       </div>
       {rows.length ? (
         <div
@@ -2392,7 +2414,7 @@ function Offers({
                       />
                     </td>
                   )}
-                  <td>
+                  <td className="offer-product-col">
                     <div className="offer-product-cell">
                       <button
                         className="offer-photo-button"

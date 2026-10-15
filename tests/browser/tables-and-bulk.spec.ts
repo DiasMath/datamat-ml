@@ -36,7 +36,7 @@ test("headers sort the complete data before pagination, preserve selection and r
     expect(response.ok()).toBe(true);
     rows.push(await response.json());
   }
-  await page.goto("/anuncios?store=juntos-com&q=" + prefix);
+  await page.goto("/anuncios?store=juntos-com&pageSize=20&q=" + prefix);
   await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   await page
     .getByLabel(`Selecionar ${prefix} Produto 30`, { exact: true })

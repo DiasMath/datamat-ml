@@ -230,7 +230,8 @@ test("tables keep headers visible and pagination does not reload the Firestore w
     if (r.url().includes("/api/workspace")) loads++;
   });
   await page.goto("/anuncios?store=juntos-com&q=SCROLL-LIST");
-  await expect(page.locator(".offers-table tbody tr")).toHaveCount(20);
+  await expect(page.getByLabel("Anúncios por página")).toHaveValue("50");
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(50);
   const before = loads;
   const viewport = page.locator(".offers-panel > .table-wrap");
   const header = page.locator(".offers-table th").nth(1);
@@ -246,9 +247,9 @@ test("tables keep headers visible and pagination does not reload the Firestore w
     .getByRole("button", { name: "Próxima página", exact: true })
     .click();
   await expect(page).toHaveURL(/page=2/);
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(11);
+  await page.getByLabel("Anúncios por página").selectOption("20");
   await expect(page.locator(".offers-table tbody tr")).toHaveCount(20);
-  await page.getByLabel("Anúncios por página").selectOption("50");
-  await expect(page.locator(".offers-table tbody tr")).toHaveCount(50);
   expect(loads).toBe(before);
   const exported = await page.request.get(
     "/api/export?store=juntos-com&q=SCROLL-LIST&page=2&pageSize=20&format=xlsx",

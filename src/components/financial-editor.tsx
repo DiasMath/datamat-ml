@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { type Costs } from "@/domain/finance";
 import { CostsForm } from "./forms";
 import Pricing from "./pricing";
@@ -22,9 +22,22 @@ export default function FinancialEditor({
   onProposalAndNext?: (data: Row) => Promise<boolean>;
 }) {
   const [draftCosts, setDraftCosts] = useState<Costs | null>(detail.costs);
+  const [liveFinancial, setLiveFinancial] = useState<Row | null>(null);
+  const onQuote = useCallback(
+    (quote: Row | null) => {
+      if (quote && Number(quote.price) === Number(detail.offer.price))
+        setLiveFinancial(quote);
+    },
+    [detail.offer.price],
+  );
+  const offer = {
+    ...detail.offer,
+    mlFinancial: liveFinancial || detail.offer.mlFinancial,
+  };
   return (
     <Pricing
-      offer={detail.offer}
+      offer={offer}
+      onQuote={onQuote}
       costs={detail.costs}
       parameters={detail.parameters}
       parametersRevision={detail.parametersRevision}
@@ -39,6 +52,7 @@ export default function FinancialEditor({
           <summary>Custos da oferta</summary>
           <CostsForm
             initial={detail.costs}
+            offer={offer}
             parameters={detail.parameters}
             price={detail.offer.price}
             busy={busy}

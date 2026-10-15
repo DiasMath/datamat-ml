@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { attachFinancial, effectiveMlCosts } from "../domain/ml-financial";
 import { z } from "zod";
 import { monthlyGoalReport } from "./monthly-goals";
 import { db, get, key, type Row } from "./db";
@@ -29,10 +30,30 @@ const fields = {
     "ml.availableQuantity",
     "ml.photoCount",
     "ml.variablePrices",
+    "ml.categoryId",
+    "ml.listingTypeId",
+    "ml.currencyId",
+    "ml.shippingMode",
+    "ml.logisticType",
+    "ml.freeShipping",
+    "ml.shippingDimensions",
+    "ml.financialAttributes",
     "ml.pictures",
     "ml_last_change",
   ],
   costs: ["store_id", "data_json", "updated_at"],
+  ml_financials: [
+    "organization_id",
+    "offer_id",
+    "store_id",
+    "seller_id",
+    "auth_version",
+    "context",
+    "mlPercent",
+    "mlFixed",
+    "shipping",
+    "expires_at",
+  ],
   proposals: ["organization_id", "store_id", "offer_id", "status"],
   tasks: [
     "organization_id",
@@ -101,6 +122,7 @@ async function buildTodayReport(
     competition,
     connections,
     monthlySources,
+    financialRows,
   ] = await Promise.all([
     scopedRows("offers", ids),
     scopedRows("costs", ids),
@@ -110,9 +132,11 @@ async function buildTodayReport(
     scopedRows("ml_competition", ids),
     Promise.all(ids.map((id) => get("connections", key(id, "mercadolivre")))),
     analyticsSources(actor, monthQuery, clock),
+    scopedRows("ml_financials", ids),
   ]);
   const scoped = (r: Row) =>
     !r.organization_id || r.organization_id === actor.organization_id;
+  const financialMap = new Map(financialRows.map((r) => [r.offer_id, r]));
   const costMap = new Map(costs.map((r) => [r.id, r])),
     parameterMap = new Map(
       parameterRows
@@ -131,9 +155,19 @@ async function buildTodayReport(
         409,
         "Parâmetros financeiros da loja não encontrados",
       );
+    const enriched = attachFinancial(
+      o,
+      financialMap.get(o.id),
+      connectionMap.get(o.store_id),
+      actor.organization_id,
+    );
     const calculation = calculate(
       o.ml?.variablePrices ? null : o.price,
-      row ? JSON.parse(row.data_json) : emptyCosts(),
+      effectiveMlCosts(
+        row ? JSON.parse(row.data_json) : emptyCosts(),
+        enriched,
+        clock.getTime(),
+      ),
       parameters,
     );
     const c = connectionMap.get(o.store_id);

@@ -17,6 +17,7 @@ import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
 import { oauthPopupResponse } from "@/server/oauth-popup";
 import { refreshListingIndicators } from "@/server/listing-indicators";
+import { refreshFinancialCosts } from "@/server/ml-financial-sync";
 import * as drive from "@/server/google-drive";
 import * as media from "@/server/listing-media";
 import { receiveNotification } from "@/server/ml-notifications";
@@ -237,6 +238,29 @@ async function handle(req: NextRequest, context: Context) {
       req.method === "DELETE"
     )
       return response(await media.deleteMedia(actor, key));
+    if (
+      resource === "financials" &&
+      key === "refresh" &&
+      path.length === 2 &&
+      req.method === "POST"
+    ) {
+      const input = z
+        .object({
+          storeId: z.string().min(1),
+          ids: z.array(z.string().min(1)).min(1).max(5).optional(),
+        })
+        .strict()
+        .parse(body);
+      return response(
+        await refreshFinancialCosts(
+          actor,
+          input.storeId,
+          Date.now() + 55000,
+          input.ids,
+          !!input.ids,
+        ),
+      );
+    }
     if (
       resource === "catalog" &&
       key === "indicators" &&

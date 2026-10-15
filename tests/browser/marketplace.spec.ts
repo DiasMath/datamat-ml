@@ -266,3 +266,118 @@ test("performance uses the imported period and advertising ratios update live wi
   );
   expect(costs.advertising).toBe("2");
 });
+
+test("automatic ML costs show their sources, reprice freight live and persist the authoritative quote", async ({
+  page,
+  request,
+}) => {
+  const { financialContext } = await import("../../src/domain/ml-financial");
+  const initial = await fixture(request, "MLB7011");
+  await post(request, `/api/offers/${initial.id}/costs`, {
+    goods: "40",
+    mlPercent: null,
+    mlFixed: null,
+    shipping: null,
+    packaging: "1",
+    advertising: "2",
+    other: "0",
+  });
+  const o: Record<string, any> = {
+    ...(await db().collection("offers").doc(initial.id).get()).data()!,
+    id: initial.id,
+  };
+  await page.route(`**/api/offers/${o.id}/ml-quote`, async (route) => {
+    const input = route.request().postDataJSON();
+    const quote = {
+      id: randomUUID(),
+      offer_id: o.id,
+      store_id: "juntos-com",
+      offer_version: o.version,
+      connection_id: connectionId,
+      auth_version: 77,
+      seller_id: "111",
+      price: input.price,
+      context: financialContext(o),
+      mlPercent: "14",
+      mlFixed: "2",
+      total: (Number(input.price) * 0.14 + 2).toFixed(2),
+      expires_at: Date.now() + 300000,
+      quoted_at: new Date().toISOString(),
+      shipping: {
+        amount: Number(input.price) >= 150 ? "15.00" : "8.00",
+        estimated: true,
+        source: "Mercado Livre · shipping_options/free",
+      },
+      promotions: {
+        active: false,
+        subsidyAmount: null,
+        salePrice: { amount: "100.00", regularAmount: null },
+        campaigns: [
+          { id: "C1", name: "Campanha disponível", status: "candidate" },
+        ],
+      },
+      warnings: [],
+      shippingVerified: false,
+    };
+    await db().collection("ml_quotes").doc(quote.id).set(quote);
+    await route.fulfill({ json: quote });
+  });
+  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=costs`);
+  await expect(page.locator(".ml-tariff-box")).toContainText(
+    "Tarifa consultada",
+  );
+  await expect(
+    page
+      .locator(".pricing-cost-editor")
+      .getByRole("spinbutton", { name: "Frete da loja (R$)", exact: true }),
+  ).toHaveValue("");
+  await expect(page.locator(".pricing-cost-editor")).toContainText(
+    "ML automático: R$ 8,00",
+  );
+  await page.locator(".ml-financial-conditions summary").click();
+  await expect(page.locator(".ml-financial-conditions")).toContainText(
+    "Elegível, sem adesão automática",
+  );
+  const panel = page.locator(".calculation-panel");
+  await expect(panel.locator(".margin-result")).toContainText("R$ 27,00");
+  await page.getByLabel("Preço proposto (R$)").fill("150");
+  await expect(
+    page.locator(".ml-condition-row").filter({ hasText: "Frete da loja" }),
+  ).toContainText("R$ 15,00");
+  await expect(panel.locator(".margin-result")).toContainText("R$ 60,00");
+  await page.getByLabel("Conferi as tarifas e o frete").check();
+  await panel
+    .getByLabel("Motivo da proposta")
+    .fill("Tarifas e frete consultados por preço");
+  await panel.getByRole("button", { name: "Salvar para revisão" }).click();
+  await expect(page.getByRole("status")).toContainText("Proposta salva");
+  const records = await db()
+    .collection("proposals")
+    .where("offer_id", "==", o.id)
+    .get();
+  const saved = JSON.parse(records.docs[0].data().snapshot_json);
+  expect(saved.proposed.margin).toBe("60.00");
+  expect(saved.input.shipping).toBe("15.00");
+  expect(saved.input.mlContribution).toBe("0");
+  expect(saved.mlShippingApplied).toBe(true);
+  const costs = JSON.parse(
+    (await db().collection("costs").doc(o.id).get()).data()!.data_json,
+  );
+  expect(costs.shipping).toBe(null);
+  expect(costs.goods).toBe("40");
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    if (width === 390 || width === 1440)
+      await page.screenshot({
+        path: `test-results/ml-financial-${width}.png`,
+        fullPage: true,
+      });
+  }
+});

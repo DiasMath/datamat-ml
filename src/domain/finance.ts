@@ -54,6 +54,7 @@ export const parameterSchema = z
   );
 export const simulationSchema = z.object({
   mlQuoteId: z.uuid().optional(),
+  mlShippingMode: z.enum(["automatic", "manual"]).optional(),
   mode: z.enum(["price", "discount"]),
   price: priceAmount.optional(),
   discount: percent.optional(),

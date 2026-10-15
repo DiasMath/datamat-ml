@@ -31,7 +31,9 @@ import {
   type Row,
 } from "./db";
 import { emptyCosts, priceAmount } from "../domain/finance";
-import { normalizeTariff, listingQuality } from "../domain/marketplace";
+import { listingQuality } from "../domain/marketplace";
+import { financialContext } from "../domain/ml-financial";
+import { readFinancialConditions } from "./ml-financial-conditions";
 import { readFirebaseConfiguration } from "./firebase-configuration";
 
 const API = "https://api.mercadolibre.com";
@@ -973,6 +975,7 @@ const itemSchema = z.object({
   seller_custom_field: z.string().nullable().optional(),
   available_quantity: z.number().int().nonnegative(),
   sold_quantity: z.number().int().nonnegative(),
+  original_price: z.number().finite().positive().nullish(),
   catalog_listing: z.boolean().optional(),
   catalog_product_id: z.string().nullable().optional(),
   user_product_id: z.string().nullable().optional(),
@@ -1002,6 +1005,7 @@ const itemSchema = z.object({
     mode: z.string().optional(),
     logistic_type: z.string().optional(),
     free_shipping: z.boolean().optional(),
+    dimensions: z.string().max(200).nullish(),
   }),
   variations: z
     .array(
@@ -1416,6 +1420,15 @@ async function syncListingsInside(
         shippingMode: item.shipping.mode || null,
         logisticType: item.shipping.logistic_type || null,
         freeShipping: item.shipping.free_shipping ?? null,
+        shippingDimensions: item.shipping.dimensions ?? null,
+        financialAttributes: item.attributes
+          .filter((a) =>
+            /^(PACKAGE_|SELLER_PACKAGE_)?(HEIGHT|WIDTH|LENGTH|WEIGHT)$/.test(
+              a.id,
+            ),
+          )
+          .map((a) => [a.id, a.value_name || a.value_id || null])
+          .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
         availableQuantity: item.available_quantity,
         soldQuantityLifetime: item.sold_quantity,
         catalogListing: item.catalog_listing || false,
@@ -1567,6 +1580,16 @@ export async function quoteTariff(
   actor: Actor,
   offerId: string,
   payload: unknown,
+  deadline = Date.now() + 55000,
+) {
+  return requestDeadline.run(deadline, () =>
+    quoteTariffInside(actor, offerId, payload),
+  );
+}
+async function quoteTariffInside(
+  actor: Actor,
+  offerId: string,
+  payload: unknown,
 ) {
   canWrite(actor);
   const p = z
@@ -1602,32 +1625,12 @@ export async function quoteTariff(
       409,
       "As condições do anúncio mudaram no Mercado Livre; sincronize a loja novamente",
     );
-  const query = new URLSearchParams({
-    price: p.price!,
-    category_id: item.category_id,
-    listing_type_id: item.listing_type_id,
-    currency_id: "BRL",
-    quantity: "1",
-  });
-  if (item.shipping.mode) query.set("shipping_mode", item.shipping.mode);
-  if (item.shipping.logistic_type)
-    query.set("logistic_type", item.shipping.logistic_type);
-  let fees: ReturnType<typeof normalizeTariff>;
-  try {
-    fees = normalizeTariff(
-      await api(c, "/sites/MLB/listing_prices?" + query),
-      item.listing_type_id,
-      p.price!,
-    );
-  } catch (e) {
-    if (e instanceof HttpError) throw e;
-    throw new HttpError(
-      502,
-      e instanceof Error && !(e instanceof z.ZodError)
-        ? e.message
-        : "A resposta de tarifas precisa de validação; confira no Mercado Livre",
-    );
-  }
+  const conditions = await readFinancialConditions(
+    (path) => api(c, path),
+    item,
+    c.external_account,
+    p.price!,
+  );
   const quoteId = randomUUID(),
     quotedAt = now(),
     expiresAt = Date.now() + 300000;
@@ -1644,7 +1647,8 @@ export async function quoteTariff(
     category_id: item.category_id,
     shipping_mode: item.shipping.mode || null,
     logistic_type: item.shipping.logistic_type || null,
-    ...fees,
+    ...conditions,
+    context: financialContext(offer),
     quoted_at: quotedAt,
     expires_at: expiresAt,
     source: "Mercado Livre · listing_prices",

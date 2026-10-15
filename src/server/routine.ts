@@ -11,6 +11,7 @@ import { syncListings, withSellerData } from "./mercadolivre";
 import { aggregateAnalytics, businessDay, shiftDay } from "../domain/analytics";
 import { financialSales, stockCoverage } from "../domain/routine";
 import { z } from "zod";
+import { refreshFinancialCosts } from "./ml-financial-sync";
 import { saveTask } from "./services";
 
 function stores(actor: Actor, query: URLSearchParams) {
@@ -215,6 +216,10 @@ export async function refreshRoutine(
           502,
           "A consulta de vendas falhou; os últimos dados foram preservados",
         );
+      const financialSync =
+        Date.now() < deadline - 22000
+          ? await refreshFinancialCosts(actor, store.id, deadline)
+          : null;
       await transaction(async () => {
         const job = await get("ml_routine", connectionId),
           account = await get("connections", connectionId);
@@ -254,6 +259,7 @@ export async function refreshRoutine(
           auth_version: c.auth_version,
           sales_period: salesPeriod,
           last_success_at: now(),
+          financial_sync: financialSync,
           error: signalErrors.length
             ? [...new Set(signalErrors)].join(" · ")
             : null,

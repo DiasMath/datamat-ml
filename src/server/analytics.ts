@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
+import { attachFinancial, effectiveMlCosts } from "../domain/ml-financial";
 import { z } from "zod";
 import {
   analysisRange,
@@ -149,11 +150,13 @@ async function collectStore(
       const source = blank(store, connection);
       source.connected = true;
       source.collectedThrough = new Date(range.end).toISOString();
-      const [offers, costRows, parameters] = await Promise.all([
+      const [offers, costRows, parameters, financialRows] = await Promise.all([
         find("offers", { store_id: store.id }),
         find("costs", { store_id: store.id }),
         get("parameters", store.id),
+        find("ml_financials", { store_id: store.id }),
       ]);
+      const financialMap = new Map(financialRows.map((r) => [r.offer_id, r]));
       const costMap = new Map(costRows.map((c) => [c.id, c]));
       const offerMap = new Map(
         offers
@@ -162,7 +165,15 @@ async function collectStore(
               o.ml?.sellerId === connection.external_account &&
               o.ml?.authVersion === connection.auth_version,
           )
-          .map((o) => [o.ml_id, o]),
+          .map((o) => [
+            o.ml_id,
+            attachFinancial(
+              o,
+              financialMap.get(o.id),
+              connection,
+              actor.organization_id,
+            ),
+          ]),
       );
       const p = parameters ? JSON.parse(parameters.data_json) : null;
       const orderIds = new Set<string>();
@@ -220,7 +231,10 @@ async function collectStore(
                 offer && p && !stale && !offer.ml?.variablePrices
                   ? calculate(
                       String(line.unit_price),
-                      costs ? JSON.parse(costs.data_json) : emptyCosts(),
+                      effectiveMlCosts(
+                        costs ? JSON.parse(costs.data_json) : emptyCosts(),
+                        offer,
+                      ),
                       p,
                     )
                   : null;
@@ -229,7 +243,10 @@ async function collectStore(
                   ? calculate(
                       String(line.unit_price),
                       {
-                        ...JSON.parse(costs!.data_json),
+                        ...effectiveMlCosts(
+                          JSON.parse(costs!.data_json),
+                          offer!,
+                        ),
                         mlPercent: "0",
                         mlFixed: String(line.sale_fee),
                       },

@@ -1,6 +1,6 @@
 # Precificação: cálculo, interação e limites
 
-A precificação funciona para **cenários manuais com os dados informados**. Preço, desconto, contribuição ML, custos e suas bases são recalculados ao digitar, usando o mesmo módulo decimal no navegador e no servidor. Não precisa Enter, sair do campo ou salvar para ver o resultado. Com a conta autorizada e o anúncio sincronizado, a tela consulta tarifas do ML após uma pausa de 600 ms e registra a consulta oficial na proposta. Frete e promoções continuam exigindo conferência. A ativação nas contas reais depende da publicação/credenciais; os testes desta integração usam respostas controladas.
+A precificação funciona para **cenários manuais com os dados informados**. Preço, desconto, contribuição ML, custos e suas bases são recalculados ao digitar, usando o mesmo módulo decimal no navegador e no servidor. Não precisa Enter, sair do campo ou salvar para ver o resultado. Com a conta autorizada e o anúncio sincronizado, a tela consulta tarifas do ML após uma pausa de 600 ms e registra a consulta oficial na proposta. Frete estimado e condições promocionais passam a ser consultados quando disponíveis; ausência de resposta exige conferência. Os valores automáticos são separados dos custos próprios. Ver [fontes, atualização e limites](ml-financial.md). A ativação nas contas reais depende da publicação/credenciais; os testes desta integração usam respostas controladas.
 
 ## Como usar
 
@@ -50,7 +50,7 @@ São testadas as quatro combinações de base para imposto/gestão, zeros explí
 
 ## O que ainda falta para uma precificação conectada completa
 
-1. Validar a consulta de tarifas implementada na conta real e integrar frete por logística, peso/dimensões e regras vigentes. A consulta usa a categoria/modalidade reais e quantidade 1 para a unidade da oferta; não transforma o número de peças de um kit em quantidade de vendas. Mínimo/desconto permanecem estimados com tarifas constantes, sujeitos a nova consulta no preço escolhido.
+1. Validar por conta as tarifas e a cotação de frete implementadas e evoluir para conciliar o frete efetivo por envio. A consulta usa a categoria/modalidade reais e quantidade 1 para a unidade da oferta; não transforma o número de peças de um kit em quantidade de vendas. Mínimo/desconto permanecem estimados com tarifas constantes, sujeitos a nova consulta no preço escolhido.
 2. Promoções oficiais: elegibilidade, preço-base, desconto financiado pela loja, contrapartida ML e validade. O subsídio atual é informado no cenário e preservado no snapshot; não existe atualização automática de uma promoção ativa.
 3. Custos reais do Bling, composição calculada de kits, atualização por compras e política definida para custo médio/reposição. Hoje mercadoria representa a oferta inteira e é informada manualmente.
 4. Importar gastos/receitas atribuídas da API de publicidade e definir provisão por venda. A calculadora manual de ROAS/ACOS/TACOS foi entregue em Desempenho, sem alterar custos ou somar receita atribuída ao total.

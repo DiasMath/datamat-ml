@@ -133,6 +133,7 @@ const todayCollections = new Set([
   "connections",
   "ml_analytics",
   "ml_competition",
+  "ml_financials",
   "proposals",
   "tasks",
   "monthly_goals",

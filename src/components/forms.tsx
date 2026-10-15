@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { automaticMlCosts, effectiveMlCosts } from "../domain/ml-financial";
 import AutocompleteInput from "./autocomplete";
 import { useToastMessage } from "./toasts";
 import { Plus, Trash2, LoaderCircle } from "lucide-react";
@@ -355,6 +356,7 @@ export function CostsForm({
   onDirty,
   onDraft,
   price,
+  offer,
 }: {
   initial: Row;
   parameters: Row;
@@ -364,6 +366,7 @@ export function CostsForm({
   onDirty: () => void;
   onDraft: (costs: Costs | null) => void;
   price: string | null;
+  offer?: Row;
 }) {
   const [draft, setDraft] = useState<Costs | null>(initial as Costs);
   const [error, setError] = useState("");
@@ -380,8 +383,13 @@ export function CostsForm({
       if (string(f, key) !== "inherit") result[key] = string(f, key) || null;
     return result;
   }
+  const automatic = offer ? automaticMlCosts(offer) : {};
   const result = draft
-    ? calculate(price, draft, parameters as Parameters)
+    ? calculate(
+        price,
+        offer ? effectiveMlCosts(draft, offer) : draft,
+        parameters as Parameters,
+      )
     : null;
   return (
     <form
@@ -407,22 +415,37 @@ export function CostsForm({
       }}
     >
       <div className="alert">
-        Campo vazio é informação pendente. Preencha <strong>0</strong> quando
-        não houver custo. A mercadoria deve corresponder à unidade ou ao kit
-        completo.
+        Campos ML vazios usam a consulta automática disponível. Nos demais,
+        vazio é informação pendente; informe <strong>0</strong> quando não
+        houver custo. Mercadoria representa a unidade ou o kit completo.
       </div>
       <div className="form-grid">
         {Object.entries(costFields).map(([key, label]) => (
           <Field label={label} key={key}>
             <input
               name={key}
+              aria-label={label}
               type="number"
               min={0}
               max={key === "mlPercent" ? 100 : undefined}
               step="0.000001"
               defaultValue={initial[key] ?? ""}
-              placeholder="Pendente"
+              placeholder={
+                automatic[key as keyof Costs] != null
+                  ? `ML: ${automatic[key as keyof Costs]}`
+                  : "Pendente"
+              }
             />
+            {automatic[key as keyof Costs] != null &&
+              draft?.[key as keyof Costs] == null && (
+                <small className="ml-cost-source">
+                  ML automático:{" "}
+                  {key === "mlPercent"
+                    ? `${automatic[key as keyof Costs]}%`
+                    : money(automatic[key as keyof Costs])}
+                  {key === "shipping" ? " · estimado" : ""}
+                </small>
+              )}
           </Field>
         ))}
         <Field label="Descrição dos outros custos">

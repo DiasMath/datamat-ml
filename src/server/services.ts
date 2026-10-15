@@ -1,5 +1,11 @@
 import { z } from "zod";
 import Decimal from "decimal.js";
+import {
+  attachFinancial,
+  effectiveMlCosts,
+  costsAfterProposal,
+  financialAfterApplication,
+} from "../domain/ml-financial";
 import { createHash, randomUUID } from "node:crypto";
 import {
   get,
@@ -169,12 +175,14 @@ export async function getOffer(actor: Actor, offerId: string): Promise<Row> {
     s.organization_id !== actor.organization_id
   )
     throw new HttpError(404, "Produto ou loja não encontrado");
-  const [b, c] = await Promise.all([
+  const [b, c, financial, account] = await Promise.all([
     p.brand_id ? get("brands", p.brand_id) : undefined,
     p.category_id ? get("categories", p.category_id) : undefined,
+    o.ml ? get("ml_financials", offerId) : null,
+    o.ml ? get("connections", key(o.store_id, "mercadolivre")) : null,
   ]);
   return {
-    ...o,
+    ...attachFinancial(o, financial, account, actor.organization_id),
     product_name: p.name,
     model: p.model,
     brand_id: p.brand_id,
@@ -394,7 +402,11 @@ export async function offerDetail(actor: Actor, offerId: string) {
     costs: c,
     parameters: p,
     parametersRevision: parametersRow?.version || 1,
-    calculation: calculate(offer.ml?.variablePrices ? null : offer.price, c, p),
+    calculation: calculate(
+      offer.ml?.variablePrices ? null : offer.price,
+      effectiveMlCosts(c, offer),
+      p,
+    ),
     quality: listingQuality(offer),
     mlMetrics: (await get("ml_metrics", offerId)) || null,
     draftMedia:
@@ -549,6 +561,12 @@ async function simulateInside(
       "Precifique individualmente as variações com preços diferentes",
     );
   let quote: Row | null = null;
+  const manualShipping =
+    input.mlShippingMode !== "automatic" &&
+    (input.shipping !== undefined ||
+      (input.costOverrides ?? c).shipping != null);
+  if (input.mlShippingMode === "automatic" && !input.mlQuoteId)
+    throw new HttpError(422, "Consulte o ML para usar o frete automático.");
   if (input.mlQuoteId) {
     const provisional = calculate(o.price, c, p, input);
     if (!provisional.price)
@@ -559,8 +577,29 @@ async function simulateInside(
     quote = await validateQuote(actor, o, input.mlQuoteId, provisional.price);
     input.mlPercent = quote.mlPercent;
     input.mlFixed = quote.mlFixed;
+    if (!manualShipping && quote.shipping?.amount != null)
+      input.shipping = quote.shipping.amount;
+    if (input.mlShippingMode === "automatic" && quote.shipping?.amount == null)
+      throw new HttpError(
+        422,
+        "Frete automático indisponível nesta consulta; confira ou informe uma condição manual.",
+      );
   }
-  const proposed = calculate(o.price, c, p, input);
+  const scenarioPrice = calculate(o.price, c, p, input).price;
+  const effective = effectiveMlCosts(c, o, Date.now(), scenarioPrice);
+  const proposed = calculate(o.price, effective, p, {
+    ...input,
+    ...(input.costOverrides
+      ? {
+          costOverrides: effectiveMlCosts(
+            input.costOverrides,
+            o,
+            Date.now(),
+            scenarioPrice,
+          ),
+        }
+      : {}),
+  });
   if (!proposed.price)
     throw new HttpError(422, "O preço proposto deve ser maior que zero");
   const snapshot = {
@@ -575,8 +614,10 @@ async function simulateInside(
     costs: c,
     parameters: p,
     parametersRevision: parametersRow?.version || 1,
-    current: calculate(o.price, c, p),
+    current: calculate(o.price, effectiveMlCosts(c, o), p),
     proposed,
+    mlShippingApplied:
+      !!quote && !manualShipping && quote.shipping?.amount != null,
     calculatedAt: now(),
     mlQuote: quote,
   };
@@ -773,10 +814,13 @@ export async function decideProposal(
         version: offer.version + 1,
         updated_at: now(),
       });
-      const updated = { ...(snapshot.input.costOverrides ?? snapshot.costs) };
-      for (const field of ["mlPercent", "mlFixed", "shipping", "advertising"])
-        if (snapshot.input[field] !== undefined)
-          updated[field] = snapshot.input[field];
+      const updated = costsAfterProposal(snapshot);
+      const financial = financialAfterApplication(
+        snapshot,
+        offer,
+        actor.organization_id,
+      );
+      if (financial) await put("ml_financials", offer.id, financial);
       await put("costs", offer.id, {
         offer_id: offer.id,
         store_id: offer.store_id,
@@ -1015,6 +1059,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     connections,
     metricsRows,
     currentQuotes,
+    financialRows,
   ] = await Promise.all([
     list(actor, "offers", selected),
     find("products", { organization_id: actor.organization_id }),
@@ -1029,10 +1074,12 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     list(actor, "connections", selected),
     list(actor, "ml_metrics_7d", selected),
     list(actor, "ml_current_quotes", selected),
+    list(actor, "ml_financials", selected),
   ]);
   const productMap = new Map(products.map((p) => [p.id, p])),
     metricsMap = new Map(metricsRows.map((m) => [m.offer_id, m])),
     quoteMap = new Map(currentQuotes.map((m) => [m.offer_id, m])),
+    financialMap = new Map(financialRows.map((m) => [m.offer_id, m])),
     connectionMap = new Map(
       connections
         .filter((c) => c.provider === "mercadolivre")
@@ -1052,9 +1099,19 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       if (!p) throw new HttpError(409, "Produto de uma oferta não encontrado");
       const c = costMap.get(o.id),
         parameter = parameterMap.get(o.store_id);
+      const enriched = attachFinancial(
+        o,
+        financialMap.get(o.id),
+        connectionMap.get(o.store_id),
+        actor.organization_id,
+      );
+      const effective = effectiveMlCosts(
+        c ? parse(c.data_json) : emptyCosts(),
+        enriched,
+      );
       const calculation = calculate(
         o.ml?.variablePrices ? null : o.price,
-        c ? parse(c.data_json) : emptyCosts(),
+        effective,
         parameter,
       );
       const brand = brandMap.get(p.brand_id) || null,
@@ -1087,10 +1144,12 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
         o.price != null &&
         new Decimal(quote.price).eq(o.price)
           ? quote
-          : null;
-      const shipping = c ? parse(c.data_json).shipping : null;
+          : enriched.mlFinancial?.expires_at > Date.now()
+            ? enriched.mlFinancial
+            : null;
+      const shipping = effective.shipping;
       return {
-        ...o,
+        ...enriched,
         metrics7d,
         settlementEstimate:
           tariff && shipping != null
@@ -1102,6 +1161,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
                 fee: tariff.total,
                 shipping,
                 quotedAt: tariff.quoted_at,
+                estimated: true,
               }
             : null,
         // Full media and technical attributes are loaded in the individual ficha.
@@ -1711,7 +1771,11 @@ export async function sync(
 }
 export async function insights(actor: Actor, offerId: string) {
   const o = await getOffer(actor, offerId),
-    r = calculate(o.price, await costs(offerId), await params(o.store_id));
+    r = calculate(
+      o.price,
+      effectiveMlCosts(await costs(offerId), o),
+      await params(o.store_id),
+    );
   return {
     kind: "deterministic",
     title: "Verificação por regras • IA indisponível",

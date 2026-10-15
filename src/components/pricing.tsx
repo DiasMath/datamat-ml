@@ -1,4 +1,6 @@
 "use client";
+import { effectiveMlCosts } from "../domain/ml-financial";
+import MlFinancialConditions from "./ml-financial-conditions";
 import { trackedFetch } from "./ui";
 import { useState, useRef, useEffect, type ReactNode } from "react";
 import {
@@ -34,6 +36,7 @@ export default function Pricing({
   draftCosts,
   costEditor,
   mlConnection,
+  onQuote,
 }: {
   offer: Row;
   busy: boolean;
@@ -46,6 +49,7 @@ export default function Pricing({
   draftCosts: Costs | null;
   costEditor: ReactNode;
   mlConnection?: Row | null;
+  onQuote?: (quote: Row | null) => void;
 }) {
   const [mode, setMode] = useState<"price" | "discount">("price"),
     [values, setValues] = useState<Record<string, string>>({
@@ -184,10 +188,21 @@ export default function Pricing({
     );
     return () => clearTimeout(timer);
   }, [quote]);
+  useEffect(() => {
+    onQuote?.(activeQuote);
+  }, [activeQuote?.id, onQuote]);
   if (activeQuote) {
     rawInput.mlQuoteId = activeQuote.id;
     rawInput.mlPercent = activeQuote.mlPercent;
     rawInput.mlFixed = activeQuote.mlFixed;
+    if (
+      !overrides.shipping &&
+      (draftCosts ?? costs).shipping == null &&
+      activeQuote.shipping?.amount != null
+    ) {
+      rawInput.shipping = activeQuote.shipping.amount;
+      rawInput.mlShippingMode = "automatic";
+    }
   }
   const parsed = simulationSchema.safeParse(rawInput);
   const error = offer.ml?.variablePrices
@@ -202,8 +217,29 @@ export default function Pricing({
   const result =
     !error && parsed.success
       ? {
-          current: calculate(offer.price, costs, parameters),
-          proposed: calculate(offer.price, costs, parameters, parsed.data),
+          current: calculate(
+            offer.price,
+            effectiveMlCosts(costs, offer),
+            parameters,
+          ),
+          proposed: calculate(
+            offer.price,
+            effectiveMlCosts(costs, offer, Date.now(), quotePrice),
+            parameters,
+            {
+              ...parsed.data,
+              ...(parsed.data.costOverrides
+                ? {
+                    costOverrides: effectiveMlCosts(
+                      parsed.data.costOverrides,
+                      offer,
+                      Date.now(),
+                      quotePrice,
+                    ),
+                  }
+                : {}),
+            },
+          ),
           input: parsed.data,
         }
       : null;
@@ -254,13 +290,16 @@ export default function Pricing({
                     : activeQuote
                       ? `Tarifa consultada: ${percent(activeQuote.mlPercent)} + ${money(activeQuote.mlFixed)} · ${offer.ml.listingTypeId}`
                       : quoteError
-                  : "Usando as condições informadas manualmente."}
+                  : "Sem nova consulta automática; usando os custos informados e as consultas ainda válidas."}
               </p>
               <p className="small muted">
-                Frete, subsídios e promoções ainda precisam de conferência.
-                Preço mínimo e desejado estimam as tarifas deste cenário;
-                consulte novamente ao mudar o preço.
+                Frete consultado é estimado. Preço mínimo e desejado usam as
+                condições deste cenário; a tarifa e o frete são consultados
+                novamente para outro preço.
               </p>
+              <MlFinancialConditions
+                financial={activeQuote || offer.mlFinancial}
+              />
               {quoteError && (
                 <button
                   type="button"

@@ -86,6 +86,7 @@ async function main() {
             "tests/autocomplete.test.ts",
             "tests/marketplace.test.ts",
             "tests/mercadolivre.test.ts",
+            "tests/ml-financial.test.ts",
             "tests/analytics.test.ts",
             "tests/firebase-configuration.test.ts",
             "tests/connection-settings.test.ts",

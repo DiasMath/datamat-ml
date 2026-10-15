@@ -5538,3 +5538,33 @@ button.today-metric:hover {
 .today-toolbar {
   justify-content: flex-end;
 }
+
+.ml-cost-source {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--green);
+  font-size: 10px;
+  margin-top: 4px;
+}
+.ml-financial-conditions {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-size: 11px;
+}
+.ml-financial-conditions summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.ml-condition-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+.ml-condition-row strong {
+  margin-left: auto;
+  font-size: 11px;
+}

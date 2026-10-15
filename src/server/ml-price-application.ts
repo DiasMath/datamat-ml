@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
+import {
+  costsAfterProposal,
+  financialAfterApplication,
+} from "../domain/ml-financial";
+import type { Row } from "./db";
 import { z } from "zod";
 import { canApprove, authorizeStore, HttpError, type Actor } from "./access";
 import { get, put, key, now, transaction, claim } from "./db";
@@ -164,6 +169,7 @@ export async function applyApprovedPrice(
         );
       return item;
     });
+  let checkedQuote: Row | null = null;
   try {
     let remote = await read();
     if (!verifyOnly) {
@@ -186,6 +192,23 @@ export async function applyApprovedPrice(
         price: snapshot.proposed.price,
         offerVersion: offer!.version,
       });
+      checkedQuote = quote;
+      if (quote.promotions?.active)
+        throw new HttpError(
+          422,
+          "Há promoção ativa no ML; confira as condições antes de aplicar o preço.",
+        );
+      if (
+        snapshot.mlShippingApplied &&
+        (quote.shipping?.amount == null ||
+          !new Decimal(quote.shipping.amount).eq(
+            snapshot.proposed.breakdown.shipping,
+          ))
+      )
+        throw new HttpError(
+          409,
+          "O frete atual difere da proposta aprovada; consulte novamente e prepare nova proposta.",
+        );
       const approvedFee = new Decimal(
         snapshot.proposed.breakdown.mlPercent,
       ).plus(snapshot.proposed.breakdown.mlFixed);
@@ -238,10 +261,7 @@ export async function applyApprovedPrice(
           409,
           "O contexto mudou após a aplicação; confira o estado no ML",
         );
-      const costs = { ...(snapshot.input.costOverrides ?? snapshot.costs) };
-      for (const field of ["mlPercent", "mlFixed", "shipping", "advertising"])
-        if (snapshot.input[field] !== undefined)
-          costs[field] = snapshot.input[field];
+      const costs = costsAfterProposal(snapshot);
       const parameterRow = await get("parameters", offer!.store_id);
       if (
         offer!.version === proposal.base_version &&
@@ -253,6 +273,13 @@ export async function applyApprovedPrice(
           data_json: JSON.stringify(costs),
           updated_at: now(),
         });
+      const financial = financialAfterApplication(
+        snapshot,
+        current,
+        actor.organization_id,
+        checkedQuote,
+      );
+      if (financial) await put("ml_financials", offer!.id, financial);
       await put("offers", offer!.id, {
         ...current,
         price: snapshot.proposed.price,

@@ -2468,7 +2468,7 @@ function Offers({
                         </small>
                       </td>
                       <td className="numeric">
-                        <span title="Estimativa após a tarifa oficial e o frete cadastrado, antes de impostos, custos e ajustes da venda.">
+                        <span title="Estimativa após tarifa e frete consultado ou informado, antes de impostos, custos e ajustes da venda.">
                           {o.settlementEstimate
                             ? money(o.settlementEstimate.amount)
                             : "—"}
@@ -2476,7 +2476,7 @@ function Offers({
                         <small>
                           {o.settlementEstimate
                             ? "Após tarifa + frete · estimado"
-                            : "Consulte tarifas e informe frete"}
+                            : "Aguardando custos ML ou frete informado"}
                         </small>
                       </td>
                       <td>

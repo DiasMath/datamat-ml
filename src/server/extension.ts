@@ -1,3 +1,4 @@
+import { effectiveMlCosts } from "../domain/ml-financial";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { admin, authorizeStore, HttpError, type Actor } from "./access";
@@ -112,7 +113,7 @@ export async function extensionOffer(actor: Actor, id: string) {
       title: detail.offer.title,
       price: detail.offer.ml?.variablePrices ? null : detail.offer.price,
     },
-    costs: detail.costs,
+    costs: effectiveMlCosts(detail.costs, detail.offer),
     parameters: detail.parameters,
     costsStale:
       !savedCosts?.updated_at ||

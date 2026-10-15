@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { canWrite, authorizeStore, HttpError, type Actor } from "./access";
 import { get } from "./db";
-import { quoteTariff, refreshMetrics } from "./mercadolivre";
+import { refreshMetrics } from "./mercadolivre";
+import { refreshFinancialCosts } from "./ml-financial-sync";
 export async function refreshListingIndicators(actor: Actor, payload: unknown) {
   canWrite(actor);
   const p = z
@@ -57,11 +58,18 @@ export async function refreshListingIndicators(actor: Actor, payload: unknown) {
     }
     if (Date.now() < deadline - 20000 && offer.price != null) {
       try {
-        await quoteTariff(actor, offer.id, {
-          price: offer.price,
-          offerVersion: offer.version,
-        });
-        result.fees = true;
+        const refreshed = await refreshFinancialCosts(
+          actor,
+          offer.store_id,
+          deadline,
+          [offer.id],
+          true,
+        );
+        result.fees = refreshed.updated > 0;
+        if (!result.fees)
+          result.errors.push(
+            "Custos ML pendentes; confira a conexão e tente novamente.",
+          );
       } catch (error) {
         result.errors.push(
           error instanceof HttpError

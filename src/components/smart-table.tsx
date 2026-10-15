@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Decimal from "decimal.js";
+import { ListingHint } from "./listing-information";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 
 export type TableColumn<T> = {
@@ -140,69 +141,88 @@ export function useSmartTable<T>(
               {overrides[c.id] ??
                 c.header ??
                 (c.value ? (
-                  <button
-                    type="button"
-                    className="column-sort"
-                    aria-label={"Ordenar por: " + c.label}
-                    onClick={() => order(c)}
+                  <ListingHint
+                    content={{
+                      title: c.label,
+                      notes: [
+                        "Clique para ordenar todos os registros filtrados antes de paginar. Valores não informados ficam no final.",
+                      ],
+                    }}
                   >
-                    <span>{c.label}</span>
-                    {sort?.id === c.id ? (
-                      sort.direction === "asc" ? (
-                        <ArrowUp size={13} />
+                    <button
+                      type="button"
+                      className="column-sort"
+                      aria-label={"Ordenar por: " + c.label}
+                      onClick={() => order(c)}
+                    >
+                      <span>{c.label}</span>
+                      {sort?.id === c.id ? (
+                        sort.direction === "asc" ? (
+                          <ArrowUp size={13} />
+                        ) : (
+                          <ArrowDown size={13} />
+                        )
                       ) : (
-                        <ArrowDown size={13} />
-                      )
-                    ) : (
-                      <ArrowUpDown size={13} />
-                    )}
-                  </button>
+                        <ArrowUpDown size={13} />
+                      )}
+                    </button>
+                  </ListingHint>
                 ) : (
                   c.label
                 ))}
               {!c.fixed && (
-                <span
-                  className="column-resize"
-                  role="separator"
-                  aria-orientation="vertical"
-                  tabIndex={0}
-                  aria-label={"Largura da coluna: " + c.label}
-                  aria-valuemin={80}
-                  aria-valuemax={800}
-                  aria-valuenow={width(c)}
-                  title="Arraste para ajustar. Clique duas vezes para restaurar."
-                  onDoubleClick={() => resize(c, c.width)}
-                  onKeyDown={(e) => {
-                    if (["ArrowLeft", "ArrowRight", "Home"].includes(e.key)) {
+                <ListingHint
+                  content={{
+                    title: "Largura da coluna",
+                    rows: [{ label: c.label, value: `${width(c)} px` }],
+                    notes: [
+                      "Arraste para ajustar. Clique duas vezes ou pressione Home para restaurar. As setas ajustam pelo teclado; Shift amplia o passo.",
+                    ],
+                  }}
+                >
+                  <span
+                    className="column-resize"
+                    role="separator"
+                    aria-orientation="vertical"
+                    tabIndex={0}
+                    aria-label={"Largura da coluna: " + c.label}
+                    aria-valuemin={80}
+                    aria-valuemax={800}
+                    aria-valuenow={width(c)}
+                    title="Arraste para ajustar. Clique duas vezes para restaurar."
+                    onDoubleClick={() => resize(c, c.width)}
+                    onKeyDown={(e) => {
+                      if (["ArrowLeft", "ArrowRight", "Home"].includes(e.key)) {
+                        e.preventDefault();
+                        resize(
+                          c,
+                          e.key === "Home"
+                            ? c.width
+                            : width(c) +
+                                (e.key === "ArrowRight" ? 1 : -1) *
+                                  (e.shiftKey ? 50 : 10),
+                        );
+                      }
+                    }}
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
                       e.preventDefault();
-                      resize(
-                        c,
-                        e.key === "Home"
-                          ? c.width
-                          : width(c) +
-                              (e.key === "ArrowRight" ? 1 : -1) *
-                                (e.shiftKey ? 50 : 10),
-                      );
-                    }
-                  }}
-                  onPointerDown={(e) => {
-                    if (e.button !== 0) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const target = e.currentTarget,
-                      start = e.clientX,
-                      initial = width(c);
-                    target.setPointerCapture(e.pointerId);
-                    const move = (event: PointerEvent) =>
-                      resize(c, initial + event.clientX - start);
-                    const done = () => {
-                      target.removeEventListener("pointermove", move);
-                      target.removeEventListener("lostpointercapture", done);
-                    };
-                    target.addEventListener("pointermove", move);
-                    target.addEventListener("lostpointercapture", done);
-                  }}
-                />
+                      e.stopPropagation();
+                      const target = e.currentTarget,
+                        start = e.clientX,
+                        initial = width(c);
+                      target.setPointerCapture(e.pointerId);
+                      const move = (event: PointerEvent) =>
+                        resize(c, initial + event.clientX - start);
+                      const done = () => {
+                        target.removeEventListener("pointermove", move);
+                        target.removeEventListener("lostpointercapture", done);
+                      };
+                      target.addEventListener("pointermove", move);
+                      target.addEventListener("lostpointercapture", done);
+                    }}
+                  />
+                </ListingHint>
               )}{" "}
             </th>
           ))}

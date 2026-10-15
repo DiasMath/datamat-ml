@@ -233,6 +233,11 @@ export function publicConnection(c: Row) {
     auth_version: c.auth_version || 0,
     nickname: c.nickname || null,
     last_sync_at: c.last_sync_at || null,
+    last_catalog_sync_at: c.last_catalog_sync_at || null,
+    last_catalog_completed_at:
+      c.last_catalog_completed_at ||
+      (!c.has_more && !c.pending_batch ? c.last_catalog_sync_at || null : null),
+    sync_running: c.sync_until > Date.now(),
     catalog_total: c.catalog_total ?? null,
     has_more: Boolean(c.has_more || c.pending_batch),
     last_error: c.last_error || null,
@@ -338,6 +343,11 @@ export async function saveApplication(
       external_account: null,
       nickname: null,
       auth_version: (c.auth_version || 0) + 1,
+      last_sync_at: null,
+      last_catalog_sync_at: null,
+      last_catalog_completed_at: null,
+      last_notification_at: null,
+      sync_until: 0,
       sync_cursor: null,
       pending_batch: false,
       sync_lease: null,
@@ -687,6 +697,11 @@ export async function finishAuthorization(
         nickname: user.nickname,
         status: "connected",
         auth_version: pending.auth_version + 1,
+        last_sync_at: null,
+        last_catalog_sync_at: null,
+        last_catalog_completed_at: null,
+        last_notification_at: null,
+        sync_until: 0,
         sync_cursor: null,
         pending_batch: false,
         has_more: false,
@@ -729,6 +744,11 @@ export async function disconnect(actor: Actor, connectionId: string) {
       external_account: null,
       nickname: null,
       auth_version: (c.auth_version || 0) + 1,
+      last_sync_at: null,
+      last_catalog_sync_at: null,
+      last_catalog_completed_at: null,
+      last_notification_at: null,
+      sync_until: 0,
       sync_cursor: null,
       pending_batch: false,
       sync_lease: null,
@@ -1514,6 +1534,7 @@ async function syncListingsInside(
           : {}),
         last_sync_at: now(),
         ...(!p.itemIds ? { last_catalog_sync_at: now() } : {}),
+        ...(!p.itemIds && !hasMore ? { last_catalog_completed_at: now() } : {}),
         last_error: null,
         ...(!p.itemIds ? { catalog_total: page.paging.total } : {}),
         updated_at: now(),
@@ -1927,9 +1948,13 @@ export async function createQualityTask(
 
 // Optional catalogue competition is a separate official resource. Never infer
 // winning/losing the catalogue from sales trends or set price from this response.
-export async function refreshCompetition(actor: Actor, offerId: string) {
+export async function refreshCompetition(
+  actor: Actor,
+  offerId: string,
+  deadline = Date.now() + 45000,
+) {
   canWrite(actor);
-  return requestDeadline.run(Date.now() + 45000, async () => {
+  return requestDeadline.run(deadline, async () => {
     const { offer, c } = await connectedOffer(actor, offerId);
     const item = itemSchema.parse(await api(c, "/items/" + offer.ml_id));
     if (
@@ -1963,6 +1988,7 @@ export async function refreshCompetition(actor: Actor, offerId: string) {
         "A competição retornada não corresponde ao anúncio",
       );
     const snapshot = {
+      organization_id: actor.organization_id,
       offer_id: offerId,
       store_id: offer.store_id,
       seller_id: c.external_account,

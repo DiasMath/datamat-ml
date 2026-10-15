@@ -57,6 +57,7 @@ import {
   safePictureUrl,
 } from "./mercadolivre";
 import { listingCounts, listingFinancialStatus } from "../domain/listing-table";
+import { listingOverview } from "../domain/listing-overview";
 import { draftMedia } from "./listing-media";
 import { listingQuality } from "../domain/marketplace";
 
@@ -1060,6 +1061,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     metricsRows,
     currentQuotes,
     financialRows,
+    competitionRows,
   ] = await Promise.all([
     list(actor, "offers", selected),
     find("products", { organization_id: actor.organization_id }),
@@ -1075,6 +1077,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     list(actor, "ml_metrics_7d", selected),
     list(actor, "ml_current_quotes", selected),
     list(actor, "ml_financials", selected),
+    list(actor, "ml_competition", selected),
   ]);
   const productMap = new Map(products.map((p) => [p.id, p])),
     metricsMap = new Map(metricsRows.map((m) => [m.offer_id, m])),
@@ -1284,6 +1287,14 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     user: actor,
     stores: actor.stores,
     offers: filtered,
+    listingOverview: listingOverview(
+      offers,
+      actor.stores.filter((s) => ids.includes(s.id)),
+      connections
+        .filter((c) => c.provider === "mercadolivre")
+        .map(publicConnection),
+      competitionRows,
+    ),
     listingCounts: listingCounts(filtered),
     offerChoices: offers,
     products: products.map((p) => ({

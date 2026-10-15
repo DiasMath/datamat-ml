@@ -12,6 +12,12 @@ import Analytics from "./analytics";
 import { useToast, useToastMessage } from "./toasts";
 import ListingMedia, { MediaImage } from "./listing-media";
 import { listingCounts, listingType } from "../domain/listing-table";
+import { ListingInformationProvider, ListingHint } from "./listing-information";
+import ListingGlobalPanel from "./listing-global-panel";
+import {
+  listingRowInformation,
+  listingDiscountLimit,
+} from "./listing-row-information";
 import GoogleDriveSettings from "./google-drive-settings";
 import IntegrationForm from "./integration-form";
 import useMlAuthorization from "./use-ml-authorization";
@@ -1049,6 +1055,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   navigate={navigate}
                   onNew={() => open("offer")}
                   onBatch={() => open("batch")}
+                  onChanged={() => reloadInBackground((n) => n + 1)}
                   busy={busy}
                   onIndicators={async (ids) => {
                     if (busy) return;
@@ -1851,6 +1858,7 @@ function Offers({
   onBatch,
   busy,
   onIndicators,
+  onChanged,
 }: {
   data: Row;
   query: string;
@@ -1864,6 +1872,7 @@ function Offers({
   onBatch: () => void;
   busy: boolean;
   onIndicators: (ids: string[]) => void;
+  onChanged: () => void;
 }) {
   const q = new URLSearchParams(query),
     [input, setInput] = useState(q.get("q") || "");
@@ -1968,9 +1977,16 @@ function Offers({
         id: "price",
         className: "offer-align-right",
         label: "Preço atual",
-        width: operational ? 100 : 140,
+        width: operational ? 120 : 140,
         kind: "number" as const,
         value: (o: Row) => o.price,
+      },
+      {
+        id: "stock",
+        label: "Estoque",
+        width: 100,
+        kind: "number",
+        value: (o: Row) => o.ml?.availableQuantity,
       },
       ...(operational
         ? [
@@ -2011,6 +2027,13 @@ function Offers({
           ]
         : []),
       {
+        id: "margin",
+        label: "Margem / limites",
+        width: 185,
+        kind: "number",
+        value: (o: Row) => o.calculation.margin,
+      },
+      {
         id: "pending",
         label: "Pendências",
         width: 150,
@@ -2019,7 +2042,7 @@ function Offers({
       },
       {
         id: "updated",
-        label: "Atualizado",
+        label: "Edição local",
         width: 145,
         kind: "date" as const,
         value: (o: Row) => o.updated_at,
@@ -2089,686 +2112,815 @@ function Offers({
     ].includes(k),
   );
   return (
-    <section className="panel offers-panel">
-      <div className="filter-toolbar offers-toolbar" ref={toolbar}>
-        <form
-          className="search-input"
-          onSubmit={(e) => {
-            e.preventDefault();
-            update("q", input ? [input] : []);
-          }}
-        >
-          <Search size={17} />
-          <AutocompleteInput
-            suggestions={data.offerChoices.flatMap((o: Row) => [
-              o.title,
-              o.product_name,
-              o.sku,
-              o.model,
-              o.ml_id,
-            ])}
-            aria-label="Buscar anúncios"
-            placeholder="Buscar por produto, SKU, modelo ou código ML…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-          {input && (
-            <button
-              className="icon-button"
-              aria-label="Limpar pesquisa"
-              type="button"
-              onClick={() => {
-                setInput("");
-                update("q", []);
-              }}
-            >
-              <X size={14} />
+    <ListingInformationProvider>
+      <section className="panel offers-panel">
+        <div className="filter-toolbar offers-toolbar" ref={toolbar}>
+          <form
+            className="search-input"
+            onSubmit={(e) => {
+              e.preventDefault();
+              update("q", input ? [input] : []);
+            }}
+          >
+            <Search size={17} />
+            <AutocompleteInput
+              suggestions={data.offerChoices.flatMap((o: Row) => [
+                o.title,
+                o.product_name,
+                o.sku,
+                o.model,
+                o.ml_id,
+              ])}
+              aria-label="Buscar anúncios"
+              placeholder="Buscar por produto, SKU, modelo ou código ML…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+            />
+            {input && (
+              <button
+                className="icon-button"
+                aria-label="Limpar pesquisa"
+                type="button"
+                onClick={() => {
+                  setInput("");
+                  update("q", []);
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+            <button type="submit" className="search-go">
+              Buscar
             </button>
-          )}
-          <button type="submit" className="search-go">
-            Buscar
-          </button>
-        </form>
-        <MultiFilter
-          label="Categoria"
-          values={[
-            ...new Set<string>(
-              data.offerChoices.map((o: Row) => o.category || "__missing"),
-            ),
-          ].sort()}
-          selected={q.getAll("category")}
-          onChange={(v) => update("category", v)}
-        />
-        <MultiFilter
-          label="Marca"
-          values={[
-            ...new Set<string>(
-              data.offerChoices.map((o: Row) => o.brand || "__missing"),
-            ),
-          ].sort()}
-          selected={q.getAll("brand")}
-          onChange={(v) => update("brand", v)}
-        />
-        <MultiFilter
-          label="Situação"
-          values={["draft", "active", "paused", "closed"]}
-          selected={q.getAll("status")}
-          onChange={(v) => update("status", v)}
-        />
-        <label className="filter-select">
-          <select
-            aria-label="Tipo de publicação ML"
-            value={q.get("listingKind") || ""}
-            onChange={(e) =>
-              update("listingKind", e.target.value ? [e.target.value] : [])
-            }
-          >
-            <option value="">Todas as publicações</option>
-            <option value="catalog">Catálogo</option>
-            <option value="traditional">Tradicionais</option>
-            <option value="local">Cadastros locais / referências</option>
-          </select>
-        </label>
-        <MultiFilter
-          label="Tipo"
-          values={["unit", "kit", "variation"]}
-          selected={q.getAll("type")}
-          onChange={(v) => update("type", v)}
-        />
-        <label className="filter-select">
-          <SlidersHorizontal size={14} />
-          <select
-            aria-label="Filtrar pendências"
-            value={q.get("pending") || ""}
-            onChange={(e) =>
-              update("pending", e.target.value ? [e.target.value] : [])
-            }
-          >
-            <option value="">Pendências</option>
-            <option value="yes">Qualquer pendência</option>
-            <option value="costs">Custos a revisar</option>
-            <option value="ml">Tarifa / frete a conferir</option>
-            <option value="ownCosts">Custos próprios pendentes</option>
-            <option value="ready">Margem calculável</option>
-          </select>
-        </label>
+          </form>
+          <MultiFilter
+            label="Categoria"
+            values={[
+              ...new Set<string>(
+                data.offerChoices.map((o: Row) => o.category || "__missing"),
+              ),
+            ].sort()}
+            selected={q.getAll("category")}
+            onChange={(v) => update("category", v)}
+          />
+          <MultiFilter
+            label="Marca"
+            values={[
+              ...new Set<string>(
+                data.offerChoices.map((o: Row) => o.brand || "__missing"),
+              ),
+            ].sort()}
+            selected={q.getAll("brand")}
+            onChange={(v) => update("brand", v)}
+          />
+          <MultiFilter
+            label="Situação"
+            values={["draft", "active", "paused", "closed"]}
+            selected={q.getAll("status")}
+            onChange={(v) => update("status", v)}
+          />
+          <label className="filter-select">
+            <select
+              aria-label="Tipo de publicação ML"
+              value={q.get("listingKind") || ""}
+              onChange={(e) =>
+                update("listingKind", e.target.value ? [e.target.value] : [])
+              }
+            >
+              <option value="">Todas as publicações</option>
+              <option value="catalog">Catálogo</option>
+              <option value="traditional">Tradicionais</option>
+              <option value="local">Cadastros locais / referências</option>
+            </select>
+          </label>
+          <MultiFilter
+            label="Tipo"
+            values={["unit", "kit", "variation"]}
+            selected={q.getAll("type")}
+            onChange={(v) => update("type", v)}
+          />
+          <label className="filter-select">
+            <SlidersHorizontal size={14} />
+            <select
+              aria-label="Filtrar pendências"
+              value={q.get("pending") || ""}
+              onChange={(e) =>
+                update("pending", e.target.value ? [e.target.value] : [])
+              }
+            >
+              <option value="">Pendências</option>
+              <option value="yes">Qualquer pendência</option>
+              <option value="costs">Custos a revisar</option>
+              <option value="ml">Tarifa / frete a conferir</option>
+              <option value="ownCosts">Custos próprios pendentes</option>
+              <option value="ready">Margem calculável</option>
+            </select>
+          </label>
 
-        <details
-          className="listing-counts offers-counts"
-          onToggle={(event) => {
-            if (!event.currentTarget.open) return;
-            const popup = event.currentTarget.querySelector<HTMLElement>(
-              ".offers-counts-popover",
-            );
-            if (!popup) return;
-            popup.style.transform = "";
-            const box = popup.getBoundingClientRect();
-            const offset =
-              box.left < 8
-                ? 8 - box.left
-                : box.right > innerWidth - 8
-                  ? innerWidth - 8 - box.right
-                  : 0;
-            popup.style.transform = `translateX(${offset}px)`;
-          }}
-        >
-          <summary aria-label="Contagem e filtros ativos dos anúncios">
-            <strong>{data.offers.length}</strong>{" "}
-            {data.offers.length === 1 ? "anúncio" : "anúncios"}
-            {chips.length > 0 && (
-              <span className="offers-filter-count" title="Filtros ativos">
-                {chips.length}
-              </span>
-            )}
-            <Info size={13} />
-          </summary>
-          <div className="offers-counts-popover">
-            {counts.mlIds > 0 && (
-              <>
-                <div className="offers-counts-stats">
-                  <span>
-                    <strong>{counts.mlIds}</strong> IDs ML
-                  </span>
-                  <span>
-                    <strong>{counts.titles}</strong>{" "}
-                    {counts.titles === 1
-                      ? "título distinto"
-                      : "títulos distintos"}
-                  </span>
-                  <span>
-                    {counts.catalog} catálogo · {counts.traditional}{" "}
-                    tradicionais
-                    {counts.local
-                      ? ` · ${counts.local} locais/referências`
-                      : ""}
-                  </span>
-                </div>
-                <p>
-                  Um registro por ID do ML. Publicações com títulos iguais podem
-                  ter condições diferentes. O painel do ML pode usar outros
-                  agrupamentos e filtros; anúncios não são unidos por título.
-                </p>
-              </>
-            )}
-            {chips.length > 0 && (
-              <div className="filter-chips">
-                {chips.map(([k, v], i) => (
+          <details
+            className="listing-counts offers-counts"
+            onToggle={(event) => {
+              if (!event.currentTarget.open) return;
+              const popup = event.currentTarget.querySelector<HTMLElement>(
+                ".offers-counts-popover",
+              );
+              if (!popup) return;
+              popup.style.transform = "";
+              const box = popup.getBoundingClientRect();
+              const offset =
+                box.left < 8
+                  ? 8 - box.left
+                  : box.right > innerWidth - 8
+                    ? innerWidth - 8 - box.right
+                    : 0;
+              popup.style.transform = `translateX(${offset}px)`;
+            }}
+          >
+            <summary aria-label="Contagem e filtros ativos dos anúncios">
+              <strong>{data.offers.length}</strong>{" "}
+              {data.offers.length === 1 ? "anúncio" : "anúncios"}
+              {chips.length > 0 && (
+                <span className="offers-filter-count" title="Filtros ativos">
+                  {chips.length}
+                </span>
+              )}
+              <Info size={13} />
+            </summary>
+            <div className="offers-counts-popover">
+              {counts.mlIds > 0 && (
+                <>
+                  <div className="offers-counts-stats">
+                    <span>
+                      <strong>{counts.mlIds}</strong> IDs ML
+                    </span>
+                    <span>
+                      <strong>{counts.titles}</strong>{" "}
+                      {counts.titles === 1
+                        ? "título distinto"
+                        : "títulos distintos"}
+                    </span>
+                    <span>
+                      {counts.catalog} catálogo · {counts.traditional}{" "}
+                      tradicionais
+                      {counts.local
+                        ? ` · ${counts.local} locais/referências`
+                        : ""}
+                    </span>
+                  </div>
+                  <p>
+                    Um registro por ID do ML. Publicações com títulos iguais
+                    podem ter condições diferentes. O painel do ML pode usar
+                    outros agrupamentos e filtros; anúncios não são unidos por
+                    título.
+                  </p>
+                </>
+              )}
+              {chips.length > 0 && (
+                <div className="filter-chips">
+                  {chips.map(([k, v], i) => (
+                    <button
+                      className="filter-chip"
+                      key={k + v + i}
+                      onClick={() =>
+                        update(
+                          k,
+                          q.getAll(k).filter((x) => x !== v),
+                        )
+                      }
+                    >
+                      {
+                        (
+                          {
+                            q: "Busca",
+                            brand: "Marca",
+                            category: "Categoria",
+                            status: "Situação",
+                            type: "Tipo",
+                            pending: "Pendência",
+                            listingKind: "Publicação",
+                          } as Row
+                        )[k]
+                      }
+                      :{" "}
+                      {labels[v] ||
+                        (
+                          {
+                            __missing: "Não informado",
+                            yes: "Qualquer",
+                            costs: "Custos",
+                            ml: "Tarifa / frete a conferir",
+                            ownCosts: "Custos próprios pendentes",
+                            ready: "Margem calculável",
+                            catalog: "Catálogo",
+                            traditional: "Tradicionais",
+                            local: "Cadastros locais / referências",
+                          } as Row
+                        )[v] ||
+                        v}
+                      <X size={12} />
+                    </button>
+                  ))}
                   <button
-                    className="filter-chip"
-                    key={k + v + i}
+                    className="text-link small"
                     onClick={() =>
-                      update(
-                        k,
-                        q.getAll(k).filter((x) => x !== v),
+                      navigate(
+                        "anuncios",
+                        new URLSearchParams({ store: q.get("store") || "all" }),
                       )
                     }
                   >
-                    {
-                      (
-                        {
-                          q: "Busca",
-                          brand: "Marca",
-                          category: "Categoria",
-                          status: "Situação",
-                          type: "Tipo",
-                          pending: "Pendência",
-                          listingKind: "Publicação",
-                        } as Row
-                      )[k]
-                    }
-                    :{" "}
-                    {labels[v] ||
-                      (
-                        {
-                          __missing: "Não informado",
-                          yes: "Qualquer",
-                          costs: "Custos",
-                          ml: "Tarifa / frete a conferir",
-                          ownCosts: "Custos próprios pendentes",
-                          ready: "Margem calculável",
-                          catalog: "Catálogo",
-                          traditional: "Tradicionais",
-                          local: "Cadastros locais / referências",
-                        } as Row
-                      )[v] ||
-                      v}
-                    <X size={12} />
+                    Limpar filtros
                   </button>
-                ))}
-                <button
-                  className="text-link small"
-                  onClick={() =>
-                    navigate(
-                      "anuncios",
-                      new URLSearchParams({ store: q.get("store") || "all" }),
-                    )
-                  }
-                >
-                  Limpar filtros
-                </button>
-              </div>
-            )}
-          </div>
-        </details>
-        <label className="sort-label">
-          <select
-            aria-label="Visão da tabela"
-            value={operational ? "operational" : "registry"}
-            onChange={(e) => update("tableView", [e.target.value])}
+                </div>
+              )}
+            </div>
+          </details>
+          <label className="sort-label">
+            <select
+              aria-label="Visão da tabela"
+              value={operational ? "operational" : "registry"}
+              onChange={(e) => update("tableView", [e.target.value])}
+            >
+              <option value="operational">Operacional ML</option>
+              <option value="registry">Cadastro</option>
+            </select>
+          </label>
+          <ListingGlobalPanel
+            overview={data.listingOverview}
+            store={q.get("store") || "all"}
+            canWrite={canWrite}
+            canSync={data.user.role === "admin"}
+            onChanged={onChanged}
+            onPreview={onPreview}
+          />
+          {eligible.length > 0 && canWrite && (
+            <button
+              className="button compact offers-refresh"
+              aria-label="Consultar indicadores ML"
+              title="Consultar tarifas, frete e indicadores ML dos anúncios filtrados ou selecionados"
+              disabled={busy}
+              onClick={() => onIndicators(eligible.map((o: Row) => o.id))}
+            >
+              <RefreshCw className={busy ? "spin" : ""} size={15} />
+            </button>
+          )}
+          {selected.length > 0 && (
+            <span className="offers-selected orange">
+              {selected.length} selecionados
+            </span>
+          )}
+          {selected.length > 0 && canWrite && (
+            <button className="button compact" onClick={onBatch}>
+              Ações em lote
+            </button>
+          )}
+        </div>
+        {rows.length ? (
+          <div
+            className="table-wrap"
+            ref={scrollArea}
+            role="region"
+            aria-label="Lista de anúncios"
+            tabIndex={0}
           >
-            <option value="operational">Operacional ML</option>
-            <option value="registry">Cadastro</option>
-          </select>
-        </label>
-        {eligible.length > 0 && canWrite && (
-          <button
-            className="button compact offers-refresh"
-            aria-label="Consultar indicadores ML"
-            title="Consultar tarifas, frete e indicadores ML dos anúncios filtrados ou selecionados"
-            disabled={busy}
-            onClick={() => onIndicators(eligible.map((o: Row) => o.id))}
-          >
-            <RefreshCw className={busy ? "spin" : ""} size={15} />
-          </button>
-        )}
-        {selected.length > 0 && (
-          <span className="offers-selected orange">
-            {selected.length} selecionados
-          </span>
-        )}
-        {selected.length > 0 && canWrite && (
-          <button className="button compact" onClick={onBatch}>
-            Ações em lote
-          </button>
-        )}
-      </div>
-      {rows.length ? (
-        <div
-          className="table-wrap"
-          ref={scrollArea}
-          role="region"
-          aria-label="Lista de anúncios"
-          tabIndex={0}
-        >
-          <table
-            className={
-              "offers-table smart-table " + (operational ? "operational" : "")
-            }
-            {...table.props}
-            style={{ ...table.props.style, width: "100%" }}
-          >
-            {table.header({
-              select: (
-                <input
-                  type="checkbox"
-                  aria-label="Selecionar anúncios desta página"
-                  checked={
-                    rows.length > 0 &&
-                    rows.every((o: Row) => selected.includes(o.id))
-                  }
-                  disabled={
-                    !rows.every((o: Row) => selected.includes(o.id)) &&
-                    selected.length +
-                      rows.filter((o: Row) => !selected.includes(o.id)).length >
-                      100
-                  }
-                  onChange={(e) =>
-                    setSelected(
-                      e.target.checked
-                        ? [
-                            ...new Set([
-                              ...selected,
-                              ...rows.map((o: Row) => o.id),
-                            ]),
-                          ]
-                        : selected.filter(
-                            (id) => !rows.some((o: Row) => o.id === id),
-                          ),
-                    )
-                  }
-                />
-              ),
-            })}
-            <tbody>
-              {rows.map((o: Row) => (
-                <tr
-                  key={o.id}
-                  className={selected.includes(o.id) ? "row-selected" : ""}
-                >
-                  {canWrite && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={"Selecionar " + o.title}
-                        checked={selected.includes(o.id)}
-                        disabled={
-                          !selected.includes(o.id) && selected.length >= 100
-                        }
-                        onChange={(e) =>
-                          setSelected(
-                            e.target.checked
-                              ? [...selected, o.id]
-                              : selected.filter((id) => id !== o.id),
-                          )
-                        }
-                      />
-                    </td>
-                  )}
-                  <td className="offer-product-col">
-                    <div className="offer-product-cell">
-                      <button
-                        className="offer-photo-button"
-                        aria-label={"Ver fotos e vídeos de " + o.title}
-                        onClick={() => onOpen(o.id, "media")}
-                      >
-                        <MediaImage
-                          src={o.ml?.thumbnailUrl}
-                          alt={"Foto de " + o.title}
-                          className="offer-thumbnail"
+            <table
+              className={
+                "offers-table smart-table " + (operational ? "operational" : "")
+              }
+              {...table.props}
+              style={{ ...table.props.style, width: "100%" }}
+            >
+              {table.header({
+                select: (
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar anúncios desta página"
+                    checked={
+                      rows.length > 0 &&
+                      rows.every((o: Row) => selected.includes(o.id))
+                    }
+                    disabled={
+                      !rows.every((o: Row) => selected.includes(o.id)) &&
+                      selected.length +
+                        rows.filter((o: Row) => !selected.includes(o.id))
+                          .length >
+                        100
+                    }
+                    onChange={(e) =>
+                      setSelected(
+                        e.target.checked
+                          ? [
+                              ...new Set([
+                                ...selected,
+                                ...rows.map((o: Row) => o.id),
+                              ]),
+                            ]
+                          : selected.filter(
+                              (id) => !rows.some((o: Row) => o.id === id),
+                            ),
+                      )
+                    }
+                  />
+                ),
+              })}
+              <tbody>
+                {rows.map((o: Row) => (
+                  <tr
+                    key={o.id}
+                    className={selected.includes(o.id) ? "row-selected" : ""}
+                  >
+                    {canWrite && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={"Selecionar " + o.title}
+                          checked={selected.includes(o.id)}
+                          disabled={
+                            !selected.includes(o.id) && selected.length >= 100
+                          }
+                          onChange={(e) =>
+                            setSelected(
+                              e.target.checked
+                                ? [...selected, o.id]
+                                : selected.filter((id) => id !== o.id),
+                            )
+                          }
                         />
-                      </button>
-                      <div>
+                      </td>
+                    )}
+                    <td className="offer-product-col">
+                      <div className="offer-product-cell">
                         <button
-                          className="offer-title"
-                          title={o.title}
-                          onClick={() => onOpen(o.id)}
+                          className="offer-photo-button"
+                          aria-label={"Ver fotos e vídeos de " + o.title}
+                          onClick={() => onOpen(o.id, "media")}
                         >
-                          {o.title}
+                          <MediaImage
+                            src={o.ml?.thumbnailUrl}
+                            alt={"Foto de " + o.title}
+                            className="offer-thumbnail"
+                          />
                         </button>
-                        <small>
-                          {!operational || o.product_name !== o.title
-                            ? o.product_name
-                            : ""}{" "}
-                          {(!operational || o.type !== "unit") && (
-                            <span className="type-label">{labels[o.type]}</span>
-                          )}
-                          {o.origin === "reference" && (
-                            <span className="orange">
-                              {" "}
-                              · Referência: {o.reference_account}
-                            </span>
-                          )}
-                        </small>
-                        <small className="offer-stock">
-                          {o.ml
-                            ? `Estoque: ${o.ml.availableQuantity ?? "não informado"} un.`
-                            : "Estoque não consultado"}
-                          {o.ml?.catalogListing ? " · Catálogo" : ""}
-                        </small>
-                        {operational && (
-                          <small className="mono">
-                            {o.ml_id || "Sem código ML"}
-                            {o.sku ? " · SKU " + o.sku : ""}
-                          </small>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  {!operational && (
-                    <>
-                      <td>
-                        <span className="store-pill">{o.store_name}</span>
-                      </td>
-                      <td>
-                        {o.brand || <span className="muted">Sem marca</span>}
-                        <small>{o.category || "Sem categoria"}</small>
-                      </td>
-                      <td className="mono">
-                        {o.sku || "—"}
-                        <small>{o.ml_id || "Sem código ML"}</small>
-                      </td>
-                      <td>
-                        <Badge value={o.status} />
-                      </td>
-                    </>
-                  )}
-                  <td className="numeric mono">{money(o.price)}</td>
-                  {operational && (
-                    <>
-                      <td>
-                        <span>{listingType(o.ml?.listingTypeId)}</span>
-                        <button
-                          className={
-                            "listing-cost-link " +
-                            (o.financialStatus?.tariff ? "" : "orange")
-                          }
-                          onClick={() => onPreview(o.id, "costs")}
-                          title={
-                            o.financialStatus?.tariff
-                              ? `Tarifa usada na estimativa. ${o.financialStatus.tariff.percent ?? "—"}% + ${money(o.financialStatus.tariff.fixed)}. Abra para conferir as fontes e editar custos.`
-                              : "Consulte os indicadores ML ou informe uma exceção manual nos custos."
-                          }
-                        >
-                          {o.financialStatus?.tariff
-                            ? `Tarifa: ${money(o.financialStatus.tariff.amount)}`
-                            : "Tarifa a consultar"}
-                          <span
-                            className={
-                              "listing-source " +
-                              (o.financialStatus?.tariff?.source === "ml"
-                                ? "green"
-                                : "muted")
+                        <div>
+                          <ListingHint
+                            content={() =>
+                              listingRowInformation(o, "product", onPreview)
                             }
                           >
-                            {o.financialStatus?.tariff?.source === "ml"
-                              ? "ML"
-                              : o.financialStatus?.tariff?.source === "manual"
-                                ? "Manual"
-                                : o.financialStatus?.tariff
-                                  ? "ML + manual"
-                                  : ""}
-                          </span>
-                        </button>
-                        <small>
-                          {o.ml?.freeShipping == null
-                            ? "Frete não consultado"
-                            : o.ml.freeShipping
-                              ? "Oferece frete grátis"
-                              : "Frete por conta do comprador"}
-                        </small>
-                      </td>
-                      <td className="numeric">
-                        <span title="Estimativa após tarifa e frete consultado ou informado, antes de impostos, custos e ajustes da venda.">
-                          {o.settlementEstimate
-                            ? money(o.settlementEstimate.amount)
-                            : "—"}
-                        </span>
-                        <button
+                            <button
+                              className="offer-title"
+                              title={o.title}
+                              onClick={() => onOpen(o.id)}
+                            >
+                              {o.title}
+                            </button>
+                          </ListingHint>
+                          <small>
+                            {!operational || o.product_name !== o.title
+                              ? o.product_name
+                              : ""}{" "}
+                            {(!operational || o.type !== "unit") && (
+                              <span className="type-label">
+                                {labels[o.type]}
+                              </span>
+                            )}
+                            {o.origin === "reference" && (
+                              <span className="orange">
+                                {" "}
+                                · Referência: {o.reference_account}
+                              </span>
+                            )}
+                          </small>
+                          {o.ml?.catalogListing && <small>Catálogo</small>}
+                          {operational && (
+                            <small className="mono">
+                              {o.ml_id || "Sem código ML"}
+                              {o.sku ? " · SKU " + o.sku : ""}
+                            </small>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    {!operational && (
+                      <>
+                        <td>
+                          <span className="store-pill">{o.store_name}</span>
+                        </td>
+                        <td>
+                          {o.brand || <span className="muted">Sem marca</span>}
+                          <small>{o.category || "Sem categoria"}</small>
+                        </td>
+                        <td className="mono">
+                          {o.sku || "—"}
+                          <small>{o.ml_id || "Sem código ML"}</small>
+                        </td>
+                        <td>
+                          <Badge value={o.status} />
+                        </td>
+                      </>
+                    )}
+                    <td className="numeric mono">
+                      <ListingHint
+                        content={() =>
+                          listingRowInformation(o, "price", onPreview)
+                        }
+                      >
+                        <span>{money(o.price)}</span>
+                      </ListingHint>
+                    </td>
+                    <td>
+                      <ListingHint
+                        content={() =>
+                          listingRowInformation(o, "stock", onPreview)
+                        }
+                      >
+                        <span
                           className={
-                            "listing-cost-link " +
-                            (o.financialStatus?.shipping ? "" : "orange")
+                            "listing-stock-value " +
+                            (o.ml?.availableQuantity === 0 ? "orange" : "")
                           }
-                          onClick={() => onPreview(o.id, "costs")}
-                          title="Custo do frete para a loja. A cotação ML é estimada; o custo efetivo depende do envio. Frete pago pelo comprador não comprova custo zero para o vendedor."
                         >
-                          {o.financialStatus?.shipping
-                            ? `Frete: ${money(o.financialStatus.shipping.amount)}`
-                            : "Conferir frete da loja"}
-                          {o.financialStatus?.shipping && (
-                            <span
+                          {o.ml?.availableQuantity == null
+                            ? "Não informado"
+                            : `${o.ml.availableQuantity} un.`}
+                        </span>
+                      </ListingHint>
+                    </td>
+                    {operational && (
+                      <>
+                        <td>
+                          <span>{listingType(o.ml?.listingTypeId)}</span>
+                          <ListingHint
+                            content={() =>
+                              listingRowInformation(o, "tariff", onPreview)
+                            }
+                          >
+                            <button
                               className={
-                                "listing-source " +
-                                (o.financialStatus.shipping.source === "ml"
-                                  ? "green"
-                                  : "muted")
+                                "listing-cost-link " +
+                                (o.financialStatus?.tariff ? "" : "orange")
+                              }
+                              onClick={() => onPreview(o.id, "costs")}
+                              title={
+                                o.financialStatus?.tariff
+                                  ? `Tarifa usada na estimativa. ${o.financialStatus.tariff.percent ?? "—"}% + ${money(o.financialStatus.tariff.fixed)}. Abra para conferir as fontes e editar custos.`
+                                  : "Consulte os indicadores ML ou informe uma exceção manual nos custos."
                               }
                             >
-                              {o.financialStatus.shipping.source === "ml"
-                                ? "ML · estim."
-                                : "Manual"}
-                            </span>
-                          )}
-                        </button>
-                        <small>
-                          {o.settlementEstimate
-                            ? "Antes dos custos próprios"
-                            : o.financialStatus?.tariff
-                              ? "Tarifa disponível"
-                              : "Estimativa incompleta"}
-                        </small>
-                      </td>
-                      <td>
-                        {o.metrics7d ? (
-                          <>
-                            <div
-                              className="listing-metrics"
-                              title={`${date(o.metrics7d.from)} a ${date(o.metrics7d.to)}`}
-                            >
+                              {o.financialStatus?.tariff
+                                ? `Tarifa: ${money(o.financialStatus.tariff.amount)}`
+                                : "Tarifa a consultar"}
                               <span
-                                aria-label={o.metrics7d.visits + " visitas"}
-                              >
-                                <Eye size={13} />
-                                {o.metrics7d.visits}
-                              </span>
-                              <span
-                                aria-label={
-                                  o.metrics7d.paidOrders + " pedidos pagos"
+                                className={
+                                  "listing-source " +
+                                  (o.financialStatus?.tariff?.source === "ml"
+                                    ? "green"
+                                    : "muted")
                                 }
                               >
-                                <ShoppingCart size={13} />
-                                {o.metrics7d.paidOrders}
+                                {o.financialStatus?.tariff?.source === "ml"
+                                  ? "ML"
+                                  : o.financialStatus?.tariff?.source ===
+                                      "manual"
+                                    ? "Manual"
+                                    : o.financialStatus?.tariff
+                                      ? "ML + manual"
+                                      : ""}
                               </span>
-                            </div>
-                            <small>
-                              {o.metrics7d.orderVisitRate == null
-                                ? "Conversão indisponível"
-                                : `${o.metrics7d.orderVisitRate}% pedidos/visitas`}
+                            </button>
+                          </ListingHint>
+                          <small>
+                            {o.ml?.freeShipping == null
+                              ? "Frete não consultado"
+                              : o.ml.freeShipping
+                                ? "Oferece frete grátis"
+                                : "Frete por conta do comprador"}
+                          </small>
+                        </td>
+                        <td className="numeric">
+                          <ListingHint
+                            content={() =>
+                              listingRowInformation(o, "settlement", onPreview)
+                            }
+                          >
+                            <span title="Estimativa após tarifa e frete consultado ou informado, antes de impostos, custos e ajustes da venda.">
+                              {o.settlementEstimate
+                                ? money(o.settlementEstimate.amount)
+                                : "—"}
+                            </span>
+                          </ListingHint>
+                          <ListingHint
+                            content={() =>
+                              listingRowInformation(o, "shipping", onPreview)
+                            }
+                          >
+                            <button
+                              className={
+                                "listing-cost-link " +
+                                (o.financialStatus?.shipping ? "" : "orange")
+                              }
+                              onClick={() => onPreview(o.id, "costs")}
+                              title="Custo do frete para a loja. A cotação ML é estimada; o custo efetivo depende do envio. Frete pago pelo comprador não comprova custo zero para o vendedor."
+                            >
+                              {o.financialStatus?.shipping
+                                ? `Frete: ${money(o.financialStatus.shipping.amount)}`
+                                : "Conferir frete da loja"}
+                              {o.financialStatus?.shipping && (
+                                <span
+                                  className={
+                                    "listing-source " +
+                                    (o.financialStatus.shipping.source === "ml"
+                                      ? "green"
+                                      : "muted")
+                                  }
+                                >
+                                  {o.financialStatus.shipping.source === "ml"
+                                    ? "ML · estim."
+                                    : "Manual"}
+                                </span>
+                              )}
+                            </button>
+                          </ListingHint>
+                          <small>
+                            {o.settlementEstimate
+                              ? "Antes dos custos próprios"
+                              : o.financialStatus?.tariff
+                                ? "Tarifa disponível"
+                                : "Estimativa incompleta"}
+                          </small>
+                        </td>
+                        <td>
+                          {o.metrics7d ? (
+                            <>
+                              <ListingHint
+                                content={() =>
+                                  listingRowInformation(o, "metrics", onPreview)
+                                }
+                              >
+                                <div
+                                  className="listing-metrics"
+                                  title={`${date(o.metrics7d.from)} a ${date(o.metrics7d.to)}`}
+                                >
+                                  <span
+                                    aria-label={o.metrics7d.visits + " visitas"}
+                                  >
+                                    <Eye size={13} />
+                                    {o.metrics7d.visits}
+                                  </span>
+                                  <span
+                                    aria-label={
+                                      o.metrics7d.paidOrders + " pedidos pagos"
+                                    }
+                                  >
+                                    <ShoppingCart size={13} />
+                                    {o.metrics7d.paidOrders}
+                                  </span>
+                                </div>
+                              </ListingHint>
+                              <small>
+                                {o.metrics7d.orderVisitRate == null
+                                  ? "Conversão indisponível"
+                                  : `${o.metrics7d.orderVisitRate}% pedidos/visitas`}
+                              </small>
+                              <small className="muted">
+                                Consulta: {date(o.metrics7d.observedAt)}
+                              </small>
+                            </>
+                          ) : (
+                            <span className="small muted">Não consultado</span>
+                          )}
+                        </td>
+                        <td>
+                          {o.ml?.health == null ? (
+                            <span className="small muted">ML não informou</span>
+                          ) : (
+                            <span className="quality-score">
+                              {Math.round(o.ml.health * 100)} / 100
+                            </span>
+                          )}
+                          <ListingHint
+                            content={() =>
+                              listingRowInformation(o, "quality", onPreview)
+                            }
+                          >
+                            <small title="Checklist próprio de campos e mídia; não representa experiência de compra ou ranking oficial.">
+                              {o.quality?.length
+                                ? `${o.quality.length} melhorias no checklist`
+                                : "Checklist sem pendências"}
                             </small>
-                            <small className="muted">
-                              Consulta: {date(o.metrics7d.observedAt)}
-                            </small>
-                          </>
-                        ) : (
-                          <span className="small muted">Não consultado</span>
-                        )}
-                      </td>
-                      <td>
-                        {o.ml?.health == null ? (
-                          <span className="small muted">ML não informou</span>
-                        ) : (
-                          <span className="quality-score">
-                            {Math.round(o.ml.health * 100)} / 100
-                          </span>
-                        )}
-                        <small title="Checklist próprio de campos e mídia; não representa experiência de compra ou ranking oficial.">
-                          {o.quality?.length
-                            ? `${o.quality.length} melhorias no checklist`
-                            : "Checklist sem pendências"}
-                        </small>
-                      </td>
-                      <td>
-                        <Badge value={o.status} />
-                        {o.ml?.subStatus?.includes("paused_by_seller") && (
-                          <small>Pausado pelo vendedor</small>
-                        )}
-                      </td>
-                    </>
-                  )}
+                          </ListingHint>
+                        </td>
+                        <td>
+                          <Badge value={o.status} />
+                          {o.ml?.subStatus?.includes("paused_by_seller") && (
+                            <small>Pausado pelo vendedor</small>
+                          )}
+                        </td>
+                      </>
+                    )}
 
-                  <td>
-                    {o.financialStatus?.ownPending.length > 0 && (
-                      <button
-                        className="listing-cost-link orange"
-                        title={o.financialStatus.ownPending.join(", ")}
-                        onClick={() => onPreview(o.id, "costs")}
-                      >
-                        {o.financialStatus.ownPending.length}{" "}
-                        {o.financialStatus.ownPending.length === 1
-                          ? "custo próprio pendente"
-                          : "custos próprios pendentes"}
-                      </button>
-                    )}
-                    {o.financialStatus?.ready && (
-                      <button
-                        className={
-                          "listing-cost-link " +
-                          (Number(o.calculation.margin) < 0
-                            ? "orange"
-                            : "green")
+                    <td>
+                      <ListingHint
+                        content={() =>
+                          listingRowInformation(o, "margin", onPreview)
                         }
-                        title="Margem de contribuição estimada com os custos disponíveis. Abra para conferir a precificação."
-                        onClick={() => onPreview(o.id, "costs")}
                       >
-                        Margem:{" "}
-                        {Number(o.calculation.marginPercent).toLocaleString(
-                          "pt-BR",
-                          { maximumFractionDigits: 1 },
-                        )}
-                        %
-                      </button>
-                    )}
-                    {o.pending.length ? (
+                        <button
+                          className="listing-margin-value"
+                          onClick={() => onPreview(o.id, "costs")}
+                        >
+                          {o.financialStatus?.ready ? (
+                            <>
+                              <strong>
+                                {money(o.calculation.margin)}{" "}
+                                <span
+                                  className={
+                                    Number(o.calculation.margin) < 0
+                                      ? "orange"
+                                      : "green"
+                                  }
+                                >
+                                  {percent(o.calculation.marginPercent, 1)}
+                                </span>
+                              </strong>
+                              <small>
+                                Piso{" "}
+                                <b>
+                                  {o.calculation.minPrice == null
+                                    ? "A definir"
+                                    : money(o.calculation.minPrice)}
+                                </b>
+                              </small>
+                              <small>
+                                Desc. máx.{" "}
+                                <b>
+                                  {o.calculation.maxDiscount == null
+                                    ? o.calculation.minPrice != null &&
+                                      Number(o.calculation.minPrice) >
+                                        Number(o.price)
+                                      ? "Sem desconto"
+                                      : "A definir"
+                                    : listingDiscountLimit(
+                                        o.calculation.maxDiscount,
+                                      )}
+                                </b>
+                              </small>
+                            </>
+                          ) : (
+                            <>
+                              <span>Custos pendentes</span>
+                              <small>Complete para calcular</small>
+                            </>
+                          )}
+                        </button>
+                      </ListingHint>
+                    </td>
+                    <td>
+                      {o.financialStatus?.ownPending.length > 0 && (
+                        <ListingHint
+                          content={() =>
+                            listingRowInformation(o, "pending", onPreview)
+                          }
+                        >
+                          <button
+                            className="listing-cost-link orange"
+                            title={o.financialStatus.ownPending.join(", ")}
+                            onClick={() => onPreview(o.id, "costs")}
+                          >
+                            {o.financialStatus.ownPending.length}{" "}
+                            {o.financialStatus.ownPending.length === 1
+                              ? "custo próprio pendente"
+                              : "custos próprios pendentes"}
+                          </button>
+                        </ListingHint>
+                      )}
+                      {o.pending.length ? (
+                        <ListingHint
+                          content={() =>
+                            listingRowInformation(o, "pending", onPreview)
+                          }
+                        >
+                          <button
+                            className="pending-count"
+                            title={o.pending.join(", ")}
+                            onClick={() => onOpen(o.id)}
+                          >
+                            <AlertCircle size={12} />
+                            {o.pending.length} pendentes
+                          </button>
+                        </ListingHint>
+                      ) : (
+                        <span className="green small">
+                          <Check size={13} />
+                          Completo
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <ListingHint
+                        content={() =>
+                          listingRowInformation(o, "updated", onPreview)
+                        }
+                      >
+                        <span>{date(o.updated_at)}</span>
+                      </ListingHint>
+                    </td>
+                    <td>
                       <button
-                        className="pending-count"
-                        title={o.pending.join(", ")}
+                        className="icon-button"
+                        aria-label={"Prévia de " + o.title}
+                        title="Abrir prévia lateral"
+                        onClick={() => onPreview(o.id)}
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        className="icon-button"
+                        aria-label={"Abrir " + o.title}
                         onClick={() => onOpen(o.id)}
                       >
-                        <AlertCircle size={12} />
-                        {o.pending.length} pendentes
+                        <ArrowUpRight size={15} />
                       </button>
-                    ) : (
-                      <span className="green small">
-                        <Check size={13} />
-                        Completo
-                      </span>
-                    )}
-                  </td>
-                  <td className="small muted">{date(o.updated_at)}</td>
-                  <td>
-                    <button
-                      className="icon-button"
-                      aria-label={"Prévia de " + o.title}
-                      title="Abrir prévia lateral"
-                      onClick={() => onPreview(o.id)}
-                    >
-                      <Eye size={15} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      aria-label={"Abrir " + o.title}
-                      onClick={() => onOpen(o.id)}
-                    >
-                      <ArrowUpRight size={15} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <Empty
-          title={
-            chips.length
-              ? "Nenhum anúncio corresponde aos filtros"
-              : "Seus anúncios, organizados aqui"
-          }
-          body={
-            chips.length
-              ? "Experimente remover um filtro ou buscar por outro produto."
-              : "Cadastre sua primeira oferta ou importe uma planilha Excel ou CSV. Cada anúncio ficará vinculado à sua loja."
-          }
-          action={
-            !chips.length && canWrite ? (
-              <button className="button primary" onClick={onNew}>
-                <Plus size={15} />
-                Cadastrar primeiro anúncio
-              </button>
-            ) : undefined
-          }
-        />
-      )}
-      <div className="pagination">
-        <span>
-          {rows.length
-            ? `${(current - 1) * size + 1}–${Math.min(current * size, sorted.length)} de ${sorted.length}`
-            : "0 resultados"}
-        </span>
-        <label className="page-size">
-          Por página{" "}
-          <select
-            aria-label="Anúncios por página"
-            value={size}
-            onChange={(e) => update("pageSize", [e.target.value])}
-          >
-            {[20, 50, 100].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div>
-          <button
-            aria-label="Página anterior"
-            className="icon-button"
-            disabled={current <= 1}
-            onClick={() => {
-              const p = new URLSearchParams(query);
-              p.set("page", String(current - 1));
-              navigate("anuncios", p);
-            }}
-          >
-            <ChevronLeft size={16} />
-          </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty
+            title={
+              chips.length
+                ? "Nenhum anúncio corresponde aos filtros"
+                : "Seus anúncios, organizados aqui"
+            }
+            body={
+              chips.length
+                ? "Experimente remover um filtro ou buscar por outro produto."
+                : "Cadastre sua primeira oferta ou importe uma planilha Excel ou CSV. Cada anúncio ficará vinculado à sua loja."
+            }
+            action={
+              !chips.length && canWrite ? (
+                <button className="button primary" onClick={onNew}>
+                  <Plus size={15} />
+                  Cadastrar primeiro anúncio
+                </button>
+              ) : undefined
+            }
+          />
+        )}
+        <div className="pagination">
           <span>
-            {current} / {pages}
+            {rows.length
+              ? `${(current - 1) * size + 1}–${Math.min(current * size, sorted.length)} de ${sorted.length}`
+              : "0 resultados"}
           </span>
-          <button
-            aria-label="Próxima página"
-            className="icon-button"
-            disabled={current >= pages}
-            onClick={() => {
-              const p = new URLSearchParams(query);
-              p.set("page", String(current + 1));
-              navigate("anuncios", p);
-            }}
-          >
-            <ChevronRight size={16} />
-          </button>
+          <label className="page-size">
+            Por página{" "}
+            <select
+              aria-label="Anúncios por página"
+              value={size}
+              onChange={(e) => update("pageSize", [e.target.value])}
+            >
+              {[20, 50, 100].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div>
+            <button
+              aria-label="Página anterior"
+              className="icon-button"
+              disabled={current <= 1}
+              onClick={() => {
+                const p = new URLSearchParams(query);
+                p.set("page", String(current - 1));
+                navigate("anuncios", p);
+              }}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span>
+              {current} / {pages}
+            </span>
+            <button
+              aria-label="Próxima página"
+              className="icon-button"
+              disabled={current >= pages}
+              onClick={() => {
+                const p = new URLSearchParams(query);
+                p.set("page", String(current + 1));
+                navigate("anuncios", p);
+              }}
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </ListingInformationProvider>
   );
 }
 function MultiFilter({

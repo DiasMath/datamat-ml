@@ -140,8 +140,8 @@ test("operational listings show photos, stock, conditions, honest estimates and 
   );
   await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
   await expect(page.locator(".offer-thumbnail").first()).toHaveClass(/ready/);
-  await expect(page.locator(".offers-table tbody")).toContainText(
-    "Estoque: 4 un.",
+  await expect(page.locator(".listing-stock-value").first()).toContainText(
+    "4 un.",
   );
   await expect(page.locator(".offers-table tbody")).toContainText("Clássico");
   await expect(page.locator(".offers-table tbody")).toContainText("75,00");
@@ -240,7 +240,7 @@ test("listings separate known ML fees from pending own costs, filter actionable 
   await expect(first).toContainText("custos próprios pendentes");
   await expect(second).toContainText("100,00");
   await expect(second).toContainText("Manual");
-  await expect(second).toContainText("Margem: 100%");
+  await expect(second.locator(".listing-margin-value")).toContainText("100%");
   const original = page.url();
   await first
     .getByRole("button", { name: "Conferir frete da loja", exact: true })
@@ -274,6 +274,232 @@ test("listings separate known ML fees from pending own costs, filter actionable 
         path: `test-results/listings-costs-${width}.png`,
         fullPage: true,
       });
+  }
+});
+test("listing information is readable and accessible, financial limits stay live, and catalogue/sync summaries cover the whole selected store", async ({
+  page,
+  request,
+}) => {
+  const { rows } = await seed(request);
+  const parameterDoc = db().collection("parameters").doc("juntos-com");
+  const originalParameters = (await parameterDoc.get()).data()!;
+  try {
+    await parameterDoc.set({
+      ...originalParameters,
+      data_json: JSON.stringify({
+        ...JSON.parse(originalParameters.data_json),
+        minMargin: "10",
+        desiredMargin: "20",
+      }),
+    });
+    const stamp = new Date().toISOString();
+    await db().collection("connections").doc(connectionId).set(
+      {
+        last_sync_at: stamp,
+        last_catalog_sync_at: stamp,
+        last_catalog_completed_at: stamp,
+      },
+      { merge: true },
+    );
+    for (const [i, row] of rows.entries()) {
+      const ml = {
+        ...row.ml,
+        catalogListing: true,
+        availableQuantity: i === 0 ? 0 : null,
+      };
+      await db()
+        .collection("offers")
+        .doc(row.id)
+        .set({ ...row, ml, sku: `GLOBAL-${row.id}` });
+      const costs = (await db().collection("costs").doc(row.id).get()).data()!;
+      await db()
+        .collection("costs")
+        .doc(row.id)
+        .set({
+          ...costs,
+          data_json: JSON.stringify({
+            goods: "30",
+            mlPercent: "10",
+            mlFixed: "0",
+            shipping: "5",
+            packaging: "0",
+            advertising: "0",
+            other: "0",
+            otherDescription: "",
+            taxRate: "0",
+            taxBase: "price",
+            managementRate: "0",
+            managementBase: "price",
+          }),
+        });
+      await db()
+        .collection("ml_competition")
+        .doc(row.id)
+        .set({
+          organization_id: row.organization_id,
+          offer_id: row.id,
+          store_id: row.store_id,
+          seller_id: "111",
+          auth_version: 998,
+          offer_version: row.version,
+          status: i === 0 ? "winning" : "losing",
+          currentPrice: "100.00",
+          priceToWin: "40.00",
+          consistent: true,
+          observed_at: stamp,
+        });
+    }
+    const url = `/anuncios?store=juntos-com&q=${encodeURIComponent("GLOBAL-" + rows[0].id)}`;
+    await page.goto(url);
+    await expect(page.locator(".offers-table tbody tr")).toHaveCount(1);
+    await expect(page.locator(".listing-stock-value")).toHaveText("0 un.");
+    await expect(page.locator(".listing-margin-value")).toContainText(
+      "R$ 55,00",
+    );
+    await expect(page.locator(".listing-margin-value")).toContainText(
+      "R$ 43,75",
+    );
+    await expect(page.locator(".listing-margin-value")).toContainText("56,25%");
+    const header = page.getByRole("button", {
+      name: "Ordenar por: Estoque",
+      exact: true,
+    });
+    await expect(header.locator("..")).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(header.locator("..")).toHaveCSS("font-size", "12px");
+    const title = page.locator(".offer-title");
+    expect(await title.getAttribute("title")).toBeNull();
+    await title.hover();
+    const information = page.getByRole("dialog", {
+      name: "Anúncio e produto",
+      exact: true,
+    });
+    await expect(information).toBeVisible();
+    await expect(information).toContainText(rows[0].ml_id);
+    await information.hover();
+    await expect(information).toBeVisible();
+    await information.screenshot({
+      path: "test-results/listing-information-panel.png",
+    });
+    await page.keyboard.press("Escape");
+    await expect(information).toHaveCount(0);
+    const stock = page.locator(".listing-stock-value");
+    await stock.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("dialog", { name: "Estoque publicado", exact: true }),
+    ).toBeVisible();
+    await page.locator("h1").click();
+    await expect(page.locator(".listing-information")).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Competitividade do catálogo", exact: true })
+      .click();
+    const catalogue = page.getByRole("dialog", {
+      name: "Competitividade do catálogo",
+      exact: true,
+    });
+    await expect(catalogue).toBeVisible();
+    await expect(catalogue).toContainText(rows[1].ml_id);
+    await expect(catalogue).toContainText("Abaixo do piso estimado");
+    await page.screenshot({
+      path: "test-results/listing-catalogue-overview.png",
+      fullPage: true,
+    });
+    let receivedIds: string[] = [];
+    let release = () => {};
+    await page.route("**/api/catalog/competition", async (route) => {
+      const ids: string[] = route.request().postDataJSON().ids;
+      const first = receivedIds.length === 0;
+      receivedIds.push(...ids);
+      if (first)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      await route.fulfill({
+        json: { results: ids.map((id) => ({ id, updated: true })) },
+      });
+    });
+    await catalogue
+      .getByRole("button", { name: "Consultar catálogo no ML", exact: true })
+      .click();
+    await expect.poll(() => receivedIds.length).toBeGreaterThan(0);
+    expect(receivedIds).toEqual(
+      expect.arrayContaining(rows.map((row) => row.id)),
+    );
+    await expect(
+      catalogue.getByRole("button", {
+        name: "Consultar catálogo no ML",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    release();
+    await expect(
+      catalogue.getByRole("button", {
+        name: "Consultar catálogo no ML",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await page
+      .getByRole("button", {
+        name: "Sincronização da tela com o ML",
+        exact: true,
+      })
+      .click();
+    const sync = page.getByRole("dialog", {
+      name: "Sincronização da tela com o ML",
+      exact: true,
+    });
+    await expect(sync).toContainText("Catálogo completo");
+    await expect(sync).toContainText("Conectado");
+    await expect(sync).toContainText("juntos.com");
+    await expect(sync).toContainText("Última consulta de anúncios");
+    await page.keyboard.press("Escape");
+    expect(page.url()).toContain("GLOBAL-");
+    for (const width of [320, 390, 768, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      await stock.click();
+      const popup = page.getByRole("dialog", {
+        name: "Estoque publicado",
+        exact: true,
+      });
+      await expect(popup).toBeVisible();
+      const box = (await popup.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      await page.keyboard.press("Escape");
+      if (width <= 390) {
+        for (const name of [
+          "Competitividade do catálogo",
+          "Sincronização da tela com o ML",
+        ]) {
+          await page.getByRole("button", { name, exact: true }).click();
+          const dialog = page.getByRole("dialog", { name, exact: true });
+          await expect(dialog).toBeVisible();
+          const bounds = (await dialog.boundingBox())!;
+          expect(bounds.x).toBeGreaterThanOrEqual(0);
+          expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+          expect(bounds.height).toBeLessThanOrEqual(900);
+          if (width === 390 && name.startsWith("Sincronização"))
+            await page.screenshot({
+              path: "test-results/listing-sync-390.png",
+              fullPage: true,
+            });
+          await page.keyboard.press("Escape");
+        }
+      }
+      if ([390, 1920].includes(width))
+        await page.screenshot({
+          path: `test-results/listing-information-${width}.png`,
+          fullPage: true,
+        });
+    }
+  } finally {
+    await parameterDoc.set(originalParameters);
   }
 });
 test("indicator requests show loading and update cached seven-day data without losing filters", async ({

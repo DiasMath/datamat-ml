@@ -16,7 +16,10 @@ import { initializeDatabase, DatabaseConfigurationError } from "@/server/db";
 import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
 import { oauthPopupResponse } from "@/server/oauth-popup";
-import { refreshListingIndicators } from "@/server/listing-indicators";
+import {
+  refreshListingIndicators,
+  refreshListingCompetition,
+} from "@/server/listing-indicators";
 import { refreshFinancialCosts } from "@/server/ml-financial-sync";
 import * as drive from "@/server/google-drive";
 import * as media from "@/server/listing-media";
@@ -268,6 +271,13 @@ async function handle(req: NextRequest, context: Context) {
       req.method === "POST"
     )
       return response(await refreshListingIndicators(actor, body));
+    if (
+      resource === "catalog" &&
+      key === "competition" &&
+      path.length === 2 &&
+      req.method === "POST"
+    )
+      return response(await refreshListingCompetition(actor, body));
     if (
       resource === "offers" &&
       key &&

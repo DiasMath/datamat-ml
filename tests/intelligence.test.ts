@@ -27,6 +27,12 @@ import {
 } from "../src/server/mercadolivre";
 import { refreshCatalog } from "../src/server/catalog-refresh";
 import { saveOffer, workspace } from "../src/server/services";
+import {
+  listingCompetition,
+  listingOverview,
+} from "../src/domain/listing-overview";
+import { refreshListingCompetition } from "../src/server/listing-indicators";
+import { publicConnection } from "../src/server/mercadolivre";
 let actor: Actor;
 const connectionId = key("juntos-com", "mercadolivre");
 before(async () => {
@@ -447,6 +453,89 @@ async function mocked<T>(
   }
 }
 let importedId = "";
+test("catalogue overview excludes stale, inconsistent, foreign and incompatible results instead of inventing a winning status", () => {
+  const clock = Date.UTC(2026, 9, 15, 12);
+  const offer = {
+    id: "o",
+    organization_id: "datamat",
+    store_id: "s",
+    version: 2,
+    title: "Produto",
+    price: "100",
+    ml_id: "MLB1",
+    ml: { catalogListing: true, sellerId: "111", authVersion: 9 },
+  };
+  const account = {
+    store_id: "s",
+    provider: "mercadolivre",
+    status: "connected",
+    external_account: "111",
+    auth_version: 9,
+  };
+  const snapshot = {
+    offer_id: "o",
+    store_id: "s",
+    offer_version: 2,
+    seller_id: "111",
+    auth_version: 9,
+    status: "losing",
+    currentPrice: "100",
+    priceToWin: "95",
+    observed_at: new Date(clock - 60000).toISOString(),
+  };
+  assert.equal(
+    listingCompetition(offer, account, snapshot, clock).status,
+    "losing",
+  );
+  for (const patch of [
+    { observed_at: new Date(clock - 16 * 60000).toISOString() },
+    { observed_at: new Date(clock + 1000).toISOString() },
+    { auth_version: 10 },
+    { seller_id: "999" },
+    { store_id: "foreign" },
+    { organization_id: "foreign" },
+    { offer_version: 3 },
+    { consistent: false },
+    { currentPrice: "101" },
+    { status: "unexpected" },
+  ]) {
+    const result = listingCompetition(
+      offer,
+      account,
+      { ...snapshot, ...patch },
+      clock,
+    );
+    assert.equal(result.available, false);
+    assert.equal(result.status, null);
+    assert.equal(result.priceToWin, null);
+  }
+  const global = listingOverview(
+    [offer, { ...offer, id: "other" }],
+    [{ id: "s", name: "Loja" }],
+    [account],
+    [snapshot],
+    clock,
+  );
+  assert.equal(global.competition.total, 2);
+  assert.equal(global.competition.losing, 1);
+  assert.equal(global.competition.winning, 0);
+  assert.equal(global.competition.unavailable, 1);
+  const partial = publicConnection({
+    ...account,
+    last_catalog_sync_at: new Date(clock).toISOString(),
+    has_more: true,
+  });
+  assert.equal(partial.last_catalog_completed_at, null);
+  const complete = publicConnection({
+    ...account,
+    last_catalog_sync_at: new Date(clock).toISOString(),
+    has_more: false,
+  });
+  assert.equal(
+    complete.last_catalog_completed_at,
+    new Date(clock).toISOString(),
+  );
+});
 test("media-only and stock changes update the official snapshot, version and audit while preserving costs", async () => {
   const id = "MLB987001",
     made = await saveOffer(actor, {
@@ -616,4 +705,100 @@ test("catalogue refresh validates role, organization, store and authorization be
     /autorização mudou/,
   );
   await put("offers", o.id, o);
+});
+test("batch competition validates the complete scope before requests, isolates denied resources and keeps the overview independent of listing filters", async () => {
+  const offers: Record<string, any>[] = [];
+  for (let i = 0; i < 2; i++) {
+    const row = await saveOffer(actor, {
+      storeId: "juntos-com",
+      name: "Competição em lote " + randomUUID(),
+      title: "Competição em lote " + i + randomUUID(),
+      mlId: "MLB" + (987100 + i),
+      type: "unit",
+      status: "active",
+      price: "100",
+    });
+    const own: Record<string, any> = {
+      ...row,
+      ml: {
+        catalogListing: true,
+        sellerId: "111",
+        authVersion: 9,
+        currencyId: "BRL",
+      },
+    };
+    await put("offers", own.id, own);
+    offers.push(own);
+  }
+  await assert.rejects(
+    () =>
+      refreshListingCompetition(
+        { ...actor, role: "viewer" },
+        { ids: [offers[0].id] },
+      ),
+    /consulta/,
+  );
+  await assert.rejects(() =>
+    refreshListingCompetition(actor, { ids: Array(6).fill(offers[0].id) }),
+  );
+  const foreign: Record<string, any> = {
+    ...offers[1],
+    organization_id: "foreign",
+  };
+  await put("offers", foreign.id, foreign);
+  await mocked(
+    () => {
+      throw new Error("No provider call before full validation");
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          refreshListingCompetition(actor, { ids: offers.map((o) => o.id) }),
+        /não encontrado/,
+      );
+    },
+  );
+  await put("offers", offers[1].id, offers[1]);
+  const result = await mocked(
+    (url) => {
+      const id = url.pathname.split("/")[2];
+      if (url.pathname.endsWith("/price_to_win"))
+        return id === offers[0].ml_id
+          ? json({
+              item_id: id,
+              status: "losing",
+              current_price: 100,
+              price_to_win: 95,
+              consistent: true,
+            })
+          : json({ message: "unavailable" }, 403);
+      return json(item(id, { catalog_listing: true }));
+    },
+    () => refreshListingCompetition(actor, { ids: offers.map((o) => o.id) }),
+  );
+  assert.equal(result.results[0].updated, true);
+  assert.equal(result.results[1].updated, false);
+  assert.equal((await get("offers", offers[0].id))!.price, "100");
+  const catalogue = await workspace(
+    actor,
+    new URLSearchParams({ store: "juntos-com", q: offers[0].title }),
+  );
+  assert.equal(catalogue.offers.length, 1);
+  assert.ok(
+    catalogue.listingOverview.competition.rows.some(
+      (r) => r.id === offers[1].id,
+    ),
+  );
+  assert.equal(
+    catalogue.listingOverview.competition.rows.find(
+      (r) => r.id === offers[0].id,
+    )!.status,
+    "losing",
+  );
+  assert.equal(
+    catalogue.listingOverview.competition.rows.find(
+      (r) => r.id === offers[1].id,
+    )!.status,
+    null,
+  );
 });

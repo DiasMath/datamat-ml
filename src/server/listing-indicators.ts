@@ -1,8 +1,61 @@
 import { z } from "zod";
 import { canWrite, authorizeStore, HttpError, type Actor } from "./access";
 import { get } from "./db";
-import { refreshMetrics } from "./mercadolivre";
+import { refreshMetrics, refreshCompetition } from "./mercadolivre";
 import { refreshFinancialCosts } from "./ml-financial-sync";
+export async function refreshListingCompetition(
+  actor: Actor,
+  payload: unknown,
+) {
+  canWrite(actor);
+  const p = z
+    .object({ ids: z.array(z.string().min(1).max(200)).min(1).max(5) })
+    .strict()
+    .parse(payload);
+  const offers = await Promise.all(
+    [...new Set(p.ids)].map((id) => get("offers", id)),
+  );
+  for (const offer of offers) {
+    if (!offer || offer.organization_id !== actor.organization_id)
+      throw new HttpError(404, "Anúncio não encontrado");
+    authorizeStore(actor, offer.store_id);
+    if (
+      offer.origin === "reference" ||
+      !offer.ml?.catalogListing ||
+      !offer.ml.sellerId ||
+      !/^MLB\d+$/.test(offer.ml_id || "")
+    )
+      throw new HttpError(422, "Selecione anúncios próprios de catálogo");
+  }
+  const deadline = Date.now() + 55000;
+  const results = [];
+  for (const offer of offers) {
+    if (!offer) continue;
+    if (Date.now() > deadline - 10000) {
+      results.push({
+        id: offer.id,
+        updated: false,
+        deferred: true,
+        error: "Consulta pendente; continue a atualização.",
+      });
+      continue;
+    }
+    try {
+      await refreshCompetition(actor, offer.id, deadline);
+      results.push({ id: offer.id, updated: true });
+    } catch (error) {
+      results.push({
+        id: offer.id,
+        updated: false,
+        error:
+          error instanceof HttpError
+            ? error.message
+            : "Competitividade indisponível no ML.",
+      });
+    }
+  }
+  return { results };
+}
 export async function refreshListingIndicators(actor: Actor, payload: unknown) {
   canWrite(actor);
   const p = z

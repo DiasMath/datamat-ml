@@ -56,7 +56,7 @@ import {
   validateQuote,
   safePictureUrl,
 } from "./mercadolivre";
-import { listingCounts } from "../domain/listing-table";
+import { listingCounts, listingFinancialStatus } from "../domain/listing-table";
 import { draftMedia } from "./listing-media";
 import { listingQuality } from "../domain/marketplace";
 
@@ -1105,10 +1105,8 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
         connectionMap.get(o.store_id),
         actor.organization_id,
       );
-      const effective = effectiveMlCosts(
-        c ? parse(c.data_json) : emptyCosts(),
-        enriched,
-      );
+      const rawCosts = c ? parse(c.data_json) : emptyCosts();
+      const effective = effectiveMlCosts(rawCosts, enriched);
       const calculation = calculate(
         o.ml?.variablePrices ? null : o.price,
         effective,
@@ -1147,20 +1145,24 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
           : enriched.mlFinancial?.expires_at > Date.now()
             ? enriched.mlFinancial
             : null;
-      const shipping = effective.shipping;
+      const financialStatus = listingFinancialStatus(
+        enriched,
+        rawCosts,
+        effective,
+        calculation.pending,
+        tariff,
+      );
       return {
         ...enriched,
         metrics7d,
+        financialStatus,
         settlementEstimate:
-          tariff && shipping != null
+          financialStatus.settlement != null
             ? {
-                amount: new Decimal(o.price)
-                  .minus(tariff.total)
-                  .minus(shipping)
-                  .toFixed(2),
-                fee: tariff.total,
-                shipping,
-                quotedAt: tariff.quoted_at,
+                amount: financialStatus.settlement,
+                fee: financialStatus.tariff!.amount,
+                shipping: financialStatus.shipping!.amount,
+                quotedAt: tariff?.quoted_at || null,
                 estimated: true,
               }
             : null,
@@ -1227,6 +1229,19 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     if (listing === "local" && o.ml?.sellerId && o.origin !== "reference")
       return false;
     if (query.get("pending") === "yes" && !o.pending.length) return false;
+    if (
+      query.get("pending") === "ml" &&
+      o.financialStatus.tariff &&
+      o.financialStatus.shipping
+    )
+      return false;
+    if (
+      query.get("pending") === "ownCosts" &&
+      !o.financialStatus.ownPending.length
+    )
+      return false;
+    if (query.get("pending") === "ready" && !o.financialStatus.ready)
+      return false;
     if (
       query.get("pending") === "costs" &&
       !o.costs_stale &&

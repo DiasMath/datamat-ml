@@ -1,4 +1,71 @@
+import Decimal from "decimal.js";
+import type { Costs } from "./finance";
 type Row = Record<string, any>;
+
+// Costs passed here already include only compatible, unexpired ML conditions.
+// Keep the operator's exceptions visible, including an explicit zero.
+export function listingFinancialStatus(
+  offer: Row,
+  raw: Costs,
+  effective: Costs,
+  pending: string[],
+  quote: Row | null,
+) {
+  const manualPercent = raw.mlPercent != null,
+    manualFixed = raw.mlFixed != null;
+  const price = offer.ml?.variablePrices ? null : offer.price;
+  const fee =
+    price != null && effective.mlPercent != null && effective.mlFixed != null
+      ? new Decimal(price)
+          .mul(effective.mlPercent)
+          .div(100)
+          .add(effective.mlFixed)
+          .toFixed(2)
+      : price != null && !manualPercent && !manualFixed && quote?.total != null
+        ? new Decimal(quote.total).toFixed(2)
+        : null;
+  const shipping =
+    effective.shipping == null
+      ? null
+      : new Decimal(effective.shipping).toFixed(2);
+  return {
+    tariff:
+      fee == null
+        ? null
+        : {
+            amount: fee,
+            percent: effective.mlPercent,
+            fixed: effective.mlFixed,
+            source:
+              manualPercent && manualFixed
+                ? "manual"
+                : manualPercent || manualFixed
+                  ? "mixed"
+                  : "ml",
+          },
+    shipping:
+      shipping == null
+        ? null
+        : {
+            amount: shipping,
+            source: raw.shipping != null ? "manual" : "ml",
+          },
+    ownPending: pending.filter(
+      (label) =>
+        ![
+          "Tarifa percentual ML",
+          "Cobrança fixa ML",
+          "Frete da loja",
+          "Preço maior que zero",
+        ].includes(label),
+    ),
+    ready: pending.length === 0,
+    settlement:
+      fee != null && shipping != null && price != null
+        ? new Decimal(price).minus(fee).minus(shipping).toFixed(2)
+        : null,
+  };
+}
 export function listingCounts(offers: Row[]) {
   const own = offers.filter(
     (o) =>

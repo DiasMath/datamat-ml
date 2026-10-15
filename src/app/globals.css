@@ -1489,6 +1489,38 @@ fieldset.form-grid {
   white-space: nowrap;
   padding: 0;
 }
+.listing-cost-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 5px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+  text-align: left;
+  line-height: 1.4;
+}
+.listing-cost-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.listing-cost-link.orange {
+  color: var(--orange);
+}
+.listing-cost-link.green {
+  color: var(--green);
+}
+.listing-source {
+  font-size: 9px;
+  font-weight: 500;
+}
+.offers-table .numeric .listing-cost-link {
+  margin-left: auto;
+  justify-content: flex-end;
+  text-align: right;
+}
 .row-selected {
   background: #ffb03f07 !important;
 }

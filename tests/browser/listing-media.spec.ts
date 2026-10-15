@@ -2,6 +2,7 @@ import { test, expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID, createHash } from "node:crypto";
 import { db, key } from "../../src/server/db";
 import { oauthPopupResponse } from "../../src/server/oauth-popup";
+import { financialContext } from "../../src/domain/ml-financial";
 const origin = { Origin: "http://localhost:3100" },
   connectionId = key("juntos-com", "mercadolivre");
 const png = Buffer.from(
@@ -174,6 +175,106 @@ test("operational listings show photos, stock, conditions, honest estimates and 
     path: "test-results/listings-operational-mobile.png",
     fullPage: true,
   });
+});
+test("listings separate known ML fees from pending own costs, filter actionable rows and open costs in the side preview", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  for (const [i, row] of rows.entries()) {
+    const costs = (await db().collection("costs").doc(row.id).get()).data()!;
+    const ml = { ...row.ml, freeShipping: false };
+    const raw =
+      i === 0
+        ? { ...JSON.parse(costs.data_json), shipping: null }
+        : {
+            goods: "0",
+            packaging: "0",
+            advertising: "0",
+            other: "0",
+            otherDescription: "",
+            mlPercent: "0",
+            mlFixed: "0",
+            shipping: "0",
+            taxRate: "0",
+            taxBase: "price",
+            managementRate: "0",
+            managementBase: "price",
+          };
+    await db()
+      .collection("offers")
+      .doc(row.id)
+      .set({ ...row, ml });
+    await db()
+      .collection("costs")
+      .doc(row.id)
+      .set({ ...costs, data_json: JSON.stringify(raw) });
+    await db()
+      .collection("ml_financials")
+      .doc(row.id)
+      .set({
+        organization_id: row.organization_id,
+        offer_id: row.id,
+        store_id: row.store_id,
+        seller_id: "111",
+        auth_version: 998,
+        context: financialContext({ ...row, ml }),
+        price: row.price,
+        total: "15.00",
+        mlPercent: "15",
+        mlFixed: "0",
+        shipping: { amount: null },
+        quoted_at: new Date().toISOString(),
+        expires_at: Date.now() + 1800000,
+      });
+  }
+  await page.goto("/anuncios?store=juntos-com&q=" + encodeURIComponent(title));
+  const first = page
+    .locator(".offers-table tbody tr")
+    .filter({ hasText: "SKU MIDIA-0" });
+  const second = page
+    .locator(".offers-table tbody tr")
+    .filter({ hasText: "SKU MIDIA-1" });
+  await expect(first).toContainText("Tarifa: R$ 15,00");
+  await expect(first).toContainText("Tarifa disponível");
+  await expect(first).toContainText("custos próprios pendentes");
+  await expect(second).toContainText("100,00");
+  await expect(second).toContainText("Manual");
+  await expect(second).toContainText("Margem: 100%");
+  const original = page.url();
+  await first
+    .getByRole("button", { name: "Conferir frete da loja", exact: true })
+    .click();
+  await expect(
+    page.locator("dialog.offer-preview .pricing-cost-editor"),
+  ).toBeVisible();
+  expect(page.url()).toBe(original);
+  await page.keyboard.press("Escape");
+  for (const [filter, sku] of [
+    ["ml", "MIDIA-0"],
+    ["ownCosts", "MIDIA-0"],
+    ["ready", "MIDIA-1"],
+  ]) {
+    await page.getByLabel("Filtrar pendências").selectOption(filter);
+    await expect(page.locator(".offers-table tbody tr")).toHaveCount(1);
+    await expect(page.locator(".offers-table tbody")).toContainText(sku);
+    await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+  }
+  await page.getByLabel("Filtrar pendências").selectOption("");
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    if ([390, 1440].includes(width))
+      await page.screenshot({
+        path: `test-results/listings-costs-${width}.png`,
+        fullPage: true,
+      });
+  }
 });
 test("indicator requests show loading and update cached seven-day data without losing filters", async ({
   page,

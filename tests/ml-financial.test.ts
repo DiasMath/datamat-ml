@@ -34,7 +34,8 @@ import {
   normalizeSalePrice,
   normalizePromotions,
 } from "../src/domain/ml-financial";
-import { emptyCosts } from "../src/domain/finance";
+import { emptyCosts, type Costs } from "../src/domain/finance";
+import { listingFinancialStatus } from "../src/domain/listing-table";
 import { todayReport } from "../src/server/today";
 let actor: Actor;
 const storeId = "juntos-com",
@@ -49,7 +50,7 @@ const ml = {
   logisticType: "drop_off",
   freeShipping: true,
 };
-const rawCosts = {
+const rawCosts: Costs = {
   ...emptyCosts(),
   goods: "30",
   packaging: "1",
@@ -159,6 +160,43 @@ test("automatic ML costs preserve manual zero, missing values, context and autho
     ).mlFinancial,
     null,
   );
+});
+test("listing costs distinguish automatic, mixed, missing and expired sources without turning unknown freight into zero", () => {
+  const o = offer(),
+    enriched = { ...o, mlFinancial: snapshot(o) };
+  const summarize = (raw = rawCosts, value: Row = enriched) =>
+    listingFinancialStatus(
+      value,
+      raw,
+      effectiveMlCosts(raw, value),
+      ["Mercadoria (oferta inteira)", "Frete da loja"],
+      null,
+    );
+  const automatic = summarize();
+  assert.equal(automatic.tariff?.amount, "14.00");
+  assert.equal(automatic.tariff?.source, "ml");
+  assert.equal(automatic.shipping?.source, "ml");
+  assert.equal(automatic.settlement, "78.00");
+  assert.deepEqual(automatic.ownPending, ["Mercadoria (oferta inteira)"]);
+  const mixed = summarize({ ...rawCosts, mlPercent: "0", shipping: "0" });
+  assert.equal(mixed.tariff?.source, "mixed");
+  assert.equal(mixed.tariff?.amount, "2.00");
+  assert.equal(mixed.shipping?.source, "manual");
+  assert.equal(mixed.settlement, "98.00");
+  const buyerPaid = summarize(rawCosts, {
+    ...enriched,
+    mlFinancial: { ...snapshot(o), shipping: { amount: null } },
+  });
+  assert.equal(buyerPaid.tariff?.amount, "14.00");
+  assert.equal(buyerPaid.shipping, null);
+  assert.equal(buyerPaid.settlement, null);
+  const expired = summarize(rawCosts, {
+    ...enriched,
+    mlFinancial: { ...snapshot(o), expires_at: 0 },
+  });
+  assert.equal(expired.tariff, null);
+  assert.equal(expired.shipping, null);
+  assert.equal(expired.settlement, null);
 });
 test("shipping uses the API quote without subtracting a discount twice and never infers buyer-paid shipping as zero", () => {
   const data = {

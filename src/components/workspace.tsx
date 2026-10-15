@@ -1943,13 +1943,13 @@ function Offers({
             {
               id: "conditions",
               label: "Condições",
-              width: 125,
+              width: 150,
               value: (o: Row) => o.ml?.listingTypeId,
             },
             {
               id: "settlement",
               label: "Recebe (estim.)",
-              width: 125,
+              width: 155,
               kind: "number" as const,
               value: (o: Row) => o.settlementEstimate?.amount,
             },
@@ -1978,7 +1978,7 @@ function Offers({
       {
         id: "pending",
         label: "Pendências",
-        width: 130,
+        width: 150,
         kind: "number" as const,
         value: (o: Row) => o.pending.length,
       },
@@ -2151,6 +2151,9 @@ function Offers({
             <option value="">Pendências</option>
             <option value="yes">Qualquer pendência</option>
             <option value="costs">Custos a revisar</option>
+            <option value="ml">Tarifa / frete a conferir</option>
+            <option value="ownCosts">Custos próprios pendentes</option>
+            <option value="ready">Margem calculável</option>
           </select>
         </label>
       </div>
@@ -2187,6 +2190,9 @@ function Offers({
                     __missing: "Não informado",
                     yes: "Qualquer",
                     costs: "Custos",
+                    ml: "Tarifa / frete a conferir",
+                    ownCosts: "Custos próprios pendentes",
+                    ready: "Margem calculável",
                     catalog: "Catálogo",
                     traditional: "Tradicionais",
                     local: "Cadastros locais / referências",
@@ -2452,19 +2458,44 @@ function Offers({
                     <>
                       <td>
                         <span>{listingType(o.ml?.listingTypeId)}</span>
+                        <button
+                          className={
+                            "listing-cost-link " +
+                            (o.financialStatus?.tariff ? "" : "orange")
+                          }
+                          onClick={() => onPreview(o.id, "costs")}
+                          title={
+                            o.financialStatus?.tariff
+                              ? `Tarifa usada na estimativa. ${o.financialStatus.tariff.percent ?? "—"}% + ${money(o.financialStatus.tariff.fixed)}. Abra para conferir as fontes e editar custos.`
+                              : "Consulte os indicadores ML ou informe uma exceção manual nos custos."
+                          }
+                        >
+                          {o.financialStatus?.tariff
+                            ? `Tarifa: ${money(o.financialStatus.tariff.amount)}`
+                            : "Tarifa a consultar"}
+                          <span
+                            className={
+                              "listing-source " +
+                              (o.financialStatus?.tariff?.source === "ml"
+                                ? "green"
+                                : "muted")
+                            }
+                          >
+                            {o.financialStatus?.tariff?.source === "ml"
+                              ? "ML"
+                              : o.financialStatus?.tariff?.source === "manual"
+                                ? "Manual"
+                                : o.financialStatus?.tariff
+                                  ? "ML + manual"
+                                  : ""}
+                          </span>
+                        </button>
                         <small>
                           {o.ml?.freeShipping == null
                             ? "Frete não consultado"
                             : o.ml.freeShipping
                               ? "Oferece frete grátis"
                               : "Frete por conta do comprador"}
-                        </small>
-                        <small>
-                          {o.ml?.catalogListing
-                            ? "Catálogo"
-                            : o.ml
-                              ? "Tradicional"
-                              : "Cadastro local"}
                         </small>
                       </td>
                       <td className="numeric">
@@ -2473,10 +2504,38 @@ function Offers({
                             ? money(o.settlementEstimate.amount)
                             : "—"}
                         </span>
+                        <button
+                          className={
+                            "listing-cost-link " +
+                            (o.financialStatus?.shipping ? "" : "orange")
+                          }
+                          onClick={() => onPreview(o.id, "costs")}
+                          title="Custo do frete para a loja. A cotação ML é estimada; o custo efetivo depende do envio. Frete pago pelo comprador não comprova custo zero para o vendedor."
+                        >
+                          {o.financialStatus?.shipping
+                            ? `Frete: ${money(o.financialStatus.shipping.amount)}`
+                            : "Conferir frete da loja"}
+                          {o.financialStatus?.shipping && (
+                            <span
+                              className={
+                                "listing-source " +
+                                (o.financialStatus.shipping.source === "ml"
+                                  ? "green"
+                                  : "muted")
+                              }
+                            >
+                              {o.financialStatus.shipping.source === "ml"
+                                ? "ML · estim."
+                                : "Manual"}
+                            </span>
+                          )}
+                        </button>
                         <small>
                           {o.settlementEstimate
-                            ? "Após tarifa + frete · estimado"
-                            : "Aguardando custos ML ou frete informado"}
+                            ? "Antes dos custos próprios"
+                            : o.financialStatus?.tariff
+                              ? "Tarifa disponível"
+                              : "Estimativa incompleta"}
                         </small>
                       </td>
                       <td>
@@ -2538,6 +2597,37 @@ function Offers({
                   )}
 
                   <td>
+                    {o.financialStatus?.ownPending.length > 0 && (
+                      <button
+                        className="listing-cost-link orange"
+                        title={o.financialStatus.ownPending.join(", ")}
+                        onClick={() => onPreview(o.id, "costs")}
+                      >
+                        {o.financialStatus.ownPending.length}{" "}
+                        {o.financialStatus.ownPending.length === 1
+                          ? "custo próprio pendente"
+                          : "custos próprios pendentes"}
+                      </button>
+                    )}
+                    {o.financialStatus?.ready && (
+                      <button
+                        className={
+                          "listing-cost-link " +
+                          (Number(o.calculation.margin) < 0
+                            ? "orange"
+                            : "green")
+                        }
+                        title="Margem de contribuição estimada com os custos disponíveis. Abra para conferir a precificação."
+                        onClick={() => onPreview(o.id, "costs")}
+                      >
+                        Margem:{" "}
+                        {Number(o.calculation.marginPercent).toLocaleString(
+                          "pt-BR",
+                          { maximumFractionDigits: 1 },
+                        )}
+                        %
+                      </button>
+                    )}
                     {o.pending.length ? (
                       <button
                         className="pending-count"

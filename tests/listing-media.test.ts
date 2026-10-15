@@ -364,9 +364,59 @@ test("listing estimates normalize money and hide expired quotes or metrics from 
   try {
     const current = await read();
     assert.equal(current.settlementEstimate.amount, "75.00");
+    assert.equal(current.financialStatus.tariff.source, "ml");
+    assert.equal(current.financialStatus.tariff.amount, "15.00");
+    assert.equal(current.financialStatus.shipping.source, "manual");
+    assert.ok(
+      current.financialStatus.ownPending.includes(
+        "Mercadoria (oferta inteira)",
+      ),
+    );
     assert.equal(current.metrics7d.paidOrders, 0);
     const quote = (await get("ml_current_quotes", offer.id))!;
     await put("ml_current_quotes", offer.id, { ...quote, expires_at: 0 });
+    assert.equal((await read()).settlementEstimate, null);
+    // Operator exceptions must agree with pricing, even when they are zero;
+    // a cached quote must never override them in the listings table.
+    await put("ml_current_quotes", offer.id, quote);
+    await put("costs", offer.id, {
+      ...costs,
+      data_json: JSON.stringify({
+        goods: "0",
+        packaging: "0",
+        advertising: "0",
+        other: "0",
+        otherDescription: "",
+        mlPercent: "0",
+        mlFixed: "0",
+        shipping: "0",
+        taxRate: "0",
+        taxBase: "price",
+        managementRate: "0",
+        managementBase: "price",
+      }),
+    });
+    const manual = await read();
+    assert.equal(manual.settlementEstimate.amount, "100.00");
+    assert.equal(manual.financialStatus.tariff.source, "manual");
+    assert.equal(manual.financialStatus.shipping.amount, "0.00");
+    assert.equal(manual.calculation.margin, "100.00");
+    assert.equal(manual.financialStatus.ready, true);
+    for (const [filter, included] of [
+      ["ready", true],
+      ["ml", false],
+      ["ownCosts", false],
+    ] as const) {
+      const result = await workspace(
+        actor,
+        new URLSearchParams({ store: "juntos-com", pending: filter }),
+      );
+      assert.equal(
+        result.offers.some((row: any) => row.id === offer.id),
+        included,
+      );
+    }
+    await put("offers", offer.id, { ...offer, ml: { variablePrices: true } });
     assert.equal((await read()).settlementEstimate, null);
     await put("connections", connectionId, {
       ...original,

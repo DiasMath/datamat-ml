@@ -5,7 +5,7 @@ import {
   useUnsavedRegistry,
   useUnsavedChanges,
 } from "./confirmation";
-import { useSmartTable } from "./smart-table";
+import { useSmartTable, type TableColumn } from "./smart-table";
 import BulkOffers from "./bulk-offers";
 import { ListingChecklist, MarketplacePerformance } from "./marketplace-panels";
 import Analytics from "./analytics";
@@ -877,7 +877,14 @@ export default function Workspace({ view }: { view: string[] }) {
           </div>
         </header>
         <main
-          className={"content " + (home ? "today-content" : "")}
+          className={
+            "content " +
+            (home
+              ? "today-content"
+              : section === "anuncios" && !offerId
+                ? "offers-content"
+                : "")
+          }
           aria-busy={loading || !contentReady || busy}
         >
           {home && <h1 className="sr-only">Hoje</h1>}
@@ -1889,10 +1896,8 @@ function Offers({
       o.origin !== "reference" &&
       (!selected.length || selected.includes(o.id)),
   );
-  const table = useSmartTable<Row>(
-    "offers",
-    data.offers,
-    [
+  const columns = useMemo<TableColumn<Row>[]>(
+    () => [
       ...(canWrite
         ? [{ id: "select", label: "", width: 44, fixed: true }]
         : []),
@@ -1991,23 +1996,24 @@ function Offers({
       },
       { id: "open", label: "", width: 48, fixed: true },
     ],
-    {
-      sort: {
-        id: sort,
-        direction:
-          q.get("sortDir") === "asc" || (!q.get("sortDir") && sort === "name")
-            ? "asc"
-            : "desc",
-      },
-      onSort: (next) => {
-        const params = new URLSearchParams(query);
-        params.set("sort", next.id);
-        params.set("sortDir", next.direction);
-        params.delete("page");
-        navigate("anuncios", params);
-      },
-    },
+    [canWrite, operational],
   );
+  const table = useSmartTable<Row>("offers", data.offers, columns, {
+    sort: {
+      id: sort,
+      direction:
+        q.get("sortDir") === "asc" || (!q.get("sortDir") && sort === "name")
+          ? "asc"
+          : "desc",
+    },
+    onSort: (next) => {
+      const params = new URLSearchParams(query);
+      params.set("sort", next.id);
+      params.set("sortDir", next.direction);
+      params.delete("page");
+      navigate("anuncios", params);
+    },
+  });
   const sorted = table.rows;
   const pages = Math.max(1, Math.ceil(sorted.length / size)),
     current = Math.min(page, pages),
@@ -2327,6 +2333,7 @@ function Offers({
               "offers-table smart-table " + (operational ? "operational" : "")
             }
             {...table.props}
+            style={{ ...table.props.style, width: "100%" }}
           >
             {table.header({
               select: (

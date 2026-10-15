@@ -2768,6 +2768,15 @@ h3,
 .content {
   overflow-wrap: anywhere;
 }
+.content.offers-content {
+  max-width: none;
+  padding-inline: 12px;
+}
+@media (max-width: 620px) {
+  .content.offers-content {
+    padding-inline: 8px;
+  }
+}
 .stats-grid,
 .today-grid,
 .two-columns,

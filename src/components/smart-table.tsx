@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Decimal from "decimal.js";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
@@ -77,28 +77,32 @@ export function useSmartTable<T>(
     previousSort.current = sortKey;
   }, [sortKey, id, options.pageId, search, router]);
   const column = columns.find((c) => c.id === sort?.id && c.value);
-  const rows =
-    column && sort
-      ? [...data].sort((a, b) => {
-          let av = column.value!(a),
-            bv = column.value!(b);
-          if (column.kind === "date") {
-            av = av == null ? null : Date.parse(String(av));
-            bv = bv == null ? null : Date.parse(String(bv));
-            if (!Number.isFinite(av)) av = null;
-            if (!Number.isFinite(bv)) bv = null;
-          }
-          if (av == null || av === "") return bv == null || bv === "" ? 0 : 1;
-          if (bv == null || bv === "") return -1;
-          const order =
-            column.kind === "number"
-              ? new Decimal(av).comparedTo(bv)
-              : column.kind === "date"
-                ? Number(av) - Number(bv)
-                : collator.compare(String(av), String(bv));
-          return sort.direction === "asc" ? order : -order;
-        })
-      : data;
+  const direction = sort?.direction;
+  const rows = useMemo(
+    () =>
+      column && direction
+        ? [...data].sort((a, b) => {
+            let av = column.value!(a),
+              bv = column.value!(b);
+            if (column.kind === "date") {
+              av = av == null ? null : Date.parse(String(av));
+              bv = bv == null ? null : Date.parse(String(bv));
+              if (!Number.isFinite(av)) av = null;
+              if (!Number.isFinite(bv)) bv = null;
+            }
+            if (av == null || av === "") return bv == null || bv === "" ? 0 : 1;
+            if (bv == null || bv === "") return -1;
+            const order =
+              column.kind === "number"
+                ? new Decimal(av).comparedTo(bv)
+                : column.kind === "date"
+                  ? Number(av) - Number(bv)
+                  : collator.compare(String(av), String(bv));
+            return direction === "asc" ? order : -order;
+          })
+        : data,
+    [data, column, direction],
+  );
   function order(next: TableColumn<T>) {
     const value: NonNullable<TableSort> = {
       id: next.id,

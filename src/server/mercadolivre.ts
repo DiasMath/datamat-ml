@@ -1592,6 +1592,20 @@ async function syncListingsInside(
         request_id: p.requestId,
         created_at: now(),
         message,
+        ...(!(e instanceof HttpError) && e instanceof Error
+          ? {
+              error_type: e.name,
+              error_code:
+                "code" in e && typeof e.code === "number" ? e.code : null,
+              error_detail:
+                !/(bearer|token|credential|secret|password|private.?key|api.?key)/i.test(
+                  e.message,
+                ) && !(e instanceof z.ZodError)
+                  ? e.message.slice(0, 500)
+                  : null,
+              response_resource: responseResource,
+            }
+          : {}),
         ...(invalidFields.length
           ? {
               response_resource: responseResource,

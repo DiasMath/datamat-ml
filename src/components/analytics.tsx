@@ -54,6 +54,7 @@ export default function Analytics({
   navigate,
   onOpen,
   onChanged,
+  onFreshness,
 }: {
   data: Row;
   store: string;
@@ -61,6 +62,7 @@ export default function Analytics({
   navigate: Navigate;
   onOpen: (id: string) => void;
   onChanged: () => void;
+  onFreshness?: (report: AnalyticsReport | null, error?: string) => void;
 }) {
   const today = businessDay();
   const currentHour = Number(
@@ -129,6 +131,7 @@ export default function Analytics({
     if (lastKey.current !== key) {
       setReport(null);
       setError("");
+      onFreshness?.(null);
       lastKey.current = key;
     }
     async function load(refresh: boolean, manual = false) {
@@ -157,10 +160,13 @@ export default function Analytics({
         if (!disposed) {
           setReport(result);
           setError("");
+          onFreshness?.(result);
         }
       } catch (e) {
-        if (!disposed && !controller.signal.aborted)
+        if (!disposed && !controller.signal.aborted) {
           setError((e as Error).message);
+          onFreshness?.(null, (e as Error).message);
+        }
       } finally {
         running = false;
         if (!disposed) {
@@ -186,7 +192,7 @@ export default function Analytics({
       if (timer) clearTimeout(timer);
       trigger.current = null;
     };
-  }, [key, live, paused, hidden, canRefresh]);
+  }, [key, live, paused, hidden, canRefresh, onFreshness]);
   const relevantOffers = data.offers.filter(
     (o: Row) => store === "all" || o.store_id === store,
   );

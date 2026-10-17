@@ -390,7 +390,14 @@ function routineResponse(url: URL) {
   if (url.pathname === "/orders/99")
     return json({ id: 99, seller: { id: 111 } });
   if (url.pathname === "/orders/search") {
+    const start = Date.parse(url.searchParams.get("order.date_created.from")!);
     const end = Date.parse(url.searchParams.get("order.date_created.to")!);
+    // Keep the sale in the last requested business day, even in the first hour
+    // after midnight in Brasília (subtracting one hour would select yesterday).
+    const dayStart = Math.max(
+      start,
+      Date.parse(businessDay(new Date(end - 1)) + "T00:00:00-03:00"),
+    );
     return json({
       paging: { total: 1 },
       results: [
@@ -398,7 +405,7 @@ function routineResponse(url: URL) {
           id: 99,
           seller: { id: 111 },
           date_created: new Date(
-            Math.min(Date.now() - 60000, end - 3600000),
+            Math.floor((dayStart + end) / 2),
           ).toISOString(),
           status: "paid",
           currency_id: "BRL",

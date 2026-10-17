@@ -100,6 +100,11 @@ import OfferPreview from "./offer-preview";
 import CommandSearch from "./command-search";
 import WorkspaceClock from "./workspace-clock";
 import TodayFreshness from "./today-freshness";
+import WorkspaceFreshness, {
+  type AnalysisFreshness,
+} from "./workspace-freshness";
+import type { AnalyticsReport } from "../domain/analytics";
+import CopyCode from "./copy-code";
 import QuickTaskForm from "./quick-task-form";
 
 type Row = Record<string, any>;
@@ -174,6 +179,9 @@ export default function Workspace({ view }: { view: string[] }) {
   } | null>(null);
   const loadedContext = useRef("");
   const [loadedScope, setLoadedScope] = useState("");
+  const [consultationError, setConsultationError] = useState("");
+  const [analysisFreshness, setAnalysisFreshness] =
+    useState<AnalysisFreshness | null>(null);
   const indicatorResume = useRef<{ scope: string; ids: string[] } | null>(null);
   const previewChanged = useRef(false);
   const backgroundReload = useRef(false);
@@ -319,6 +327,19 @@ export default function Workspace({ view }: { view: string[] }) {
       "stale",
     ])
       dataQuery.delete(key);
+  const analysisScope = `${route}:${store}`;
+  const onAnalysisFreshness = useCallback(
+    (report: AnalyticsReport | null, error?: string) => {
+      setAnalysisFreshness((previous) => ({
+        scope: analysisScope,
+        report:
+          report ||
+          (error && previous?.scope === analysisScope ? previous.report : null),
+        error,
+      }));
+    },
+    [analysisScope],
+  );
   const home = section === "";
   const dataKey = home
     ? new URLSearchParams({ store }).toString()
@@ -372,6 +393,7 @@ export default function Workspace({ view }: { view: string[] }) {
     const background =
       backgroundReload.current && loadedContext.current === contextKey;
     backgroundReload.current = false;
+    setConsultationError("");
     if (!background) setLoading(true);
     if (loadedScope !== scopeKey) {
       setData(null);
@@ -418,6 +440,7 @@ export default function Workspace({ view }: { view: string[] }) {
           if (!background && (!home || loadedContext.current !== contextKey))
             setData(null);
           setLoadedScope(scopeKey);
+          setConsultationError(e.message);
           setToast({ text: e.message, error: true });
           setLoading(false);
         }
@@ -712,7 +735,9 @@ export default function Workspace({ view }: { view: string[] }) {
       : navigation.find((n) => n.path === section)?.title ||
         "Página não encontrada";
   return (
-    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <div
+      className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${section === "anuncios" && !offerId ? "offers-layout" : ""}`}
+    >
       <aside
         id="main-navigation"
         inert={mobile && !menu}
@@ -819,19 +844,40 @@ export default function Workspace({ view }: { view: string[] }) {
             </button>
             <div className="header-summary">
               <WorkspaceClock />
-              {home &&
-                (contentReady && data?.sales ? (
+              {contentReady && consultationError && !data ? (
+                <span className="today-freshness">
+                  <span className="dot" />
+                  Consulta indisponível
+                </span>
+              ) : contentReady &&
+                data &&
+                (section !== "analises" ||
+                  (analysisFreshness?.scope === analysisScope &&
+                    (analysisFreshness.report || analysisFreshness.error))) ? (
+                home && data.sales && !consultationError ? (
                   <TodayFreshness
                     sales={data.sales}
                     store={store}
                     navigate={navigate}
                   />
                 ) : (
-                  <span
-                    className="header-status-skeleton skeleton-bone"
-                    aria-hidden="true"
+                  <WorkspaceFreshness
+                    data={data}
+                    section={section}
+                    error={consultationError}
+                    analysis={
+                      analysisFreshness?.scope === analysisScope
+                        ? analysisFreshness
+                        : undefined
+                    }
                   />
-                ))}
+                )
+              ) : (
+                <span
+                  className="header-status-skeleton skeleton-bone"
+                  aria-hidden="true"
+                />
+              )}
             </div>
           </div>
           <div className="topbar-actions">
@@ -920,6 +966,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   <>
                     <button
                       className="button"
+                      aria-label="Exportar Excel"
                       disabled={busy}
                       onClick={async () => {
                         setBusy(true);
@@ -951,23 +998,25 @@ export default function Workspace({ view }: { view: string[] }) {
                       }}
                     >
                       <Download size={15} />
-                      Exportar Excel
+                      <span>Exportar Excel</span>
                     </button>
                     {canWrite && (
                       <>
                         <button
                           className="button"
+                          aria-label="Importar"
                           onClick={() => open("import")}
                         >
                           <Upload size={15} />
-                          Importar
+                          <span>Importar</span>
                         </button>
                         <button
                           className="button primary"
+                          aria-label="Novo anúncio"
                           onClick={() => open("offer")}
                         >
                           <Plus size={16} />
-                          Novo anúncio
+                          <span>Novo anúncio</span>
                         </button>
                       </>
                     )}
@@ -1436,6 +1485,7 @@ export default function Workspace({ view }: { view: string[] }) {
                   navigate={navigate}
                   onOpen={openOffer}
                   onChanged={() => setRefresh((n) => n + 1)}
+                  onFreshness={onAnalysisFreshness}
                 />
               )}
               {section === "historico" && (
@@ -1918,9 +1968,18 @@ function Offers({
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
+    const resize = () => {
+      toolbar.current
+        ?.querySelectorAll<HTMLDetailsElement>("details[open]")
+        .forEach((details) => {
+          details.open = false;
+        });
+    };
+    window.addEventListener("resize", resize);
     return () => {
       document.removeEventListener("pointerdown", close);
       document.removeEventListener("keydown", close);
+      window.removeEventListener("resize", resize);
     };
   }, []);
   const selectionQuery = new URLSearchParams(query);
@@ -1933,7 +1992,8 @@ function Offers({
   useEffect(() => {
     setSelected([]);
   }, [selectionKey]);
-  const sort = q.get("sort") || "updated",
+  const sort =
+      q.get("sort") === "stock" ? "updated" : q.get("sort") || "updated",
     page = Math.max(
       1,
       Number.isFinite(Number(q.get("page")))
@@ -1980,9 +2040,9 @@ function Offers({
             },
             {
               id: "sku",
-              label: "SKU / código ML",
+              label: "SKU",
               width: 160,
-              value: (o: Row) => o.sku || o.ml_id,
+              value: (o: Row) => o.sku,
             },
             {
               id: "status",
@@ -1999,13 +2059,6 @@ function Offers({
         width: operational ? 120 : 140,
         kind: "number" as const,
         value: (o: Row) => o.price,
-      },
-      {
-        id: "stock",
-        label: "Estoque",
-        width: 100,
-        kind: "number",
-        value: (o: Row) => o.ml?.availableQuantity,
       },
       ...(operational
         ? [
@@ -2240,20 +2293,12 @@ function Offers({
           <details
             className="listing-counts offers-counts"
             onToggle={(event) => {
-              if (!event.currentTarget.open) return;
-              const popup = event.currentTarget.querySelector<HTMLElement>(
+              positionListingDropdown(
+                event.currentTarget,
                 ".offers-counts-popover",
+                340,
+                400,
               );
-              if (!popup) return;
-              popup.style.transform = "";
-              const box = popup.getBoundingClientRect();
-              const offset =
-                box.left < 8
-                  ? 8 - box.left
-                  : box.right > innerWidth - 8
-                    ? innerWidth - 8 - box.right
-                    : 0;
-              popup.style.transform = `translateX(${offset}px)`;
             }}
           >
             <summary aria-label="Contagem e filtros ativos dos anúncios">
@@ -2512,11 +2557,29 @@ function Offers({
                             )}
                           </small>
                           {o.ml?.catalogListing && <small>Catálogo</small>}
-                          {operational && (
-                            <small className="mono">
-                              {o.ml_id || "Sem código ML"}
-                              {o.sku ? " · SKU " + o.sku : ""}
-                            </small>
+                          <small className="mono offer-ml-code">
+                            {o.ml_id || "Sem código ML"}
+                            {o.ml_id && <CopyCode value={o.ml_id} />}
+                          </small>
+                          <ListingHint
+                            content={() =>
+                              listingRowInformation(o, "stock", onPreview)
+                            }
+                          >
+                            <span
+                              className={
+                                "listing-stock-value " +
+                                (o.ml?.availableQuantity === 0 ? "orange" : "")
+                              }
+                            >
+                              Estoque:{" "}
+                              {o.ml?.availableQuantity == null
+                                ? "não informado"
+                                : `${o.ml.availableQuantity} un.`}
+                            </span>
+                          </ListingHint>
+                          {operational && o.sku && (
+                            <small className="mono">SKU {o.sku}</small>
                           )}
                         </div>
                       </div>
@@ -2530,10 +2593,7 @@ function Offers({
                           {o.brand || <span className="muted">Sem marca</span>}
                           <small>{o.category || "Sem categoria"}</small>
                         </td>
-                        <td className="mono">
-                          {o.sku || "—"}
-                          <small>{o.ml_id || "Sem código ML"}</small>
-                        </td>
+                        <td className="mono">{o.sku || "—"}</td>
                         <td>
                           <Badge value={o.status} />
                         </td>
@@ -2546,24 +2606,6 @@ function Offers({
                         }
                       >
                         <span>{money(o.price)}</span>
-                      </ListingHint>
-                    </td>
-                    <td>
-                      <ListingHint
-                        content={() =>
-                          listingRowInformation(o, "stock", onPreview)
-                        }
-                      >
-                        <span
-                          className={
-                            "listing-stock-value " +
-                            (o.ml?.availableQuantity === 0 ? "orange" : "")
-                          }
-                        >
-                          {o.ml?.availableQuantity == null
-                            ? "Não informado"
-                            : `${o.ml.availableQuantity} un.`}
-                        </span>
                       </ListingHint>
                     </td>
                     {operational && (
@@ -2960,6 +3002,39 @@ function Offers({
     </ListingInformationProvider>
   );
 }
+// Fixed menus escape the bounded table layout and fit above or below their trigger.
+function positionListingDropdown(
+  details: HTMLDetailsElement,
+  selector: string,
+  preferredWidth = 260,
+  preferredHeight = 260,
+) {
+  if (!details.open) return;
+  const popup = details.querySelector<HTMLElement>(selector);
+  const anchor = details.querySelector("summary");
+  if (!popup || !anchor) return;
+  const bounds = anchor.getBoundingClientRect();
+  const width = Math.min(preferredWidth, window.innerWidth - 16);
+  const minimumTop =
+    (document.querySelector(".topbar")?.getBoundingClientRect().bottom || 0) +
+    8;
+  Object.assign(popup.style, {
+    position: "fixed",
+    width: `${width}px`,
+    minWidth: "0",
+    right: "auto",
+    transform: "none",
+    maxHeight: `${preferredHeight}px`,
+  });
+  const desiredHeight = Math.min(popup.scrollHeight + 2, preferredHeight);
+  const below = Math.max(0, window.innerHeight - bounds.bottom - 14);
+  const above = Math.max(0, bounds.top - minimumTop - 6);
+  const upwards = desiredHeight > below && above > below;
+  const height = Math.min(desiredHeight, upwards ? above : below);
+  popup.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8))}px`;
+  popup.style.top = `${upwards ? bounds.top - height - 6 : bounds.bottom + 6}px`;
+  popup.style.maxHeight = `${height}px`;
+}
 function MultiFilter({
   label,
   values,
@@ -2975,21 +3050,7 @@ function MultiFilter({
     <details
       className="multi-filter"
       onToggle={(event) => {
-        const details = event.currentTarget;
-        if (!details.open) return;
-        const popup = details.querySelector(
-          ":scope > div",
-        ) as HTMLElement | null;
-        if (!popup) return;
-        popup.style.transform = "";
-        const box = popup.getBoundingClientRect();
-        const offset =
-          box.left < 8
-            ? 8 - box.left
-            : box.right > innerWidth - 8
-              ? innerWidth - 8 - box.right
-              : 0;
-        popup.style.transform = `translateX(${offset}px)`;
+        positionListingDropdown(event.currentTarget, ":scope > div");
       }}
     >
       <summary>

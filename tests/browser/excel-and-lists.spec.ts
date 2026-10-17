@@ -251,6 +251,71 @@ test("tables keep headers visible and pagination does not reload the Firestore w
   await page.getByLabel("Anúncios por página").selectOption("20");
   await expect(page.locator(".offers-table tbody tr")).toHaveCount(20);
   expect(loads).toBe(before);
+  for (const [width, height] of [
+    [1920, 1080],
+    [1440, 900],
+    [844, 390],
+    [768, 700],
+    [390, 844],
+    [320, 568],
+  ]) {
+    await page.setViewportSize({ width, height });
+    const geometry = await page.evaluate(() => {
+      const table = document.querySelector(".offers-panel > .table-wrap")!;
+      const pagination = document
+        .querySelector(".offers-panel > .pagination")!
+        .getBoundingClientRect();
+      return {
+        width: document.documentElement.scrollWidth,
+        height: document.documentElement.scrollHeight,
+        tableHeight: table.clientHeight,
+        tableContent: table.scrollHeight,
+        paginationBottom: pagination.bottom,
+      };
+    });
+    expect(
+      geometry.width,
+      `${width}x${height}: largura da página`,
+    ).toBeLessThanOrEqual(width);
+    expect(
+      geometry.height,
+      `${width}x${height}: altura da página`,
+    ).toBeLessThanOrEqual(height);
+    expect(
+      geometry.tableHeight,
+      `${width}x${height}: tabela visível`,
+    ).toBeGreaterThan(70);
+    expect(geometry.tableContent).toBeGreaterThan(geometry.tableHeight);
+    expect(geometry.paginationBottom).toBeLessThanOrEqual(height);
+    for (const [menuSelector, popupSelector] of [
+      [".multi-filter", ":scope > div"],
+      [".offers-counts", ".offers-counts-popover"],
+    ]) {
+      const menu = page.locator(menuSelector).first();
+      await menu.locator("summary").click();
+      const popup = menu.locator(popupSelector);
+      await expect(popup).toHaveCSS("position", "fixed");
+      const box = (await popup.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollHeight),
+      ).toBeLessThanOrEqual(height);
+      await page.keyboard.press("Escape");
+      await expect(menu).not.toHaveAttribute("open", "");
+    }
+    await viewport.evaluate((el) =>
+      el.scrollTo({ top: el.scrollHeight, left: el.scrollWidth }),
+    );
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await expect(page.getByLabel("Anúncios por página")).toBeInViewport();
+    if ([1440, 320].includes(width))
+      await page.screenshot({
+        path: `test-results/listings-viewport-${width}.png`,
+        fullPage: true,
+      });
+  }
   const exported = await page.request.get(
     "/api/export?store=juntos-com&q=SCROLL-LIST&page=2&pageSize=20&format=xlsx",
   );

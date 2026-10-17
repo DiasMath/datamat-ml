@@ -124,6 +124,79 @@ async function seed(request: APIRequestContext) {
   }
   return { title, rows };
 }
+test("ML codes can be copied in both views and stock stays with the product, including zero and unknown values", async ({
+  page,
+  context,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  await db()
+    .collection("offers")
+    .doc(rows[0].id)
+    .update({ "ml.availableQuantity": 0 });
+  await db()
+    .collection("offers")
+    .doc(rows[1].id)
+    .update({ "ml.availableQuantity": null });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  let loads = 0;
+  page.on("request", (r) => {
+    if (r.url().includes("/api/workspace?")) loads++;
+  });
+  await page.goto("/anuncios?store=juntos-com&q=" + encodeURIComponent(title));
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
+  const initialLoads = loads;
+  for (const view of ["operational", "registry"]) {
+    await page.getByLabel("Visão da tabela").selectOption(view);
+    await expect(
+      page.getByRole("button", { name: "Ordenar por: Estoque", exact: true }),
+    ).toHaveCount(0);
+    const row = page
+      .locator(".offers-table tbody tr")
+      .filter({ hasText: rows[0].ml_id });
+    await expect(
+      row.locator(".offer-product-col .listing-stock-value"),
+    ).toHaveText("Estoque: 0 un.");
+    await expect(
+      page
+        .locator(".offers-table tbody tr")
+        .filter({ hasText: rows[1].ml_id })
+        .locator(".offer-product-col"),
+    ).toContainText("Estoque: não informado");
+    const url = page.url();
+    await row
+      .getByRole("button", {
+        name: `Copiar código ML ${rows[0].ml_id}`,
+        exact: true,
+      })
+      .click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      rows[0].ml_id,
+    );
+    await expect(page.locator(".toast-viewport")).toContainText(
+      "Código ML copiado.",
+    );
+    expect(page.url()).toBe(url);
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+  }
+  expect(loads).toBe(initialLoads);
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async () => {
+      throw new Error("Permissão negada");
+    };
+  });
+  await page
+    .getByRole("button", {
+      name: `Copiar código ML ${rows[1].ml_id}`,
+      exact: true,
+    })
+    .click();
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "Não foi possível copiar o código.",
+  );
+});
+
 test("operational listings show photos, stock, conditions, honest estimates and distinct ID/title counts", async ({
   page,
   context,
@@ -152,7 +225,7 @@ test("operational listings show photos, stock, conditions, honest estimates and 
   await page.getByLabel("Visão da tabela").selectOption("registry");
   await expect(
     page.getByRole("button", {
-      name: "Ordenar por: SKU / código ML",
+      name: "Ordenar por: SKU",
       exact: true,
     }),
   ).toBeVisible();
@@ -352,7 +425,9 @@ test("listing information is readable and accessible, financial limits stay live
     const url = `/anuncios?store=juntos-com&q=${encodeURIComponent("GLOBAL-" + rows[0].id)}`;
     await page.goto(url);
     await expect(page.locator(".offers-table tbody tr")).toHaveCount(1);
-    await expect(page.locator(".listing-stock-value")).toHaveText("0 un.");
+    await expect(page.locator(".listing-stock-value")).toHaveText(
+      "Estoque: 0 un.",
+    );
     await expect(page.locator(".listing-margin-value")).toContainText(
       "R$ 55,00",
     );
@@ -361,7 +436,7 @@ test("listing information is readable and accessible, financial limits stay live
     );
     await expect(page.locator(".listing-margin-value")).toContainText("56,25%");
     const header = page.getByRole("button", {
-      name: "Ordenar por: Estoque",
+      name: "Ordenar por: Condições",
       exact: true,
     });
     await expect(header.locator("..")).toHaveCSS("color", "rgb(255, 255, 255)");

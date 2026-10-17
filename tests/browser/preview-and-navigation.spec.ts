@@ -30,6 +30,47 @@ async function offer(request: APIRequestContext, extra = {}) {
     ...extra,
   });
 }
+test("every workspace screen shares consultation time in Brasilia and incomplete catalogue reads are identified", async ({
+  page,
+  request,
+}) => {
+  const a = await offer(request);
+  let partial = false;
+  await page.route("**/api/workspace?*", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.listingOverview.generatedAt = "2026-10-17T02:55:00.000Z";
+    if (partial) data.listingOverview.sync[0].partial = true;
+    await route.fulfill({ response, json: data });
+  });
+  for (const path of [
+    "anuncios",
+    `anuncios/${a.id}`,
+    "precificacao",
+    "concorrencia",
+    "acoes",
+    "historico",
+    "estudos",
+    "configuracoes",
+  ]) {
+    await page.goto(`/${path}?store=${storeId}`);
+    await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+    await expect(page.locator(".topbar .today-freshness")).toContainText(
+      "Consultado às 23:55 · Dados completos",
+    );
+  }
+  partial = true;
+  await page.goto(`/anuncios?store=${storeId}`);
+  await expect(page.locator(".topbar .today-freshness")).toContainText(
+    "Consultado às 23:55 · Dados parciais",
+  );
+  await page
+    .getByRole("button", { name: "Ver origem e atualização dos dados" })
+    .click();
+  await expect(
+    page.locator(".today-coverage-popover:popover-open"),
+  ).toContainText("Importação do catálogo incompleta.");
+});
 test("the same sidebar and navbar survive delayed filters and navigation between modules", async ({
   page,
   request,

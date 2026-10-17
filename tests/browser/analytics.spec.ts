@@ -85,6 +85,37 @@ function reportFor(url: URL) {
   };
   return aggregateAnalytics([source], range);
 }
+test("the shared header uses sales coverage and the actual observation time, preserving it on refresh failure", async ({
+  page,
+}) => {
+  let mode = "complete";
+  await page.route("**/api/analytics**", (route) => {
+    if (mode === "error")
+      return route.fulfill({
+        status: 502,
+        json: { error: "ML indisponível no teste" },
+      });
+    const report = reportFor(new URL(route.request().url()));
+    report.stores[0].observedAt = "2026-10-17T02:55:00.000Z";
+    report.complete = mode === "complete";
+    report.stores[0].complete = report.complete;
+    return route.fulfill({ json: report });
+  });
+  await page.goto("/analises?store=juntos-com");
+  const freshness = page.locator(".topbar .today-freshness");
+  await expect(freshness).toContainText(
+    "Consultado às 23:55 · Dados completos",
+  );
+  mode = "partial";
+  await page.getByLabel("Período das análises").selectOption("30");
+  await expect(freshness).toContainText("Consultado às 23:55 · Dados parciais");
+  mode = "error";
+  await page.getByRole("button", { name: "Atualizar ML" }).click();
+  await expect(freshness).toContainText(
+    "Consultado às 23:55 · Atualização pendente",
+  );
+});
+
 test("analytics navigation, charts, pagination, live advertising calculations and export work", async ({
   page,
 }) => {

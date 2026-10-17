@@ -3023,9 +3023,108 @@ h3,
   max-width: none;
   padding-inline: 12px;
 }
+.offers-layout {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.offers-layout > .main-shell {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.offers-layout .topbar,
+.offers-content > .page-heading {
+  flex-shrink: 0;
+}
+.offers-layout .offers-content {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+}
+.offers-content > .workspace-data {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.offers-content .offers-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.offers-content .offers-panel > :is(.offers-toolbar, .pagination) {
+  flex-shrink: 0;
+}
+.offers-content .offers-panel > .table-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+.offers-content .offers-panel > .empty {
+  min-height: 0;
+  flex: 1;
+  padding-block: 16px;
+}
+.offers-content > .skeleton-layout {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 620px), (max-height: 600px) {
+  .offers-layout .offers-content {
+    padding-block: 10px;
+    gap: 10px;
+  }
+  .offers-content > .page-heading {
+    gap: 8px;
+  }
+  .offers-content > .page-heading :is(.eyebrow, p) {
+    display: none;
+  }
+  .offers-content .heading-actions {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .offers-content .heading-actions .button {
+    font-size: 10px;
+    padding: 7px 8px;
+    gap: 5px;
+  }
+  .offers-content .offers-toolbar {
+    gap: 5px;
+    padding: 7px 8px;
+  }
+  .offers-content .pagination {
+    gap: 6px;
+    padding: 7px 8px;
+  }
+}
 @media (max-width: 620px) {
   .content.offers-content {
     padding-inline: 8px;
+  }
+  .offers-content > .page-heading {
+    flex-direction: row;
+    align-items: center;
+  }
+  .offers-content > .page-heading h1 {
+    margin: 0;
+    font-size: 22px;
+  }
+  .offers-content .heading-actions {
+    flex-wrap: nowrap;
+  }
+  .offers-content .heading-actions .button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .offers-content .heading-actions .button > span {
+    display: none;
   }
 }
 .stats-grid,
@@ -3849,6 +3948,33 @@ h3,
   display: block;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+.offers-table .offer-ml-code {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.copy-code-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+.copy-code-button:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.offers-table .offer-product-cell .listing-stock-value {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 11px;
 }
 .offer-photo-button {
   padding: 0;

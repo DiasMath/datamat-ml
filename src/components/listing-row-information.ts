@@ -104,7 +104,9 @@ export function listingRowInformation(
     };
   if (kind === "metrics")
     return {
-      title: "Desempenho dos últimos 7 dias",
+      title: o.metrics7d?.stale
+        ? "Métricas da última consulta"
+        : "Desempenho dos últimos 7 dias",
       subtitle,
       rows: [
         {
@@ -129,6 +131,11 @@ export function listingRowInformation(
         { label: "Consulta", value: listingDateTime(o.metrics7d?.observedAt) },
       ],
       notes: [
+        ...(o.metrics7d?.stale
+          ? [
+              "Consulta antiga. Os valores abaixo são históricos do período indicado; atualize os indicadores para analisar os últimos 7 dias.",
+            ]
+          : []),
         "Pedidos pagos e unidades são medidas distintas. Ausência de consulta não significa zero vendas.",
       ],
     };

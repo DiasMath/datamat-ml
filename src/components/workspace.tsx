@@ -12,6 +12,7 @@ import Analytics from "./analytics";
 import { useToast, useToastMessage } from "./toasts";
 import ListingMedia, { MediaImage } from "./listing-media";
 import { listingCounts, listingType } from "../domain/listing-table";
+import { runListingBatches } from "../domain/listing-batches";
 import { ListingInformationProvider, ListingHint } from "./listing-information";
 import ListingGlobalPanel from "./listing-global-panel";
 import {
@@ -173,6 +174,7 @@ export default function Workspace({ view }: { view: string[] }) {
   } | null>(null);
   const loadedContext = useRef("");
   const [loadedScope, setLoadedScope] = useState("");
+  const indicatorResume = useRef<{ scope: string; ids: string[] } | null>(null);
   const previewChanged = useRef(false);
   const backgroundReload = useRef(false);
   const editing = useRef(false);
@@ -1060,28 +1062,45 @@ export default function Workspace({ view }: { view: string[] }) {
                   onIndicators={async (ids) => {
                     if (busy) return;
                     setBusy(true);
-                    let successful = 0,
-                      errors = 0;
+                    const scope = [...ids].sort().join(",");
+                    const pending =
+                      indicatorResume.current?.scope === scope
+                        ? indicatorResume.current.ids
+                        : ids;
+                    let issues = 0;
                     try {
-                      for (let i = 0; i < ids.length; i += 5) {
-                        setIndicatorProgress(
-                          `Consultando ${i + 1}–${Math.min(i + 5, ids.length)} de ${ids.length}…`,
-                        );
-                        const result = await jsonRequest(
-                          "/api/catalog/indicators",
-                          { ids: ids.slice(i, i + 5) },
-                        );
-                        successful += result.results.filter(
-                          (r: Row) => r.metrics || r.fees,
-                        ).length;
-                        errors += result.results.filter(
-                          (r: Row) => r.errors?.length || r.deferred,
-                        ).length;
-                        if (result.results.some((r: Row) => r.deferred)) break;
-                      }
+                      const outcome = await runListingBatches<
+                        Row & { id: string }
+                      >(
+                        pending,
+                        async (batch) => {
+                          const result = await jsonRequest(
+                            "/api/catalog/indicators",
+                            { ids: batch },
+                          );
+                          issues += result.results.filter(
+                            (r: Row) =>
+                              !r.deferred &&
+                              r.errors?.length &&
+                              (r.metrics || r.fees),
+                          ).length;
+                          return result.results;
+                        },
+                        (r) => r.metrics || r.fees,
+                        (done, total) =>
+                          setIndicatorProgress(
+                            `Consultando ML: ${done} de ${total} concluídos…`,
+                          ),
+                      );
+                      indicatorResume.current = outcome.pendingIds.length
+                        ? { scope, ids: outcome.pendingIds }
+                        : null;
+                      const warnings = issues + outcome.failed;
                       notify(
-                        `${successful} anúncios consultados.${errors ? ` ${errors} precisam de nova consulta; confira a conexão e as permissões.` : ""}`,
-                        errors ? "warning" : "success",
+                        `${outcome.successful} anúncios consultados.${warnings ? ` ${warnings} com dados indisponíveis ou parciais.` : ""}${outcome.pendingIds.length ? ` ${outcome.pendingIds.length} pendentes; clique novamente para continuar.` : ""}${outcome.error ? ` ${outcome.error}` : ""}`,
+                        warnings || outcome.pendingIds.length || outcome.error
+                          ? "warning"
+                          : "success",
                       );
                     } catch (error) {
                       setToast({ text: (error as Error).message, error: true });
@@ -2009,7 +2028,8 @@ function Offers({
               label: "Últimos 7 dias",
               width: 125,
               kind: "number" as const,
-              value: (o: Row) => o.metrics7d?.paidOrders,
+              value: (o: Row) =>
+                o.metrics7d?.stale ? null : o.metrics7d?.paidOrders,
             },
             {
               id: "quality",
@@ -2650,7 +2670,24 @@ function Offers({
                           </small>
                         </td>
                         <td>
-                          {o.metrics7d ? (
+                          {o.metrics7d?.stale ? (
+                            <>
+                              <ListingHint
+                                content={() =>
+                                  listingRowInformation(o, "metrics", onPreview)
+                                }
+                              >
+                                <span className="small orange">
+                                  Métricas a atualizar
+                                </span>
+                              </ListingHint>
+                              <small>
+                                {o.metrics7d.observedAt
+                                  ? `Consulta: ${date(o.metrics7d.observedAt)}`
+                                  : "Data da consulta indisponível"}
+                              </small>
+                            </>
+                          ) : o.metrics7d ? (
                             <>
                               <ListingHint
                                 content={() =>

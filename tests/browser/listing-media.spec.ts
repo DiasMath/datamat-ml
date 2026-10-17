@@ -502,6 +502,133 @@ test("listing information is readable and accessible, financial limits stay live
     await parameterDoc.set(originalParameters);
   }
 });
+test("old metrics are marked historical and an inconsistent competition response preserves its consultation date", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  const old = new Date(Date.now() - 2 * 86400000).toISOString();
+  await db()
+    .collection("ml_metrics_7d")
+    .doc(rows[0].id)
+    .set({ observed_at: old, to: old, visits: 101 }, { merge: true });
+  await db()
+    .collection("ml_metrics_7d")
+    .doc(rows[1].id)
+    .set({ visits: 400 }, { merge: true });
+  await db().collection("ml_competition").doc(rows[0].id).set({
+    offer_id: rows[0].id,
+    store_id: rows[0].store_id,
+    offer_version: rows[0].version,
+    seller_id: "111",
+    auth_version: 998,
+    status: "winning",
+    consistent: false,
+    observed_at: new Date().toISOString(),
+  });
+  await page.goto("/anuncios?store=juntos-com&q=" + encodeURIComponent(title));
+  const historical = page
+    .locator(".offers-table tbody tr")
+    .filter({ hasText: "SKU MIDIA-0" });
+  await expect(historical).toContainText("Métricas a atualizar");
+  await expect(historical.locator(".listing-metrics")).toHaveCount(0);
+  await expect(page.locator(".listing-metrics")).toHaveCount(1);
+  await expect(page.locator(".listing-metrics")).toContainText("400");
+  await historical
+    .getByRole("button", { name: "Métricas a atualizar", exact: true })
+    .click();
+  const info = page.getByRole("dialog", {
+    name: "Métricas da última consulta",
+    exact: true,
+  });
+  await expect(info).toContainText("101");
+  await expect(info).toContainText("históricos");
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("button", { name: "Ordenar por: Últimos 7 dias", exact: true })
+    .click();
+  await expect(page.locator(".offers-table tbody tr").first()).toContainText(
+    "MIDIA-1",
+  );
+  await page
+    .getByRole("button", { name: "Competitividade do catálogo", exact: true })
+    .click();
+  const row = page
+    .locator(".listing-global-scroll tbody tr")
+    .filter({ hasText: rows[0].ml_id });
+  await expect(row).toContainText("condições inconsistentes");
+  await expect(row).not.toContainText("Não consultado");
+});
+test("partial catalogue batches report every pending listing and resume without repeating completed requests", async ({
+  page,
+  request,
+}) => {
+  const rows = [];
+  for (let i = 0; i < 4; i++) rows.push(...(await seed(request)).rows);
+  for (const row of rows)
+    await db()
+      .collection("offers")
+      .doc(row.id)
+      .set({ ml: { ...row.ml, catalogListing: true } }, { merge: true });
+  const data = await (
+    await request.get("/api/workspace?store=juntos-com")
+  ).json();
+  const count = data.listingOverview.competition.rows.length;
+  const calls: string[][] = [];
+  let resuming = false;
+  await page.route("**/api/catalog/competition", (route) => {
+    const ids: string[] = route.request().postDataJSON().ids;
+    calls.push(ids);
+    if (!resuming && calls.length === 2)
+      return route.fulfill({
+        status: 503,
+        json: { error: "ML temporariamente indisponível" },
+      });
+    return route.fulfill({
+      json: {
+        results: ids.map((id, i) => ({
+          id,
+          updated: resuming || i < 2,
+          deferred: !resuming && i >= 2,
+        })),
+      },
+    });
+  });
+  await page.goto(
+    "/anuncios?store=juntos-com&q=" + encodeURIComponent(rows[0].sku),
+  );
+  await page
+    .getByRole("button", { name: "Competitividade do catálogo", exact: true })
+    .click();
+  const modal = page.getByRole("dialog", {
+    name: "Competitividade do catálogo",
+    exact: true,
+  });
+  await modal
+    .getByRole("button", { name: "Consultar catálogo no ML", exact: true })
+    .click();
+  await expect(modal.getByRole("status")).toContainText(
+    `${count - 2} pendentes`,
+  );
+  await expect(modal.getByRole("status")).toContainText(
+    "ML temporariamente indisponível",
+  );
+  const completed = calls[0].slice(0, 2);
+  resuming = true;
+  await modal
+    .getByRole("button", { name: "Continuar consulta no ML", exact: true })
+    .click();
+  await expect(
+    modal.getByRole("button", {
+      name: "Consultar catálogo no ML",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  for (const id of completed)
+    expect(calls.flat().filter((value) => value === id)).toHaveLength(1);
+  expect(new Set(calls.flat()).size).toBe(count);
+  expect(new URL(page.url()).searchParams.get("q")).toBe(rows[0].sku);
+});
 test("indicator requests show loading and update cached seven-day data without losing filters", async ({
   page,
   request,

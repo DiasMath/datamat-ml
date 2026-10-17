@@ -7,12 +7,12 @@ export function listingCompetition(
   snapshot: Row | undefined,
   clock = Date.now(),
 ) {
-  const missing = (reason: string) => ({
+  const missing = (reason: string, observedAt: string | null = null) => ({
     available: false,
     status: null,
     priceToWin: null,
     currentPrice: null,
-    observedAt: null,
+    observedAt,
     reason,
   });
   if (!offer.ml?.catalogListing || offer.origin === "reference")
@@ -35,16 +35,24 @@ export function listingCompetition(
   )
     return missing("Consulta pendente para a versão atual");
   const age = clock - Date.parse(snapshot.observed_at);
-  if (!Number.isFinite(age) || age < 0 || age > COMPETITION_MAX_AGE)
-    return missing("Consulta vencida; atualize a competitividade");
+  if (!Number.isFinite(age) || age < 0)
+    return missing("Data da consulta inválida; atualize a competitividade");
+  if (age > COMPETITION_MAX_AGE)
+    return missing(
+      "Consulta vencida; atualize a competitividade",
+      snapshot.observed_at,
+    );
   if (snapshot.consistent === false)
-    return missing("O ML sinalizou condições inconsistentes");
+    return missing(
+      "O ML sinalizou condições inconsistentes",
+      snapshot.observed_at,
+    );
   if (
     snapshot.currentPrice != null &&
     offer.price != null &&
     !new Decimal(snapshot.currentPrice).eq(offer.price)
   )
-    return missing("Preço mudou; consulte novamente");
+    return missing("Preço mudou; consulte novamente", snapshot.observed_at);
   if (
     ![
       "winning",
@@ -55,7 +63,10 @@ export function listingCompetition(
       "challenging",
     ].includes(snapshot.status)
   )
-    return missing("Situação não reconhecida na resposta do ML");
+    return missing(
+      "Situação não reconhecida na resposta do ML",
+      snapshot.observed_at,
+    );
   return {
     available: true,
     status: snapshot.status as string,

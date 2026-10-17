@@ -487,6 +487,34 @@ test("catalogue overview excludes stale, inconsistent, foreign and incompatible 
     listingCompetition(offer, account, snapshot, clock).status,
     "losing",
   );
+  assert.equal(
+    listingCompetition(
+      offer,
+      account,
+      { ...snapshot, consistent: false },
+      clock,
+    ).observedAt,
+    snapshot.observed_at,
+  );
+  const expiredDate = new Date(clock - 16 * 60000).toISOString();
+  assert.equal(
+    listingCompetition(
+      offer,
+      account,
+      { ...snapshot, observed_at: expiredDate },
+      clock,
+    ).observedAt,
+    expiredDate,
+  );
+  assert.equal(
+    listingCompetition(
+      offer,
+      account,
+      { ...snapshot, organization_id: "foreign" },
+      clock,
+    ).observedAt,
+    null,
+  );
   for (const patch of [
     { observed_at: new Date(clock - 16 * 60000).toISOString() },
     { observed_at: new Date(clock + 1000).toISOString() },

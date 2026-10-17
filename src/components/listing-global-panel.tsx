@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Clock, Layers, LoaderCircle, RefreshCw } from "lucide-react";
 import { Modal, jsonRequest, money } from "./ui";
 import { ListingHint } from "./listing-information";
+import { runListingBatches } from "../domain/listing-batches";
 type Row = Record<string, any>;
 export const listingDateTime = (value: string | null | undefined) =>
   value
@@ -40,6 +41,7 @@ export default function ListingGlobalPanel({
   const [view, setView] = useState<"competition" | "sync" | null>(null);
   const [running, setRunning] = useState<"competition" | "sync" | null>(null);
   const [progress, setProgress] = useState("");
+  const [pendingCompetition, setPendingCompetition] = useState<string[]>([]);
   const [filter, setFilter] = useState("all"),
     [page, setPage] = useState(1);
   const request = useRef<AbortController | null>(null);
@@ -80,30 +82,33 @@ export default function ListingGlobalPanel({
     request.current = controller;
     setRunning(kind);
     setProgress("Iniciando consulta…");
-    let updated = 0,
-      failed = 0;
     try {
       if (kind === "competition") {
         const ids = competition.rows
           .filter((r: Row) => connected.some((s) => s.storeId === r.storeId))
           .map((r: Row) => r.id);
-        for (let i = 0; i < ids.length; i += 5) {
-          setProgress(
-            `Consultando catálogo: ${i + 1}–${Math.min(i + 5, ids.length)} de ${ids.length}…`,
-          );
-          const result = await jsonRequest(
-            "/api/catalog/competition",
-            { ids: ids.slice(i, i + 5) },
-            "POST",
-            controller.signal,
-          );
-          updated += result.results.filter((r: Row) => r.updated).length;
-          failed += result.results.filter((r: Row) => !r.updated).length;
-          onChanged();
-          if (result.results.some((r: Row) => r.deferred)) break;
-        }
+        const pending = pendingCompetition.filter((id) => ids.includes(id));
+        const outcome = await runListingBatches<Row & { id: string }>(
+          pending.length ? pending : ids,
+          async (batch) => {
+            const result = await jsonRequest(
+              "/api/catalog/competition",
+              { ids: batch },
+              "POST",
+              controller.signal,
+            );
+            return result.results;
+          },
+          (r) => !!r.updated,
+          (done, total) =>
+            setProgress(
+              `Consultando catálogo: ${done} de ${total} concluídos…`,
+            ),
+          onChanged,
+        );
+        setPendingCompetition(outcome.pendingIds);
         setProgress(
-          `${updated} consultas concluídas${failed ? ` · ${failed} indisponíveis; confira a autorização e a disponibilidade do recurso no ML` : ""}.`,
+          `${outcome.successful} consultas concluídas${outcome.failed ? ` · ${outcome.failed} indisponíveis` : ""}${outcome.pendingIds.length ? ` · ${outcome.pendingIds.length} pendentes; continue a consulta` : ""}.${outcome.error ? ` ${outcome.error}` : ""}`,
         );
       } else {
         for (let step = 0; step < 20; step++) {
@@ -294,7 +299,9 @@ export default function ListingGlobalPanel({
                       ) : (
                         <RefreshCw size={15} />
                       )}
-                      Consultar catálogo no ML
+                      {pendingCompetition.length
+                        ? "Continuar consulta no ML"
+                        : "Consultar catálogo no ML"}
                     </button>
                   )}
                 </div>

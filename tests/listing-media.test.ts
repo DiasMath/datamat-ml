@@ -17,9 +17,111 @@ import {
   MAX_MEDIA_BYTES,
   type MediaStorage,
 } from "../src/server/listing-media";
-import { listingCounts, listingType } from "../src/domain/listing-table";
+import {
+  listingCounts,
+  listingType,
+  listingMetricsFreshness,
+  LISTING_METRICS_MAX_AGE,
+} from "../src/domain/listing-table";
+import { runListingBatches } from "../src/domain/listing-batches";
 import { oauthPopupResponse } from "../src/server/oauth-popup";
 let actor: Actor;
+test("listing metrics cannot look current when the observation or period has expired or has an invalid date", () => {
+  const clock = Date.UTC(2026, 9, 17, 12);
+  const iso = (time: number) => new Date(time).toISOString();
+  const current = { observed_at: iso(clock - 1000), to: iso(clock - 2000) };
+  assert.equal(listingMetricsFreshness(current, clock).stale, false);
+  for (const patch of [
+    { observed_at: iso(clock - LISTING_METRICS_MAX_AGE) },
+    { to: iso(clock - LISTING_METRICS_MAX_AGE) },
+    { observed_at: iso(clock + 1000) },
+    { to: iso(clock + 1000) },
+    { observed_at: "invalid" },
+    { to: "invalid" },
+  ]) {
+    assert.equal(
+      listingMetricsFreshness({ ...current, ...patch }, clock).stale,
+      true,
+    );
+  }
+  assert.equal(
+    listingMetricsFreshness({ observed_at: "invalid" }, clock).observedAt,
+    null,
+  );
+});
+test("listing batches retry deferred IDs without repeating completed IDs and stop honestly when no progress is possible", async () => {
+  const ids = Array.from({ length: 12 }, (_, i) => "offer-" + i);
+  const calls: string[][] = [];
+  const outcome = await runListingBatches(
+    ids,
+    async (batch) => {
+      calls.push(batch);
+      return batch.map((id, index) => ({
+        id,
+        deferred: calls.length === 1 && index >= 2,
+        updated: true,
+      }));
+    },
+    (r) => r.updated,
+    () => {},
+  );
+  assert.equal(outcome.successful, 12);
+  assert.deepEqual(outcome.pendingIds, []);
+  assert.equal(calls.length, 3);
+  assert.equal(calls.flat().filter((id) => id === ids[0]).length, 1);
+  let count = 0;
+  const paused = await runListingBatches(
+    ids,
+    async (batch) => {
+      count++;
+      return batch.map((id) => ({ id, deferred: true }));
+    },
+    () => false,
+    () => {},
+  );
+  assert.equal(count, 1);
+  assert.equal(paused.successful, 0);
+  assert.equal(paused.failed, 0);
+  assert.deepEqual(paused.pendingIds, ids);
+});
+test("listing batches retain unattempted IDs after a request fails and never report omitted results as success", async () => {
+  const ids = Array.from({ length: 12 }, (_, i) => "offer-" + i);
+  let calls = 0;
+  const result = await runListingBatches(
+    ids,
+    async (batch) => {
+      if (++calls === 2) throw new Error("ML temporariamente indisponível");
+      return batch.map((id) => ({ id }));
+    },
+    () => true,
+    () => {},
+  );
+  assert.equal(result.successful, 5);
+  assert.equal(result.error, "ML temporariamente indisponível");
+  assert.deepEqual(result.pendingIds, ids.slice(5));
+  const missing = await runListingBatches(
+    ids,
+    async () => [],
+    () => true,
+    () => {},
+  );
+  assert.deepEqual(missing.pendingIds, ids);
+  assert.equal(missing.successful, 0);
+  const aborted = new Error("cancelled");
+  aborted.name = "AbortError";
+  await assert.rejects(
+    () =>
+      runListingBatches(
+        ids,
+        async () => {
+          throw aborted;
+        },
+        () => true,
+        () => {},
+      ),
+    /cancelled/,
+  );
+});
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXioAAAAASUVORK5CYII=",
   "base64",
@@ -373,6 +475,14 @@ test("listing estimates normalize money and hide expired quotes or metrics from 
       ),
     );
     assert.equal(current.metrics7d.paidOrders, 0);
+    assert.equal(current.metrics7d.stale, false);
+    const metrics = (await get("ml_metrics_7d", offer.id))!;
+    await put("ml_metrics_7d", offer.id, {
+      ...metrics,
+      observed_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+    });
+    assert.equal((await read()).metrics7d.stale, true);
+    assert.equal((await read()).metrics7d.paidOrders, 0);
     const quote = (await get("ml_current_quotes", offer.id))!;
     await put("ml_current_quotes", offer.id, { ...quote, expires_at: 0 });
     assert.equal((await read()).settlementEstimate, null);

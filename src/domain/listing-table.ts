@@ -1,6 +1,21 @@
 import Decimal from "decimal.js";
 import type { Costs } from "./finance";
 type Row = Record<string, any>;
+export const LISTING_METRICS_MAX_AGE = 30 * 60000;
+export function listingMetricsFreshness(metric: Row, clock = Date.now()) {
+  const observed = Date.parse(metric.observed_at);
+  const until = metric.to == null ? observed : Date.parse(metric.to);
+  const age = clock - Math.min(observed, until);
+  return {
+    stale:
+      !Number.isFinite(age) ||
+      observed > clock ||
+      until > clock ||
+      age < 0 ||
+      age >= LISTING_METRICS_MAX_AGE,
+    observedAt: Number.isFinite(observed) ? metric.observed_at : null,
+  };
+}
 
 // Costs passed here already include only compatible, unexpired ML conditions.
 // Keep the operator's exceptions visible, including an explicit zero.

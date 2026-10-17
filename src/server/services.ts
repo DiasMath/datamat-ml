@@ -56,7 +56,11 @@ import {
   validateQuote,
   safePictureUrl,
 } from "./mercadolivre";
-import { listingCounts, listingFinancialStatus } from "../domain/listing-table";
+import {
+  listingCounts,
+  listingFinancialStatus,
+  listingMetricsFreshness,
+} from "../domain/listing-table";
 import { listingOverview } from "../domain/listing-overview";
 import { draftMedia } from "./listing-media";
 import { listingQuality } from "../domain/marketplace";
@@ -1132,9 +1136,11 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
               paidOrders: metric.paidOrders,
               units: metric.units,
               orderVisitRate: metric.orderVisitRate,
-              from: metric.from,
-              to: metric.to,
-              observedAt: metric.observed_at,
+              from: Number.isFinite(Date.parse(metric.from))
+                ? metric.from
+                : null,
+              to: Number.isFinite(Date.parse(metric.to)) ? metric.to : null,
+              ...listingMetricsFreshness(metric),
             }
           : null;
       const tariff =

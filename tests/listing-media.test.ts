@@ -84,6 +84,36 @@ test("listing batches retry deferred IDs without repeating completed IDs and sto
   assert.equal(paused.failed, 0);
   assert.deepEqual(paused.pendingIds, ids);
 });
+test("listing batches stop at a bounded duration, expose completed progress and checkpoint only pending IDs", async () => {
+  const ids = Array.from({ length: 12 }, (_, i) => `bounded-${i}`);
+  let time = 0;
+  const checkpoints: string[][] = [];
+  const progress: number[] = [];
+  const result = await runListingBatches(
+    ids,
+    async (batch) => {
+      time += 10;
+      return batch.map((id) => ({ id }));
+    },
+    () => true,
+    (done) => progress.push(done),
+    (pending) => checkpoints.push(pending),
+    { maxDurationMs: 20, clock: () => time },
+  );
+  assert.equal(result.successful, 10);
+  assert.deepEqual(result.pendingIds, ids.slice(10));
+  assert.deepEqual(checkpoints.at(-1), ids.slice(10));
+  assert.equal(progress.at(-1), 10);
+  assert.match(result.error!, /dividida em etapas/);
+  const resumed = await runListingBatches(
+    result.pendingIds,
+    async (batch) => batch.map((id) => ({ id })),
+    () => true,
+    () => {},
+  );
+  assert.equal(resumed.successful, 2);
+  assert.deepEqual(resumed.pendingIds, []);
+});
 test("listing batches retain unattempted IDs after a request fails and never report omitted results as success", async () => {
   const ids = Array.from({ length: 12 }, (_, i) => "offer-" + i);
   let calls = 0;

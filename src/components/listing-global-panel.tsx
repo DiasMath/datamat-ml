@@ -45,7 +45,18 @@ export default function ListingGlobalPanel({
   const [filter, setFilter] = useState("all"),
     [page, setPage] = useState(1);
   const request = useRef<AbortController | null>(null);
-  useEffect(() => () => request.current?.abort(), []);
+  const completedSyncStores = useRef<string[]>([]);
+  useEffect(() => {
+    setRunning(null);
+    setProgress("");
+    completedSyncStores.current = [];
+    setPendingCompetition([]);
+    return () => {
+      const active = request.current;
+      request.current = null;
+      active?.abort();
+    };
+  }, [store]);
   const competition = overview?.competition || {
     rows: [],
     total: 0,
@@ -77,7 +88,7 @@ export default function ListingGlobalPanel({
   const pages = Math.max(1, Math.ceil(selected.length / 20));
   const current = Math.min(page, pages);
   async function refresh(kind: "competition" | "sync") {
-    if (running) return;
+    if (request.current) return;
     const controller = new AbortController();
     request.current = controller;
     setRunning(kind);
@@ -96,6 +107,8 @@ export default function ListingGlobalPanel({
               { ids: batch },
               "POST",
               controller.signal,
+              "foreground",
+              65000,
             );
             return result.results;
           },
@@ -104,23 +117,52 @@ export default function ListingGlobalPanel({
             setProgress(
               `Consultando catálogo: ${done} de ${total} concluídos…`,
             ),
-          onChanged,
+          (remaining) => {
+            setPendingCompetition(remaining);
+            onChanged();
+          },
+          { maxDurationMs: 180000 },
         );
+        if (request.current !== controller) return;
         setPendingCompetition(outcome.pendingIds);
         setProgress(
           `${outcome.successful} consultas concluídas${outcome.failed ? ` · ${outcome.failed} indisponíveis` : ""}${outcome.pendingIds.length ? ` · ${outcome.pendingIds.length} pendentes; continue a consulta` : ""}.${outcome.error ? ` ${outcome.error}` : ""}`,
         );
       } else {
+        const deadline = Date.now() + 180000;
+        let consulted = 0;
         for (let step = 0; step < 20; step++) {
+          if (Date.now() >= deadline) {
+            setProgress(
+              "Consulta parcial. Continue a atualização para concluir os anúncios pendentes.",
+            );
+            break;
+          }
           setProgress(
-            `Atualizando o catálogo das lojas selecionadas · etapa ${step + 1}…`,
+            `Atualizando o catálogo · ${consulted} anúncios consultados · etapa ${step + 1}…`,
           );
           const result = await jsonRequest(
             "/api/catalog/refresh?store=" + encodeURIComponent(store),
-            {},
+            completedSyncStores.current.length
+              ? { completedStoreIds: completedSyncStores.current }
+              : {},
             "POST",
             controller.signal,
+            "foreground",
+            65000,
           );
+          if (request.current !== controller) return;
+          if (!Array.isArray(result.results))
+            throw new Error(
+              "A consulta retornou um lote incompleto. Continue a atualização para retomar.",
+            );
+          for (const row of result.results) {
+            consulted += row.processed || 0;
+            if (row.status === "confirmed" && !row.has_more)
+              completedSyncStores.current = [
+                ...new Set([...completedSyncStores.current, row.storeId]),
+              ];
+          }
           onChanged();
           if (result.results.some((r: Row) => r.status === "running")) {
             setProgress(
@@ -129,10 +171,22 @@ export default function ListingGlobalPanel({
             break;
           }
           if (!result.partial) {
+            completedSyncStores.current = [];
             setProgress(
               result.results.length
-                ? "Consulta do catálogo concluída. Tarifas e métricas possuem consultas próprias."
+                ? `Consulta do catálogo concluída · ${consulted} anúncios consultados. Tarifas e métricas possuem consultas próprias.`
                 : "Nenhuma loja conectada para consultar.",
+            );
+            break;
+          }
+          if (
+            !result.results.length ||
+            result.results.every(
+              (r: Row) => r.status === "confirmed" && r.processed === 0,
+            )
+          ) {
+            setProgress(
+              "A consulta não avançou. Os dados já atualizados foram mantidos; tente continuar em instantes.",
             );
             break;
           }
@@ -143,13 +197,18 @@ export default function ListingGlobalPanel({
         }
       }
     } catch (error) {
-      if (!controller.signal.aborted) setProgress((error as Error).message);
+      if (request.current === controller)
+        setProgress(
+          controller.signal.aborted
+            ? "Consulta interrompida. Os dados já atualizados foram mantidos; continue quando quiser."
+            : (error as Error).message,
+        );
     } finally {
-      if (!controller.signal.aborted) {
+      if (request.current === controller) {
+        request.current = null;
         setRunning(null);
         onChanged();
       }
-      request.current = null;
     }
   }
   return (
@@ -243,7 +302,10 @@ export default function ListingGlobalPanel({
           }
           subtitle="Visão geral das lojas selecionadas, incluindo anúncios fora dos filtros da tabela."
           protectChanges={false}
-          onClose={() => setView(null)}
+          onClose={() => {
+            request.current?.abort();
+            setView(null);
+          }}
         >
           <div className="listing-global-content">
             {view === "competition" ? (
@@ -477,6 +539,14 @@ export default function ListingGlobalPanel({
               {running && <LoaderCircle className="spin" size={14} />}
               {progress}
             </p>
+            {running && (
+              <button
+                className="button compact"
+                onClick={() => request.current?.abort()}
+              >
+                Interromper consulta
+              </button>
+            )}
           </div>
         </Modal>
       )}

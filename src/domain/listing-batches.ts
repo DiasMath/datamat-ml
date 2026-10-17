@@ -6,14 +6,22 @@ export async function runListingBatches<T extends Result>(
   send: (ids: string[]) => Promise<T[]>,
   succeeded: (result: T) => boolean,
   onProgress: (done: number, total: number) => void,
-  onBatch: () => void = () => {},
+  onBatch: (pending: string[]) => void = () => {},
+  options: { maxDurationMs?: number; clock?: () => number } = {},
 ) {
+  const clock = options.clock || Date.now;
+  const deadline = clock() + (options.maxDurationMs ?? Infinity);
   let pendingIds = [...new Set(ids)];
   const total = pendingIds.length;
   let successful = 0,
     failed = 0,
     error: string | null = null;
   while (pendingIds.length) {
+    if (clock() >= deadline) {
+      error =
+        "A consulta foi dividida em etapas. Continue para atualizar os anúncios pendentes.";
+      break;
+    }
     const batch = pendingIds.slice(0, 5);
     onProgress(total - pendingIds.length, total);
     let results: T[];
@@ -40,7 +48,8 @@ export async function runListingBatches<T extends Result>(
       else failed++;
     }
     pendingIds = pendingIds.filter((id) => !completed.has(id));
-    onBatch();
+    onProgress(total - pendingIds.length, total);
+    onBatch([...pendingIds]);
     if (!completed.size) break;
   }
   return { successful, failed, pendingIds, error };

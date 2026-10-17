@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { trackedFetch } from "./ui";
+import { jsonRequest } from "./ui";
 import { useToast } from "./toasts";
 export default function useCatalogPolling({
   store,
@@ -43,22 +43,14 @@ export default function useCatalogPolling({
       running = true;
       lastAttempt = Date.now();
       try {
-        const response = await trackedFetch(
-            "/api/catalog/refresh?" + new URLSearchParams({ store }),
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(offerId ? { offerId } : {}),
-              signal: controller.signal,
-              cache: "no-store",
-            },
-            "background",
-          ),
-          result = await response.json();
-        if (!response.ok)
-          throw new Error(
-            result.error || "Não foi possível consultar as alterações do ML.",
-          );
+        const result = await jsonRequest(
+          "/api/catalog/refresh?" + new URLSearchParams({ store }),
+          offerId ? { offerId } : {},
+          "POST",
+          controller.signal,
+          "background",
+          65000,
+        );
         if (safe()) {
           onReload((n) => n + 1);
           lastError.current = "";
@@ -67,6 +59,7 @@ export default function useCatalogPolling({
         }
       } catch (e) {
         if (active && !controller.signal.aborted) {
+          lastAttempt = Date.now();
           const message = (e as Error).message;
           if (lastError.current !== message) {
             lastError.current = message;

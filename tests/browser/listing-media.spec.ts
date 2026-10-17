@@ -704,6 +704,288 @@ test("partial catalogue batches report every pending listing and resume without 
   expect(new Set(calls.flat()).size).toBe(count);
   expect(new URL(page.url()).searchParams.get("q")).toBe(rows[0].sku);
 });
+test("indicator progress can be interrupted and resumes only unacknowledged listings without moving the page", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  for (let i = 0; i < 5; i++) {
+    const id = randomUUID();
+    await db()
+      .collection("offers")
+      .doc(id)
+      .set({ ...rows[0], id, ml_id: `MLB990002${Date.now()}${i}` });
+  }
+  const calls: string[][] = [];
+  let release = () => {};
+  await page.route("**/api/catalog/indicators", async (route) => {
+    const ids: string[] = route.request().postDataJSON().ids;
+    calls.push(ids);
+    if (calls.length === 2)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    await route
+      .fulfill({
+        json: {
+          results: ids.map((id) => ({
+            id,
+            metrics: true,
+            fees: true,
+            errors: [],
+          })),
+        },
+      })
+      .catch(() => {});
+  });
+  try {
+    await page.goto(
+      `/anuncios?store=juntos-com&q=${encodeURIComponent(title)}&pageSize=50`,
+    );
+    await expect(page.locator(".offers-table tbody tr")).toHaveCount(7);
+    const original = page.url();
+    const top = (await page.locator(".offers-panel").boundingBox())!.y;
+    const button = page.getByRole("button", {
+      name: "Consultar indicadores ML",
+      exact: true,
+    });
+    await button.click();
+    const progress = page.getByRole("region", {
+      name: "Atualização dos indicadores ML",
+      exact: true,
+    });
+    await expect(progress).toContainText("5 de 7 anúncios consultados");
+    await expect(progress.getByRole("progressbar")).toHaveAttribute(
+      "value",
+      "5",
+    );
+    expect((await page.locator(".offers-panel").boundingBox())!.y).toBe(top);
+    await progress
+      .getByRole("button", { name: "Interromper consulta de indicadores" })
+      .click();
+    await expect(progress).toHaveCount(0);
+    await expect(button).toBeEnabled();
+    await expect(page.getByLabel("Loja global")).toBeEnabled();
+    await expect(
+      page.getByRole("progressbar", { name: "Operação em andamento" }),
+    ).toHaveCount(0);
+    release();
+    await button.click();
+    await expect(page.locator(".toast-viewport")).toContainText(
+      "2 anúncios consultados.",
+    );
+    expect(calls).toHaveLength(3);
+    expect(calls[2]).toEqual(calls[1]);
+    expect(calls[2].some((id) => calls[0].includes(id))).toBe(false);
+    expect(page.url()).toBe(original);
+  } finally {
+    release();
+  }
+});
+test("a stalled indicator response body times out, clears every loader and remains retryable", async ({
+  page,
+  request,
+}) => {
+  const { title } = await seed(request);
+  await page.clock.install();
+  await page.goto(`/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`);
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
+  await page.evaluate(() => {
+    const original = window.fetch;
+    (window as any).__indicatorStalled = true;
+    (window as any).__indicatorCalls = [];
+    window.fetch = async (input, init) => {
+      if (!String(input).includes("/api/catalog/indicators"))
+        return original(input, init);
+      const ids: string[] = JSON.parse(String(init?.body)).ids;
+      (window as any).__indicatorCalls.push(ids);
+      const response = new Response(
+        JSON.stringify({
+          results: ids.map((id) => ({
+            id,
+            metrics: true,
+            fees: true,
+            errors: [],
+          })),
+        }),
+      );
+      if ((window as any).__indicatorStalled)
+        response.json = () => new Promise(() => {});
+      return response;
+    };
+  });
+  const button = page.getByRole("button", {
+    name: "Consultar indicadores ML",
+    exact: true,
+  });
+  await button.click();
+  await expect(page.locator(".listing-update-progress")).toBeVisible();
+  await page.clock.fastForward(66000);
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "A consulta demorou além do esperado",
+  );
+  await expect(page.locator(".listing-update-progress")).toHaveCount(0);
+  await expect(button).toBeEnabled();
+  await expect(page.getByLabel("Loja global")).toBeEnabled();
+  await expect(
+    page.getByRole("progressbar", { name: "Operação em andamento" }),
+  ).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).__indicatorStalled = false;
+  });
+  await button.click();
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "2 anúncios consultados.",
+  );
+  const calls = await page.evaluate(() => (window as any).__indicatorCalls);
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toEqual(calls[1]);
+});
+test("catalogue synchronization closes or cancels promptly and can start again after a stalled request", async ({
+  page,
+  request,
+}) => {
+  const { title } = await seed(request);
+  let calls = 0;
+  const releases: Array<() => void> = [];
+  await page.route("**/api/catalog/refresh?*", async (route) => {
+    calls++;
+    if (calls < 3)
+      await new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
+    await route
+      .fulfill({
+        json: {
+          results: [
+            {
+              storeId: "juntos-com",
+              status: "confirmed",
+              processed: 2,
+              has_more: false,
+            },
+          ],
+          partial: false,
+        },
+      })
+      .catch(() => {});
+  });
+  try {
+    await page.goto(
+      `/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`,
+    );
+    const icon = page.getByRole("button", {
+      name: "Sincronização da tela com o ML",
+      exact: true,
+    });
+    const dialog = page.getByRole("dialog", {
+      name: "Sincronização da tela com o ML",
+      exact: true,
+    });
+    await icon.click();
+    await dialog
+      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .click();
+    await expect.poll(() => calls).toBe(1);
+    await dialog
+      .getByRole("button", { name: "Interromper consulta", exact: true })
+      .click();
+    await expect(dialog).toContainText("Consulta interrompida");
+    await expect(
+      dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
+    ).toBeEnabled();
+    await dialog
+      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .click();
+    await expect.poll(() => calls).toBe(2);
+    await page.mouse.click(2, 2);
+    await expect(dialog).not.toBeVisible();
+    await expect(icon.locator(".spin")).toHaveCount(0);
+    await icon.click();
+    await dialog
+      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .click();
+    await expect(dialog).toContainText(
+      "Consulta do catálogo concluída · 2 anúncios consultados",
+    );
+    await expect(
+      dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
+    ).toBeEnabled();
+    expect(calls).toBe(3);
+  } finally {
+    releases.forEach((release) => release());
+  }
+});
+test("all-store catalogue continuation skips stores already completed rather than restarting them", async ({
+  page,
+  request,
+}) => {
+  const { title } = await seed(request);
+  await page.route("**/api/workspace?*", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    for (const store of data.listingOverview.sync) store.status = "connected";
+    await route.fulfill({ response, json: data });
+  });
+  const bodies: any[] = [];
+  await page.route("**/api/catalog/refresh?*", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({
+      json:
+        bodies.length === 1
+          ? {
+              partial: true,
+              results: [
+                {
+                  storeId: "juntos-com",
+                  status: "confirmed",
+                  processed: 2,
+                  has_more: false,
+                },
+                {
+                  storeId: "juntos-data",
+                  status: "confirmed",
+                  processed: 20,
+                  has_more: true,
+                },
+              ],
+            }
+          : {
+              partial: false,
+              results: [
+                {
+                  storeId: "juntos-data",
+                  status: "confirmed",
+                  processed: 2,
+                  has_more: false,
+                },
+              ],
+            },
+    });
+  });
+  await page.goto(`/anuncios?store=all&q=${encodeURIComponent(title)}`);
+  await page
+    .getByRole("button", {
+      name: "Sincronização da tela com o ML",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Sincronização da tela com o ML",
+    exact: true,
+  });
+  await dialog
+    .getByRole("button", { name: "Atualizar catálogo das lojas" })
+    .click();
+  await expect(dialog).toContainText(
+    "Consulta do catálogo concluída · 24 anúncios consultados",
+  );
+  expect(bodies).toEqual([{}, { completedStoreIds: ["juntos-com"] }]);
+  await expect(
+    dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
+  ).toBeEnabled();
+  await page.unrouteAll({ behavior: "wait" });
+});
 test("indicator requests show loading and update cached seven-day data without losing filters", async ({
   page,
   request,

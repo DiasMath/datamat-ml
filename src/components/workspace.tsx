@@ -12,7 +12,6 @@ import Analytics from "./analytics";
 import { useToast, useToastMessage } from "./toasts";
 import ListingMedia, { MediaImage } from "./listing-media";
 import { listingCounts, listingType } from "../domain/listing-table";
-import { runListingBatches } from "../domain/listing-batches";
 import { ListingInformationProvider, ListingHint } from "./listing-information";
 import ListingGlobalPanel from "./listing-global-panel";
 import {
@@ -106,6 +105,8 @@ import WorkspaceFreshness, {
 import type { AnalyticsReport } from "../domain/analytics";
 import CopyCode from "./copy-code";
 import QuickTaskForm from "./quick-task-form";
+import useListingIndicators from "./use-listing-indicators";
+import ListingUpdateProgress from "./listing-update-progress";
 
 type Row = Record<string, any>;
 const navigation = [
@@ -182,7 +183,6 @@ export default function Workspace({ view }: { view: string[] }) {
   const [consultationError, setConsultationError] = useState("");
   const [analysisFreshness, setAnalysisFreshness] =
     useState<AnalysisFreshness | null>(null);
-  const indicatorResume = useRef<{ scope: string; ids: string[] } | null>(null);
   const previewChanged = useRef(false);
   const backgroundReload = useRef(false);
   const editing = useRef(false);
@@ -191,9 +191,6 @@ export default function Workspace({ view }: { view: string[] }) {
     backgroundReload.current = true;
     setRefresh(action);
   }, []);
-  const [indicatorProgress, setIndicatorProgress] = useState<
-    string | undefined
-  >();
   const mlAuthorization = useMlAuthorization({
     disabled: busy,
     returnTo: "/" + route + (query ? "?" + query : ""),
@@ -340,6 +337,11 @@ export default function Workspace({ view }: { view: string[] }) {
     },
     [analysisScope],
   );
+  const indicatorUpdate = useListingIndicators({
+    scope: `${route}:${store}`,
+    onWorking: setBusy,
+    onChanged: () => reloadInBackground((n) => n + 1),
+  });
   const home = section === "";
   const dataKey = home
     ? new URLSearchParams({ store }).toString()
@@ -931,7 +933,9 @@ export default function Workspace({ view }: { view: string[] }) {
               label={
                 mlAuthorization.connectionId
                   ? "Aguardando autorização…"
-                  : indicatorProgress
+                  : indicatorUpdate.progress
+                    ? `Consultando ML: ${indicatorUpdate.progress.done} de ${indicatorUpdate.progress.total} concluídos…`
+                    : undefined
               }
             />
           </div>
@@ -1114,57 +1118,8 @@ export default function Workspace({ view }: { view: string[] }) {
                   onBatch={() => open("batch")}
                   onChanged={() => reloadInBackground((n) => n + 1)}
                   busy={busy}
-                  onIndicators={async (ids) => {
-                    if (busy) return;
-                    setBusy(true);
-                    const scope = [...ids].sort().join(",");
-                    const pending =
-                      indicatorResume.current?.scope === scope
-                        ? indicatorResume.current.ids
-                        : ids;
-                    let issues = 0;
-                    try {
-                      const outcome = await runListingBatches<
-                        Row & { id: string }
-                      >(
-                        pending,
-                        async (batch) => {
-                          const result = await jsonRequest(
-                            "/api/catalog/indicators",
-                            { ids: batch },
-                          );
-                          issues += result.results.filter(
-                            (r: Row) =>
-                              !r.deferred &&
-                              r.errors?.length &&
-                              (r.metrics || r.fees),
-                          ).length;
-                          return result.results;
-                        },
-                        (r) => r.metrics || r.fees,
-                        (done, total) =>
-                          setIndicatorProgress(
-                            `Consultando ML: ${done} de ${total} concluídos…`,
-                          ),
-                      );
-                      indicatorResume.current = outcome.pendingIds.length
-                        ? { scope, ids: outcome.pendingIds }
-                        : null;
-                      const warnings = issues + outcome.failed;
-                      notify(
-                        `${outcome.successful} anúncios consultados.${warnings ? ` ${warnings} com dados indisponíveis ou parciais.` : ""}${outcome.pendingIds.length ? ` ${outcome.pendingIds.length} pendentes; clique novamente para continuar.` : ""}${outcome.error ? ` ${outcome.error}` : ""}`,
-                        warnings || outcome.pendingIds.length || outcome.error
-                          ? "warning"
-                          : "success",
-                      );
-                    } catch (error) {
-                      setToast({ text: (error as Error).message, error: true });
-                    } finally {
-                      setIndicatorProgress(undefined);
-                      setBusy(false);
-                      setLoading(true);
-                      setRefresh((n) => n + 1);
-                    }
+                  onIndicators={(ids) => {
+                    if (!busy) void indicatorUpdate.start(ids);
                   }}
                 />
               )}
@@ -1573,6 +1528,12 @@ export default function Workspace({ view }: { view: string[] }) {
           )}
         </main>
       </div>
+      {indicatorUpdate.progress && (
+        <ListingUpdateProgress
+          {...indicatorUpdate.progress}
+          onCancel={indicatorUpdate.cancel}
+        />
+      )}
       <CommandSearch
         open={searchOpen}
         store={store}

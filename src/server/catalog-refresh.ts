@@ -10,11 +10,24 @@ export async function refreshCatalog(
 ) {
   admin(actor);
   const p = z
-      .object({ offerId: z.string().min(1).max(200).optional() })
+      .object({
+        offerId: z.string().min(1).max(200).optional(),
+        completedStoreIds: z
+          .array(z.string().min(1).max(200))
+          .max(100)
+          .default([]),
+      })
       .strict()
       .parse(payload),
     store = query.get("store") || "all";
   if (store !== "all") authorizeStore(actor, store);
+  for (const completed of p.completedStoreIds) {
+    authorizeStore(actor, completed);
+    if (store !== "all" && store !== completed)
+      throw new HttpError(422, "Loja concluída fora do filtro selecionado");
+  }
+  if (p.offerId && p.completedStoreIds.length)
+    throw new HttpError(422, "A consulta isolada não pode ignorar lojas");
   const offer = p.offerId ? await get("offers", p.offerId) : null;
   if (p.offerId) {
     if (!offer || offer.organization_id !== actor.organization_id)
@@ -30,7 +43,8 @@ export async function refreshCatalog(
   const selected = actor.stores.filter(
     (s) =>
       (!offer || s.id === offer.store_id) &&
-      (store === "all" || s.id === store),
+      (store === "all" || s.id === store) &&
+      !p.completedStoreIds.includes(s.id),
   );
   const accounts = (
     await Promise.all(

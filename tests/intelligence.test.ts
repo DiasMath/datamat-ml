@@ -734,6 +734,69 @@ test("catalogue refresh validates role, organization, store and authorization be
   );
   await put("offers", o.id, o);
 });
+test("catalogue continuation skips completed stores and rejects skips outside the authorized scope", async () => {
+  const otherId = key("juntos-data", "mercadolivre");
+  const previous = await get("connections", otherId);
+  await put("connections", otherId, {
+    ...previous,
+    store_id: "juntos-data",
+    provider: "mercadolivre",
+    status: "connected",
+    external_account: "222",
+    auth_version: 9,
+    sync_until: 0,
+  });
+  await put("ml_tokens", otherId, {
+    auth_version: 9,
+    encrypted: encryptSecret({
+      access_token: "fake-other",
+      refresh_token: "fake-refresh",
+    }),
+    expires_at: Date.now() + 3600000,
+  });
+  try {
+    const paths: string[] = [];
+    const result = await mocked(
+      (url) => {
+        paths.push(url.pathname);
+        assert.equal(url.pathname, "/users/222/items/search");
+        return json({ results: [], paging: { total: 0 } });
+      },
+      () =>
+        refreshCatalog(actor, new URLSearchParams(), {
+          completedStoreIds: ["juntos-com"],
+        }),
+    );
+    assert.deepEqual(paths, ["/users/222/items/search"]);
+    assert.equal(result.partial, false);
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].storeId, "juntos-data");
+    await assert.rejects(
+      () =>
+        refreshCatalog(actor, new URLSearchParams(), {
+          completedStoreIds: ["outside"],
+        }),
+      /Loja/,
+    );
+    await assert.rejects(
+      () =>
+        refreshCatalog(actor, new URLSearchParams({ store: "juntos-com" }), {
+          completedStoreIds: ["juntos-data"],
+        }),
+      /fora do filtro/,
+    );
+  } finally {
+    await put(
+      "connections",
+      otherId,
+      previous || {
+        store_id: "juntos-data",
+        provider: "mercadolivre",
+        status: "unconfigured",
+      },
+    );
+  }
+});
 test("batch competition validates the complete scope before requests, isolates denied resources and keeps the overview independent of listing filters", async () => {
   const offers: Record<string, any>[] = [];
   for (let i = 0; i < 2; i++) {

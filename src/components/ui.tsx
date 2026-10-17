@@ -298,22 +298,54 @@ export const jsonRequest = async <T = any,>(
   method = "POST",
   signal?: AbortSignal,
   activity: "foreground" | "background" = "foreground",
+  timeoutMs?: number,
 ): Promise<T> => {
-  const res = await trackedFetch(
-    url,
-    body === undefined
-      ? { cache: "no-store", signal }
-      : {
-          method,
-          signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-    activity,
-  );
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || "Não foi possível concluir a operação");
+  const controller = timeoutMs ? new AbortController() : null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stop: (() => void) | undefined;
+  const activeSignal = controller
+    ? signal
+      ? AbortSignal.any([signal, controller.signal])
+      : controller.signal
+    : signal;
+  const execute = async () => {
+    const res = await trackedFetch(
+      url,
+      body === undefined
+        ? { cache: "no-store", signal: activeSignal }
+        : {
+            method,
+            signal: activeSignal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          },
+      activity,
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Não foi possível concluir a operação");
+    }
+    return data;
+  };
+  if (!timeoutMs) return execute();
+  const stopped = new Promise<never>((_, reject) => {
+    stop = () =>
+      reject(new DOMException("Consulta interrompida", "AbortError"));
+    signal?.addEventListener("abort", stop, { once: true });
+    if (signal?.aborted) stop();
+    timer = setTimeout(() => {
+      reject(
+        new Error(
+          "A consulta demorou além do esperado. Os dados já atualizados foram preservados; continue a consulta para retomar os pendentes.",
+        ),
+      );
+      controller?.abort();
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([execute(), stopped]);
+  } finally {
+    clearTimeout(timer);
+    if (stop) signal?.removeEventListener("abort", stop);
   }
-  return data;
 };

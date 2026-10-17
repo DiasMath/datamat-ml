@@ -921,70 +921,81 @@ test("all-store catalogue continuation skips stores already completed rather tha
   request,
 }) => {
   const { title } = await seed(request);
-  await page.route("**/api/workspace?*", async (route) => {
-    const response = await route.fetch();
-    const data = await response.json();
-    for (const store of data.listingOverview.sync) store.status = "connected";
-    await route.fulfill({ response, json: data });
+  const otherConnection = db()
+    .collection("connections")
+    .doc(key("juntos-data", "mercadolivre"));
+  const original = (await otherConnection.get()).data();
+  await otherConnection.set({
+    ...original,
+    store_id: "juntos-data",
+    provider: "mercadolivre",
+    status: "connected",
+    external_account: "222",
+    auth_version: 998,
   });
-  const bodies: any[] = [];
-  await page.route("**/api/catalog/refresh?*", async (route) => {
-    bodies.push(route.request().postDataJSON());
-    await route.fulfill({
-      json:
-        bodies.length === 1
-          ? {
-              partial: true,
-              results: [
-                {
-                  storeId: "juntos-com",
-                  status: "confirmed",
-                  processed: 2,
-                  has_more: false,
-                },
-                {
-                  storeId: "juntos-data",
-                  status: "confirmed",
-                  processed: 20,
-                  has_more: true,
-                },
-              ],
-            }
-          : {
-              partial: false,
-              results: [
-                {
-                  storeId: "juntos-data",
-                  status: "confirmed",
-                  processed: 2,
-                  has_more: false,
-                },
-              ],
-            },
+  try {
+    const bodies: any[] = [];
+    await page.route("**/api/catalog/refresh?*", async (route) => {
+      bodies.push(route.request().postDataJSON());
+      await route.fulfill({
+        json:
+          bodies.length === 1
+            ? {
+                partial: true,
+                results: [
+                  {
+                    storeId: "juntos-com",
+                    status: "confirmed",
+                    processed: 2,
+                    has_more: false,
+                  },
+                  {
+                    storeId: "juntos-data",
+                    status: "confirmed",
+                    processed: 20,
+                    has_more: true,
+                  },
+                ],
+              }
+            : {
+                partial: false,
+                results: [
+                  {
+                    storeId: "juntos-data",
+                    status: "confirmed",
+                    processed: 2,
+                    has_more: false,
+                  },
+                ],
+              },
+      });
     });
-  });
-  await page.goto(`/anuncios?store=all&q=${encodeURIComponent(title)}`);
-  await page
-    .getByRole("button", {
+    await page.goto(`/anuncios?store=all&q=${encodeURIComponent(title)}`);
+    await page
+      .getByRole("button", {
+        name: "Sincronização da tela com o ML",
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog", {
       name: "Sincronização da tela com o ML",
       exact: true,
-    })
-    .click();
-  const dialog = page.getByRole("dialog", {
-    name: "Sincronização da tela com o ML",
-    exact: true,
-  });
-  await dialog
-    .getByRole("button", { name: "Atualizar catálogo das lojas" })
-    .click();
-  await expect(dialog).toContainText(
-    "Consulta do catálogo concluída · 24 anúncios consultados",
-  );
-  expect(bodies).toEqual([{}, { completedStoreIds: ["juntos-com"] }]);
-  await expect(
-    dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
-  ).toBeEnabled();
-  await page.unrouteAll({ behavior: "wait" });
+    });
+    await dialog
+      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .click();
+    await expect(dialog).toContainText(
+      "Consulta do catálogo concluída · 24 anúncios consultados",
+    );
+    expect(bodies).toEqual([{}, { completedStoreIds: ["juntos-com"] }]);
+    await expect(
+      dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
+    ).toBeEnabled();
+    await page.unrouteAll({ behavior: "wait" });
+  } finally {
+    if (original) await otherConnection.set(original);
+    else await otherConnection.delete();
+  }
 });
 test("indicator requests show loading and update cached seven-day data without losing filters", async ({
   page,

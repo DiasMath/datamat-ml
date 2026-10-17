@@ -1449,8 +1449,8 @@ async function syncListingsInside(
               a.id,
             ),
           )
-          .map((a) => [a.id, a.value_name || a.value_id || null])
-          .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+          .map((a) => ({ id: a.id, value: a.value_name || a.value_id || null }))
+          .sort((a, b) => a.id.localeCompare(b.id)),
         availableQuantity: item.available_quantity,
         soldQuantityLifetime: item.sold_quantity,
         catalogListing: item.catalog_listing || false,
@@ -1569,7 +1569,7 @@ async function syncListingsInside(
         ? e.message
         : invalidFields.length
           ? `O Mercado Livre retornou dados incompatíveis em ${responseResource} (campos: ${invalidFields.join(", ")}). A consulta pode ser retomada sem perder os anúncios já atualizados.`
-          : "O formato de resposta do Mercado Livre precisa ser conferido; consulte o registro da sincronização";
+          : `Não foi possível gravar a atualização de ${responseResource}. Os dados já consultados foram preservados; consulte o registro da sincronização.`;
     await transaction(async () => {
       const current = await get("connections", c.id);
       const savedPage = await get("ml_sync_pages", c.id);

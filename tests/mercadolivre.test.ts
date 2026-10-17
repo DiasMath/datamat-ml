@@ -499,6 +499,38 @@ test("interrupted scan resumes the saved page without advancing or duplicating t
     1,
   );
 });
+test("package dimensions and weight import as Firestore-safe records instead of nested arrays", async () => {
+  const remote = item("MLB9211", {
+    attributes: [
+      { id: "SELLER_PACKAGE_HEIGHT", value_name: "10 cm" },
+      { id: "SELLER_PACKAGE_WEIGHT", value_name: "500 g" },
+      { id: "SELLER_PACKAGE_LENGTH", value_id: "12" },
+      { id: "SELLER_PACKAGE_WIDTH", value_name: null, value_id: null },
+    ],
+  });
+  await mocked(listings([remote]), () =>
+    ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
+  );
+  const imported = await importedOffer(remote.id);
+  assert.deepEqual(imported.ml.financialAttributes, [
+    { id: "SELLER_PACKAGE_HEIGHT", value: "10 cm" },
+    { id: "SELLER_PACKAGE_LENGTH", value: "12" },
+    { id: "SELLER_PACKAGE_WEIGHT", value: "500 g" },
+    { id: "SELLER_PACKAGE_WIDTH", value: null },
+  ]);
+  const checkFirestoreArrays = (value: unknown, insideArray = false) => {
+    if (Array.isArray(value)) {
+      assert.equal(
+        insideArray,
+        false,
+        "Firestore rejects arrays directly nested in arrays",
+      );
+      value.forEach((entry) => checkFirestoreArrays(entry, true));
+    } else if (value && typeof value === "object")
+      Object.values(value).forEach((entry) => checkFirestoreArrays(entry));
+  };
+  checkFirestoreArrays(imported.ml);
+});
 test("invalid ML fields identify the failing listing without exposing values, preserve completed work and resume the saved page", async () => {
   const requestId = randomUUID();
   const before = await get("connections", connectionId);

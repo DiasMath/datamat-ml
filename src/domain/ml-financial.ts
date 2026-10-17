@@ -17,7 +17,11 @@ export function financialContext(offer: Row) {
     ml.logisticType,
     ml.freeShipping,
     ml.shippingDimensions || null,
-    ml.financialAttributes || [],
+    // Older snapshots used pairs. Keep the financial signature stable while
+    // persisting maps instead of arrays inside arrays, which Firestore rejects.
+    (ml.financialAttributes || []).map((attribute: Row | unknown[]) =>
+      Array.isArray(attribute) ? attribute : [attribute.id, attribute.value],
+    ),
     ml.variablePrices || false,
   ]);
 }

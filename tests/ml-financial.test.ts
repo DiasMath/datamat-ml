@@ -121,6 +121,34 @@ before(async () => {
     expires_at: Date.now() + 3600000,
   });
 });
+test("Firestore-safe package records retain existing financial quotes but changed dimensions invalidate them", () => {
+  const old = {
+    ...offer(),
+    ml: {
+      ...ml,
+      financialAttributes: [
+        ["SELLER_PACKAGE_HEIGHT", "10 cm"],
+        ["SELLER_PACKAGE_WEIGHT", "500 g"],
+      ],
+    },
+  };
+  const saved = snapshot(old);
+  const current = {
+    ...old,
+    ml: {
+      ...ml,
+      financialAttributes: [
+        { id: "SELLER_PACKAGE_HEIGHT", value: "10 cm" },
+        { id: "SELLER_PACKAGE_WEIGHT", value: "500 g" },
+      ],
+    },
+    mlFinancial: saved,
+  };
+  assert.equal(financialContext(current), saved.context);
+  assert.equal(automaticMlCosts(current).shipping, "8.00");
+  current.ml.financialAttributes[0].value = "20 cm";
+  assert.deepEqual(automaticMlCosts(current), {});
+});
 test("automatic ML costs preserve manual zero, missing values, context and authorization boundaries", () => {
   const o = offer(),
     f = snapshot(o),

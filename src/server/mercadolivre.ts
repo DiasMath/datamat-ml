@@ -1325,6 +1325,7 @@ async function syncListingsInside(
     return null;
   });
   if (prior) return prior;
+  let responseResource = "página do catálogo";
   try {
     await applicationConfig(c);
     if (!c.external_account)
@@ -1381,6 +1382,7 @@ async function syncListingsInside(
         pending.processed_ids?.includes(itemId)
       )
         continue;
+      responseResource = `anúncio ${itemId}`;
       const item = itemSchema.parse(await api(c, "/items/" + itemId));
       if (item.currency_id !== "BRL")
         throw new HttpError(
@@ -1554,10 +1556,20 @@ async function syncListingsInside(
       });
     });
   } catch (e) {
+    const invalidFields =
+      e instanceof z.ZodError
+        ? [
+            ...new Set(
+              e.issues.map((issue) => issue.path.join(".") || "resposta"),
+            ),
+          ].slice(0, 8)
+        : [];
     const message =
       e instanceof HttpError
         ? e.message
-        : "O formato de resposta do Mercado Livre precisa ser conferido; consulte o registro da sincronização";
+        : invalidFields.length
+          ? `O Mercado Livre retornou dados incompatíveis em ${responseResource} (campos: ${invalidFields.join(", ")}). A consulta pode ser retomada sem perder os anúncios já atualizados.`
+          : "O formato de resposta do Mercado Livre precisa ser conferido; consulte o registro da sincronização";
     await transaction(async () => {
       const current = await get("connections", c.id);
       const savedPage = await get("ml_sync_pages", c.id);
@@ -1580,6 +1592,12 @@ async function syncListingsInside(
         request_id: p.requestId,
         created_at: now(),
         message,
+        ...(invalidFields.length
+          ? {
+              response_resource: responseResource,
+              invalid_fields: invalidFields,
+            }
+          : {}),
       });
     });
     throw new HttpError(e instanceof HttpError ? e.status : 502, message);

@@ -62,7 +62,13 @@ test("store filters update without notifications or moving the page heading", as
 test("sidebar collapse persists, preserves navigation, and the mobile drawer scrolls at short heights", async ({
   page,
 }) => {
-  await page.goto("/?store=juntos-com");
+  const response = await page.goto("/?store=juntos-com");
+  expect(response?.headers()["link"] || "").not.toMatch(
+    /<\/icon\.svg>;\s*rel=preload/,
+  );
+  await expect(page.locator('link[rel="icon"][href*="icon.svg"]')).toHaveCount(
+    1,
+  );
   await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
   const sidebar = page.locator(".sidebar");
   await expect(sidebar.locator(".brand img")).toHaveAttribute(

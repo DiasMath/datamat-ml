@@ -746,7 +746,13 @@ export default function Workspace({ view }: { view: string[] }) {
       >
         <div className="brand">
           <span className="brand-lockup" role="img" aria-label="DATAMAT">
-            <img src="/icon.svg" width={28} height={36} alt="" />
+            <img
+              src="/icon.svg"
+              width={28}
+              height={36}
+              alt=""
+              fetchPriority="low"
+            />
             {(!sidebarCollapsed || mobile) && (
               <svg
                 className="brand-wordmark"

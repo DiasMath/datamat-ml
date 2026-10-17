@@ -499,6 +499,48 @@ test("interrupted scan resumes the saved page without advancing or duplicating t
     1,
   );
 });
+test("invalid ML fields identify the failing listing without exposing values, preserve completed work and resume the saved page", async () => {
+  const requestId = randomUUID();
+  const before = await get("connections", connectionId);
+  await mocked(
+    listings([
+      item("MLB9201"),
+      item("MLB9202", { price: "private-provider-value" }),
+    ]),
+    async () => {
+      await assert.rejects(
+        ml.syncListings(actor, connectionId, { requestId }),
+        (error: unknown) => {
+          assert.ok(error instanceof Error);
+          assert.match(error.message, /anúncio MLB9202.*price/);
+          assert.ok(!error.message.includes("private-provider-value"));
+          return true;
+        },
+      );
+    },
+  );
+  const page = await get("ml_sync_pages", connectionId);
+  assert.deepEqual(page!.processed_ids, ["MLB9201"]);
+  assert.equal(
+    (await get("connections", connectionId))!.last_catalog_completed_at,
+    before!.last_catalog_completed_at,
+  );
+  assert.equal((await get("connections", connectionId))!.sync_until, 0);
+  const log = await get("sync_logs", key("sync", requestId));
+  assert.deepEqual(log!.invalid_fields, ["price"]);
+  let scans = 0;
+  const handler = listings([item("MLB9201"), item("MLB9202")]);
+  await mocked(
+    (url, init) => {
+      if (url.pathname.endsWith("/items/search")) scans++;
+      return handler(url, init);
+    },
+    () => ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
+  );
+  assert.equal(scans, 0);
+  assert.ok(await importedOffer("MLB9202"));
+  assert.equal(await get("ml_sync_pages", connectionId), undefined);
+});
 function tariffHandler(price = 90, totalOverride?: number): Handler {
   return (url, init) => {
     if (url.pathname === "/sites/MLB/listing_prices") {

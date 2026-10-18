@@ -55,7 +55,11 @@ export function db() {
       { projectId, ...(credential ? { credential } : {}) },
       "datamat-server",
     );
-  database = initializeFirestore(app, { preferRest: false });
+  // HTTP transport avoids long-lived gRPC channels in short-lived serverless instances.
+  // The emulator keeps its existing gRPC path for isolated transaction tests.
+  database = initializeFirestore(app, {
+    preferRest: configuration.mode !== "emulator",
+  });
   return database;
 }
 function doc(collection: string, documentId: string) {

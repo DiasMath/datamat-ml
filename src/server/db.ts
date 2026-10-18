@@ -1,4 +1,5 @@
 import { firestoreReadClientConfig } from "./firestore-settings";
+import { databaseFailure, FirestoreQuotaError } from "./database-failure";
 import { randomUUID, createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -205,38 +206,50 @@ export async function transaction<T>(fn: () => Promise<T>): Promise<T> {
         writes: new Map(),
         reads: new Map(),
       };
-      return context.run(c, async () => {
-        const result = await fn();
-        if (c.writes.size > 450)
-          throw new Error(
-            "Operação excede o limite transacional; reduza o lote",
-          );
-        const changedStores = new Set<string>();
-        for (const [path, row] of c.writes) {
-          const [collection, documentId] = path.split("/");
-          for (const candidate of [row, c.reads.get(path)]) {
-            const storeId = affectedStore(collection, documentId, candidate);
-            if (storeId) changedStores.add(storeId);
+      return context
+        .run(c, async () => {
+          const result = await fn();
+          if (c.writes.size > 450)
+            throw new Error(
+              "Operação excede o limite transacional; reduza o lote",
+            );
+          const changedStores = new Set<string>();
+          for (const [path, row] of c.writes) {
+            const [collection, documentId] = path.split("/");
+            for (const candidate of [row, c.reads.get(path)]) {
+              const storeId = affectedStore(collection, documentId, candidate);
+              if (storeId) changedStores.add(storeId);
+            }
           }
-        }
-        if (c.writes.size + changedStores.size > 500)
-          throw new Error(
-            "Operação excede o limite transacional; reduza o lote",
-          );
-        // Stage writes: Firestore requires ALL reads to precede ALL writes.
-        for (const [path, row] of c.writes) {
-          const ref = db().doc(path);
-          if (row === null) tx.delete(ref);
-          else tx.set(ref, row);
-        }
-        for (const storeId of changedStores)
-          tx.set(
-            revisionWrite(storeId),
-            { revision: FieldValue.increment(1) },
-            { merge: true },
-          );
-        return result;
-      });
+          if (c.writes.size + changedStores.size > 500)
+            throw new Error(
+              "Operação excede o limite transacional; reduza o lote",
+            );
+          // Stage writes: Firestore requires ALL reads to precede ALL writes.
+          for (const [path, row] of c.writes) {
+            const ref = db().doc(path);
+            if (row === null) tx.delete(ref);
+            else tx.set(ref, row);
+          }
+          for (const storeId of changedStores)
+            tx.set(
+              revisionWrite(storeId),
+              { revision: FieldValue.increment(1) },
+              { merge: true },
+            );
+          return result;
+        })
+        .catch((error: unknown) => {
+          // The transaction runner has its own RESOURCE_EXHAUSTED retry loop,
+          // separate from GAX. Stop quota retries before it schedules a minute
+          // of backoff; conflicts and commit retries retain SDK behavior.
+          if (
+            error instanceof Error &&
+            databaseFailure(error)?.code === "FIRESTORE_QUOTA_EXCEEDED"
+          )
+            throw new FirestoreQuotaError(error);
+          throw error;
+        });
     },
     { maxAttempts: 5 },
   );

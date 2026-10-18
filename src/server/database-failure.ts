@@ -1,10 +1,21 @@
 // Provider details stay in server logs. Public responses contain only an
 // actionable category, never tokens, keys, raw payloads or SDK stack traces.
+export class FirestoreQuotaError extends Error {
+  readonly code = "FIRESTORE_QUOTA_EXCEEDED";
+  constructor(cause: Error) {
+    super(cause.message, { cause });
+    this.name = "FirestoreQuotaError";
+  }
+}
 export function databaseFailure(error: unknown) {
   if (!(error instanceof Error)) return null;
   const code = (error as Error & { code?: number | string }).code;
   const message = error.message;
-  if (code === 8 || code === "RESOURCE_EXHAUSTED")
+  if (
+    code === 8 ||
+    code === "RESOURCE_EXHAUSTED" ||
+    code === "FIRESTORE_QUOTA_EXCEEDED"
+  )
     return {
       status: 503,
       code: "FIRESTORE_QUOTA_EXCEEDED",

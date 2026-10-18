@@ -4,7 +4,16 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { initializeDatabase, get, find, id, db } from "../src/server/db";
+import {
+  initializeDatabase,
+  get,
+  find,
+  id,
+  db,
+  put,
+  transaction,
+} from "../src/server/db";
+import { databaseFailure } from "../src/server/database-failure";
 import { workspaceActor, type Actor } from "../src/server/access";
 import * as s from "../src/server/services";
 import { emptyCosts } from "../src/domain/finance";
@@ -67,6 +76,22 @@ test("workspace opens without users, passwords or sessions and scopes active sto
   assert.equal(admin.stores.length, 2);
   assert.equal((await find("users")).length, 0);
   assert.equal((await find("sessions")).length, 0);
+});
+
+test("quota failures stop the SDK transaction runner without committing staged writes", async () => {
+  const documentId = id();
+  let attempts = 0;
+  await assert.rejects(
+    transaction(async () => {
+      attempts++;
+      await put("_quota_test", documentId, { staged: true });
+      throw Object.assign(new Error("Provider quota exhausted"), { code: 8 });
+    }),
+    (error: unknown) =>
+      databaseFailure(error)?.code === "FIRESTORE_QUOTA_EXCEEDED",
+  );
+  assert.equal(attempts, 1);
+  assert.equal(await get("_quota_test", documentId), undefined);
 });
 test("same SKU in separate stores and multiple offers per product are allowed", async () => {
   const first = await s.saveOffer(admin, offer());

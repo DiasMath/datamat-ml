@@ -1428,6 +1428,14 @@ fieldset.form-grid {
 }
 .offers-table {
   min-width: 1120px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.offers-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface2);
 }
 .offers-table th:first-child,
 .offers-table td:first-child {
@@ -1442,6 +1450,7 @@ fieldset.form-grid {
   padding-bottom: 17px;
 }
 .offers-table th {
+  border-top: 0;
   color: #fff;
   font-size: 12px;
   font-weight: 600;

@@ -66,6 +66,8 @@ Quando tarifas ou métricas falham, o botão de pendências abre o resultado por
 
 ## Consumo do Firestore
 
+A lista usa `profile=listings` no workspace: não lê histórico nem registros de sincronização e envia uma projeção menor para as opções de busca, filtros e ações em lote. Os dados completos de edição permanecem nas linhas, e a ficha e o módulo Histórico fazem suas consultas completas. O perfil participa da chave do cache do cliente para impedir que uma navegação reutilize o cadastro reduzido onde são necessários detalhes.
+
 As verificações automáticas de Anúncios consultam uma revisão pequena por loja a cada minuto. Com a revisão inalterada, não recarregam o workspace nem varrem anúncios no ML. Notificações atualizam os recursos envolvidos; uma conferência completa automática tem intervalo de 30 minutos, compartilhado entre abas pela data persistida da sincronização. A sincronização manual continua disponível por loja. O workspace é recarregado uma vez ao fim de uma passagem, em vez de uma vez por página do catálogo.
 
 Hoje também verifica revisões e reaproveita o retrato de vendas por até dez minutos entre consultas automáticas ao provedor. Alterações notificadas podem atualizar os dados salvos antes desse intervalo. A consulta de vendas não inicia uma varredura de catálogo adicional. Edições locais continuam invalidando os dados derivados pela revisão do Firestore.

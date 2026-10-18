@@ -1051,7 +1051,8 @@ export async function noteToTask(
 }
 export async function workspace(actor: Actor, query: URLSearchParams) {
   const selected = query.get("store"),
-    ids = scoped(actor, selected);
+    ids = scoped(actor, selected),
+    listingsOnly = query.get("profile") === "listings";
   const workspaceRevision = await storeRevision(ids);
   const [
     rawOffers,
@@ -1079,7 +1080,9 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     list(actor, "tasks", selected),
     find("notes", { organization_id: actor.organization_id }),
     list(actor, "proposals", selected),
-    list(actor, "history", selected),
+    listingsOnly
+      ? Promise.resolve([] as Row[])
+      : list(actor, "history", selected),
     list(actor, "connections", selected),
     list(actor, "ml_metrics_7d", selected),
     list(actor, "ml_current_quotes", selected),
@@ -1286,7 +1289,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       .map((u) => [u!.id, u!.name]),
   );
   const logs: Row[] = [];
-  for (const c of connections)
+  for (const c of listingsOnly ? [] : connections)
     logs.push(
       ...(await find("sync_logs", { connection_id: c.id })).map((l) => ({
         ...l,
@@ -1308,7 +1311,29 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       competitionRows,
     ),
     listingCounts: listingCounts(filtered),
-    offerChoices: offers,
+    offerChoices: listingsOnly
+      ? offers.map((o) => ({
+          id: o.id,
+          store_id: o.store_id,
+          store_name: o.store_name,
+          title: o.title,
+          product_name: o.product_name,
+          sku: o.sku,
+          ml_id: o.ml_id,
+          type: o.type,
+          status: o.status,
+          origin: o.origin,
+          reference_account: o.reference_account,
+          price: o.price,
+          version: o.version,
+          brand: o.brand,
+          category: o.category,
+          model: o.model,
+          ...(o.ml
+            ? { ml: { sellerId: o.ml.sellerId, authVersion: o.ml.authVersion } }
+            : {}),
+        }))
+      : offers,
     products: products.map((p) => ({
       ...p,
       brand: brandMap.get(p.brand_id) || null,

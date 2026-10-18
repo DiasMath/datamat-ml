@@ -39,6 +39,12 @@ test("every workspace screen shares consultation time in Brasilia and incomplete
   await page.route("**/api/workspace?*", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
+    const profile = new URL(route.request().url()).searchParams.get("profile");
+    if (profile === "listings") {
+      expect(data.history).toEqual([]);
+      expect(data.logs).toEqual([]);
+      expect(data.offerChoices[0]).not.toHaveProperty("calculation");
+    }
     data.listingOverview.generatedAt = "2026-10-17T02:55:00.000Z";
     Object.assign(data.listingOverview.sync[0], {
       partial,
@@ -59,7 +65,20 @@ test("every workspace screen shares consultation time in Brasilia and incomplete
     "estudos",
     "configuracoes",
   ]) {
+    const loaded = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/api/workspace",
+    );
     await page.goto(`/${path}?store=${storeId}`);
+    const response = await loaded;
+    expect(new URL(response.url()).searchParams.get("profile")).toBe(
+      path === "anuncios" ? "listings" : null,
+    );
+    if (path === "historico") {
+      expect(
+        (await response.json()).history.some((h: any) => h.offer_id === a.id),
+      ).toBe(true);
+      await expect(page.locator("main")).toContainText("Tomada Áudio portátil");
+    }
     await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".topbar .today-freshness")).toContainText(
       `Consultado às 23:55 · ${["anuncios", "precificacao", "concorrencia"].includes(path.split("/")[0]) ? "Catálogo sincronizado" : "Dados completos"}`,

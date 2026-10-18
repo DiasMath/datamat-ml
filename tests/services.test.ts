@@ -108,6 +108,59 @@ test("same SKU in separate stores and multiple offers per product are allowed", 
   );
   assert.equal(second.product_id, first.product_id);
 });
+
+test("listing profile skips history and sync log reads while preserving filters, editing data and bulk authorization", async (t) => {
+  const saved = await s.saveOffer(
+    admin,
+    offer("juntos-com", {
+      title: "Perfil leve de anúncios",
+      description: "Descrição que deve continuar disponível para editar",
+    }),
+  );
+  const scope = { store: "juntos-com", q: saved.title };
+  const full = await s.workspace(admin, new URLSearchParams(scope));
+  const reads: string[] = [];
+  const collection = db().collection.bind(db());
+  t.mock.method(db(), "collection", (path: string) => {
+    reads.push(path);
+    return collection(path);
+  });
+  const light = await s.workspace(
+    admin,
+    new URLSearchParams({ ...scope, profile: "listings" }),
+  );
+  t.mock.restoreAll();
+  assert.ok(reads.includes("offers"));
+  for (const name of ["history", "sync_logs", "users"])
+    assert.ok(!reads.includes(name), name);
+  assert.ok(full.history.some((h) => h.offer_id === saved.id));
+  assert.deepEqual(light.history, []);
+  assert.deepEqual(light.logs, []);
+  assert.deepEqual(light.offers, full.offers);
+  assert.deepEqual(light.listingCounts, full.listingCounts);
+  const choice = light.offerChoices.find((o) => o.id === saved.id)!;
+  for (const field of [
+    "id",
+    "store_id",
+    "version",
+    "status",
+    "origin",
+    "title",
+    "sku",
+    "price",
+  ] as const)
+    assert.equal(choice[field], saved[field]);
+  assert.ok(!("description" in choice));
+  assert.ok(!("calculation" in choice));
+  assert.ok(JSON.stringify(light).length < JSON.stringify(full).length);
+  await assert.rejects(
+    s.workspace(
+      restricted,
+      new URLSearchParams({ store: "juntos-data", profile: "listings" }),
+    ),
+    /Loja não encontrada/,
+  );
+});
 test("store isolation is enforced by server for reading, writing, filtering, batching and exporting data", async () => {
   const secret = await s.saveOffer(
     admin,

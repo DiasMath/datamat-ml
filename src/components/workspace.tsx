@@ -280,6 +280,8 @@ export default function Workspace({ view }: { view: string[] }) {
   const store = search.get("store") || "all",
     tab = search.get("tab") || "overview";
   const dataQuery = new URLSearchParams(query);
+  dataQuery.delete("profile");
+  if (section === "anuncios" && !offerId) dataQuery.set("profile", "listings");
   for (const key of [
     "todayFocus",
     "todayPage",

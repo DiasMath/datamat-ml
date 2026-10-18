@@ -408,6 +408,7 @@ export default function ListingTableControls({
               <input
                 autoFocus
                 value={editor.name}
+                disabled={busy}
                 maxLength={60}
                 required
                 onChange={(e) => setEditor({ ...editor, name: e.target.value })}

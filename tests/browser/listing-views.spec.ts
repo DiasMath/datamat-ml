@@ -69,9 +69,25 @@ test("views persist in Firestore and another browser restores filters, sort, col
     exact: true,
   });
   await dialog.getByLabel("Nome da visão").fill("Revisar preços");
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  await page.route("**/api/listing-views", async (route) => {
+    await saveGate;
+    await route.continue();
+  });
   await dialog
     .getByRole("button", { name: "Salvar visão", exact: true })
     .click();
+  try {
+    await expect(dialog.getByLabel("Nome da visão")).toBeDisabled();
+    await expect(
+      dialog.getByRole("button", { name: "Salvando…", exact: true }),
+    ).toBeDisabled();
+  } finally {
+    releaseSave();
+  }
   await expect(dialog).toHaveCount(0);
   const saved = (
     await (await request.get(`/api/listing-views?store=${stores[0]}`)).json()

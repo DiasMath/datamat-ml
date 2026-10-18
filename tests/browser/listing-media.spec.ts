@@ -1388,3 +1388,241 @@ test("catalogue failure never reports success or consults indicators and preserv
   await expect(page.locator(".listing-update-progress")).toHaveCount(0);
   expect(indicatorCalls).toBe(0);
 });
+
+test("pending indicators retry only the missing part of each listing without rescanning the catalogue", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  let catalogs = 0;
+  const calls: any[] = [];
+  await page.route("**/api/catalog/refresh?*", async (route) => {
+    catalogs++;
+    await route.fulfill({
+      json: {
+        partial: false,
+        results: [
+          {
+            storeId: "juntos-com",
+            status: "confirmed",
+            processed: 2,
+            has_more: false,
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/catalog/indicators*", async (route) => {
+    const body = route.request().postDataJSON();
+    calls.push(body);
+    await route.fulfill({
+      json: {
+        results: body.ids.map((id: string) =>
+          calls.length === 1
+            ? {
+                id,
+                metrics: id === rows[0].id,
+                fees: id === rows[1].id,
+                errors: [
+                  id === rows[0].id
+                    ? "Frete indisponível"
+                    : "Métricas indisponíveis",
+                ],
+              }
+            : {
+                id,
+                metrics: body.parts[id].includes("metrics"),
+                fees: body.parts[id].includes("fees"),
+                errors: [],
+              },
+        ),
+      },
+    });
+  });
+  await page.goto(`/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`);
+  const url = page.url();
+  await page
+    .getByRole("button", { name: "Atualizar anúncios da loja", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Ver pendências da última consulta ML",
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Pendências da última consulta ML",
+    exact: true,
+  });
+  await expect(dialog).toContainText("Frete indisponível");
+  await expect(dialog).toContainText("Métricas indisponíveis");
+  expect(calls).toHaveLength(1);
+  await dialog
+    .getByRole("button", { name: "Reconsultar dados pendentes", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Ver pendências da última consulta ML",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "2 anúncios com indicadores consultados.",
+  );
+  expect(calls).toHaveLength(2);
+  expect(catalogs).toBe(1);
+  expect(calls[1].parts[rows[0].id]).toEqual(["fees"]);
+  expect(calls[1].parts[rows[1].id]).toEqual(["metrics"]);
+  expect(page.url()).toBe(url);
+});
+test("recent ML changes show before and after, filter the shop and ignore old seller authorizations", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  await db()
+    .collection("offers")
+    .doc(rows[0].id)
+    .set(
+      {
+        ml_last_change: {
+          at: new Date().toISOString(),
+          sellerId: "111",
+          authVersion: 998,
+          fields: ["Preço", "Estoque"],
+          details: [
+            {
+              field: "price",
+              label: "Preço",
+              before: "110.00",
+              after: "100.00",
+            },
+            { field: "stock", label: "Estoque", before: 5, after: 0 },
+          ],
+        },
+      },
+      { merge: true },
+    );
+  await db()
+    .collection("offers")
+    .doc(rows[1].id)
+    .set(
+      {
+        ml_last_change: {
+          at: new Date().toISOString(),
+          sellerId: "111",
+          authVersion: 997,
+          fields: ["Preço"],
+          details: [],
+        },
+      },
+      { merge: true },
+    );
+  await page.goto(`/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`);
+  await expect(
+    page.getByRole("button", {
+      name: "Ver alterações no ML de " + title,
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await page
+    .getByRole("button", {
+      name: "Ver alterações no ML de " + title,
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Alterações observadas no ML",
+    exact: true,
+  });
+  await expect(
+    dialog.getByRole("columnheader", { name: "Antes", exact: true }),
+  ).toBeVisible();
+  await expect(dialog).toContainText("R$ 110,00");
+  await expect(dialog).toContainText("R$ 100,00");
+  const stock = dialog.getByRole("row").filter({ hasText: "Estoque" });
+  await expect(stock.getByRole("cell").nth(1)).toHaveText("0");
+  await page.setViewportSize({ width: 320, height: 800 });
+  expect(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+    true,
+  );
+  await page.mouse.click(2, 2);
+  await expect(dialog).toHaveCount(0);
+  await page.getByLabel("Contagem e filtros ativos dos anúncios").click();
+  await page
+    .getByLabel("Alterados no ML nos últimos 7 dias", { exact: true })
+    .check();
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(1);
+  expect(new URL(page.url()).searchParams.get("store")).toBe("juntos-com");
+  await page.reload();
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(1);
+});
+
+test("unchanged catalogue polls check only revisions and reload the workspace once after a change", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  await db().collection("connections").doc(connectionId).set(
+    {
+      last_catalog_completed_at: new Date().toISOString(),
+      has_more: false,
+      pending_batch: false,
+    },
+    { merge: true },
+  );
+  let reads = 0,
+    scans = 0,
+    revisions = 0;
+  page.on("request", (r) => {
+    const path = new URL(r.url()).pathname;
+    if (path === "/api/workspace") reads++;
+    if (path === "/api/catalog/refresh") scans++;
+    if (path === "/api/catalog/revision") revisions++;
+  });
+  await page.clock.install();
+  await page.goto(`/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`);
+  await expect(page.locator(".offers-table tbody tr")).toHaveCount(2);
+  const initialReads = reads;
+  const firstCheck = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === "/api/catalog/revision",
+  );
+  await page.clock.fastForward(61000);
+  await (await firstCheck).finished();
+  await page.clock.runFor(100);
+  await expect.poll(() => revisions).toBe(1);
+  expect(scans).toBe(0);
+  expect(reads).toBe(initialReads);
+  const batch = db().batch();
+  const revision = db().collection("_today_revisions").doc("juntos-com");
+  const current = (await revision.get()).data()?.revision || 0;
+  batch.set(
+    db().collection("offers").doc(rows[0].id),
+    { price: "120.00" },
+    { merge: true },
+  );
+  batch.set(revision, { revision: current + 1 }, { merge: true });
+  await batch.commit();
+  await page.clock.fastForward(61000);
+  await expect.poll(() => reads).toBe(initialReads + 1);
+  expect(scans).toBe(0);
+  await expect(page.locator(".offers-table tbody")).toContainText("R$ 120,00");
+  await page.route("**/api/catalog/revision?*", (route) =>
+    route.fulfill({
+      status: 503,
+      json: {
+        error: "O limite de uso do Firestore foi atingido.",
+        code: "FIRESTORE_QUOTA_EXCEEDED",
+      },
+    }),
+  );
+  await page.clock.fastForward(61000);
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "O limite de uso do Firestore",
+  );
+  const checks = revisions;
+  await page.clock.fastForward(61000);
+  expect(revisions).toBe(checks);
+  expect(reads).toBe(initialReads + 1);
+  await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+});

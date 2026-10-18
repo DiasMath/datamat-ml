@@ -438,6 +438,9 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
   request,
 }) => {
   const o = await ownOffer(request);
+  await db().collection("offers").doc(o.id).update({
+    "ml.observedAt": new Date(Date.now() - 31 * 60000).toISOString(),
+  });
   let calls = 0;
   let reads = 0;
   let release: () => void = () => {};
@@ -450,7 +453,10 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
     await route.continue();
   });
   await page.route("**/api/catalog/refresh*", async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ offerId: o.id });
+    expect(route.request().postDataJSON()).toEqual({
+      offerId: o.id,
+      automatic: true,
+    });
     calls++;
     const ref = db().collection("offers").doc(o.id),
       current = (await ref.get()).data()!;
@@ -529,6 +535,9 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
   });
   await page.clock.fastForward(180000);
   expect(calls).toBe(1);
+  await db().collection("offers").doc(o.id).update({
+    "ml.observedAt": new Date(Date.now() - 31 * 60000).toISOString(),
+  });
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
       configurable: true,

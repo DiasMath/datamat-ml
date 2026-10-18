@@ -6360,3 +6360,84 @@ button.today-metric:hover {
     display: none;
   }
 }
+
+.listing-change-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 3px 5px;
+  border: 1px solid #ffb03f35;
+  border-radius: 4px;
+  background: #ffb03f09;
+  color: var(--orange);
+  font-size: 9px;
+  cursor: pointer;
+}
+.listing-change-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listing-changes-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.listing-change-table-wrap {
+  max-height: 50dvh;
+  overflow: auto;
+  margin: 14px 0;
+}
+.listing-change-table {
+  table-layout: fixed;
+  font-size: 12px;
+}
+.listing-change-table td,
+.listing-change-table th {
+  padding: 10px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.listing-change-table th {
+  text-align: left;
+}
+.listing-change-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface2);
+  color: var(--text);
+}
+.listing-change-table tbody td:last-child {
+  color: var(--orange);
+}
+.listing-indicator-issues-button {
+  color: var(--orange);
+}
+.listing-indicator-issues-list {
+  max-height: 48dvh;
+  overflow: auto;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.listing-indicator-issues-list li {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.listing-indicator-issues-list span {
+  color: var(--orange);
+}
+.listing-indicator-issues-list small {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}

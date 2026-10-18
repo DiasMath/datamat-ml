@@ -1,26 +1,31 @@
 "use client";
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { jsonRequest } from "./ui";
+import { jsonRequest, ApiRequestError } from "./ui";
 import { useToast } from "./toasts";
 export default function useCatalogPolling({
   store,
   offerId,
+  revision,
   enabled,
   blocked,
   onReload,
 }: {
   store: string;
   offerId?: string;
+  revision?: string;
   enabled: boolean;
   blocked: boolean;
   onReload: Dispatch<SetStateAction<number>>;
 }) {
-  const { notify } = useToast(),
-    lastError = useRef("");
+  const { notify } = useToast();
+  const lastError = useRef("");
+  const displayed = useRef(revision);
+  displayed.current = revision;
   useEffect(() => {
     if (!enabled || blocked || store === "all") return;
     let active = true,
       running = false,
+      retryIn = 60000,
       timer: ReturnType<typeof setTimeout> | undefined,
       lastAttempt = Date.now();
     const controller = new AbortController();
@@ -31,7 +36,7 @@ export default function useCatalogPolling({
       if (active && !document.hidden && !running)
         timer = setTimeout(
           run,
-          Math.max(1000, lastAttempt + 60000 - Date.now()),
+          Math.max(1000, lastAttempt + retryIn - Date.now()),
         );
     };
     async function run() {
@@ -42,47 +47,71 @@ export default function useCatalogPolling({
       }
       running = true;
       lastAttempt = Date.now();
+      let reload = false;
       try {
-        const deadline = Date.now() + 180000;
-        let changes = 0;
-        for (
-          let step = 0;
-          step < 100 && safe() && Date.now() < deadline;
-          step++
-        ) {
-          const result = await jsonRequest(
-            "/api/catalog/refresh?" + new URLSearchParams({ store }),
-            offerId ? { offerId } : {},
-            "POST",
-            controller.signal,
-            "background",
-            Math.min(65000, Math.max(1, deadline - Date.now())),
-          );
-          if (safe()) {
-            onReload((n) => n + 1);
-            lastError.current = "";
+        const params = new URLSearchParams({
+          store,
+          ...(offerId ? { offerId } : {}),
+        });
+        const state = await jsonRequest<{
+          revision: string;
+          refreshDue: boolean;
+        }>(
+          "/api/catalog/revision?" + params,
+          undefined,
+          "GET",
+          controller.signal,
+          "background",
+          25000,
+        );
+        reload = state.revision !== displayed.current;
+        if (state.refreshDue) {
+          const deadline = Date.now() + 180000;
+          let changes = 0;
+          for (
+            let step = 0;
+            step < 100 && safe() && Date.now() < deadline;
+            step++
+          ) {
+            const result = await jsonRequest(
+              "/api/catalog/refresh?" + new URLSearchParams({ store }),
+              { automatic: true, ...(offerId ? { offerId } : {}) },
+              "POST",
+              controller.signal,
+              "background",
+              Math.min(65000, Math.max(1, deadline - Date.now())),
+            );
+            reload ||=
+              result.results?.some(
+                (r: any) => !r.skipped && r.status === "confirmed",
+              ) || false;
             changes +=
               result.results?.reduce(
                 (sum: number, r: any) => sum + (r.updated || 0),
                 0,
               ) || 0;
+            if (!result.partial) {
+              if (safe() && changes)
+                notify("Alterações do ML atualizadas no cadastro.", "success");
+              break;
+            }
+            if (
+              !result.results?.length ||
+              result.results.some((r: any) => r.status === "running") ||
+              result.results.every((r: any) => !r.processed)
+            )
+              break;
           }
-          if (!result.partial) {
-            if (safe() && changes > 0)
-              notify("Alterações do ML atualizadas no cadastro.", "success");
-            break;
-          }
-          if (
-            !result.results?.length ||
-            result.results.some((r: any) => r.status === "running") ||
-            result.results.every((r: any) => !r.processed)
-          )
-            break;
         }
+        retryIn = 60000;
+        lastError.current = "";
       } catch (e) {
         if (active && !controller.signal.aborted) {
-          if (safe()) onReload((n) => n + 1);
-          lastAttempt = Date.now();
+          retryIn =
+            e instanceof ApiRequestError &&
+            e.code === "FIRESTORE_QUOTA_EXCEEDED"
+              ? 15 * 60000
+              : Math.min(15 * 60000, retryIn * 2);
           const message = (e as Error).message;
           if (lastError.current !== message) {
             lastError.current = message;
@@ -90,7 +119,9 @@ export default function useCatalogPolling({
           }
         }
       } finally {
+        if (reload && safe()) onReload((n) => n + 1);
         running = false;
+        lastAttempt = Date.now();
         schedule();
       }
     }

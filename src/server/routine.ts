@@ -188,6 +188,7 @@ export async function refreshRoutine(
       }
       // One resumable batch per invocation; never pretend all catalog pages were read.
       if (
+        !salesOnly &&
         !items.length &&
         (!c.last_catalog_sync_at ||
           c.has_more ||

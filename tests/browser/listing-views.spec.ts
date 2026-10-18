@@ -263,6 +263,14 @@ test("column preferences are separate by shop and mode, preserve selection and k
   ).toHaveCount(0);
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
+    // Resize closes open menus; wait for the browser to deliver that event
+    // before opening the next menu at the new viewport size.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
     const scroll = page.getByRole("region", {
       name: "Lista de anúncios",
       exact: true,
@@ -289,9 +297,12 @@ test("column preferences are separate by shop and mode, preserve selection and k
       ),
     ).toBe(true);
     await menu(page, "Colunas visíveis");
-    const box = (await chooser.boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    await expect
+      .poll(async () => {
+        const box = await chooser.boundingBox();
+        return !!box && box.x >= 0 && box.x + box.width <= width;
+      })
+      .toBe(true);
     await page.keyboard.press("Escape");
     if (width === 390)
       await page.screenshot({

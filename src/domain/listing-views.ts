@@ -35,6 +35,7 @@ export const listingViewConfigSchema = z
           .max(3)
           .optional(),
         pending: z.enum(["yes", "costs", "ml", "ownCosts", "ready"]).optional(),
+        changes: z.enum(["recent"]).optional(),
         listingKind: z.enum(["catalog", "traditional", "local"]).optional(),
         sort: z.enum(["name", ...optionalListingColumns]).default("updated"),
         sortDir: z.enum(["asc", "desc"]).default("desc"),
@@ -64,6 +65,7 @@ const filterKeys = [
   "type",
   "pending",
   "listingKind",
+  "changes",
   "sort",
   "sortDir",
   "pageSize",

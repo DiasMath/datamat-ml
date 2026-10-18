@@ -1,3 +1,8 @@
+import {
+  observedListingChanges,
+  recentListingChange,
+  RECENT_ML_CHANGE_AGE,
+} from "../src/domain/listing-changes";
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -825,4 +830,83 @@ test("saved views never expose or overwrite another organization and bound the p
       [...ids, foreign].map((id) => remove("listing_views", id)),
     );
   }
+});
+
+test("recent ML changes report actual before/after values, including zero stock and photo replacements with the same count", () => {
+  const old = {
+    price: "100.00",
+    status: "active",
+    title: "Anterior",
+    description: "abc",
+    ml: {
+      availableQuantity: 2,
+      pictures: [{ url: "old" }],
+      freeShipping: true,
+    },
+  };
+  const details = observedListingChanges(
+    old,
+    { price: "90.00", status: "paused", title: "Novo", description: "abcd" },
+    { availableQuantity: 0, pictures: [{ url: "new" }], freeShipping: false },
+  );
+  assert.deepEqual(
+    details.find((d) => d.field === "stock"),
+    { field: "stock", label: "Estoque", before: 2, after: 0 },
+  );
+  assert.equal(details.find((d) => d.field === "price")!.before, "100.00");
+  assert.ok(
+    details
+      .find((d) => d.field === "pictures")!
+      .after!.toString()
+      .includes("alterados"),
+  );
+  assert.equal(
+    details.find((d) => d.field === "description")!.before,
+    "3 caracteres",
+  );
+  assert.ok(!JSON.stringify(details).includes('"url"'));
+  assert.ok(
+    !observedListingChanges(
+      { price: "100", ml: {} },
+      { price: "100.00" },
+      {},
+    ).some((d) => d.field === "price"),
+  );
+});
+test("recent change labels expire, ignore future/invalid dates and cannot survive a different seller or authorization", () => {
+  const clock = Date.now(),
+    account = { status: "connected", external_account: "111", auth_version: 3 };
+  const offer = {
+    ml: { sellerId: "111", authVersion: 3 },
+    ml_last_change: {
+      at: new Date(clock - 1000).toISOString(),
+      sellerId: "111",
+      authVersion: 3,
+      fields: ["Estoque"],
+      details: [],
+    },
+  };
+  assert.ok(recentListingChange(offer, account, clock));
+  assert.equal(
+    recentListingChange(offer, account, clock + RECENT_ML_CHANGE_AGE + 1),
+    null,
+  );
+  for (const patch of [
+    { at: "invalid" },
+    { at: new Date(clock + 1000).toISOString() },
+    { authVersion: 2 },
+    { sellerId: "222" },
+  ])
+    assert.equal(
+      recentListingChange(
+        { ...offer, ml_last_change: { ...offer.ml_last_change, ...patch } },
+        account,
+        clock,
+      ),
+      null,
+    );
+  assert.equal(
+    recentListingChange(offer, { ...account, status: "disconnected" }, clock),
+    null,
+  );
 });

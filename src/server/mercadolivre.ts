@@ -1,3 +1,4 @@
+import { observedListingChanges } from "../domain/listing-changes";
 import {
   createCipheriv,
   createDecipheriv,
@@ -1242,6 +1243,9 @@ async function importItem(
       pricingChanged ||
       !existing ||
       Object.entries(next).some(([k, v]) => existing[k] !== v);
+    const changeDetails = existing
+      ? observedListingChanges(existing, next, observation)
+      : [];
     const row = {
       ...existing,
       ...next,
@@ -1254,22 +1258,20 @@ async function importItem(
       reference_account: existing?.reference_account || null,
       version: (existing?.version || 0) + (changed ? 1 : 0),
       ml: observation,
-      ...(existing && changed
+      ...(existing &&
+      changed &&
+      changeDetails.length &&
+      existing.ml?.sellerId === observation.sellerId &&
+      existing.ml?.authVersion === observation.authVersion
         ? {
             ml_last_change: {
               at: now(),
               sellerId: c.external_account,
               authVersion: c.auth_version,
-              fields: [
-                ...(existing.price !== next.price ? ["Preço"] : []),
-                ...(existing.status !== next.status ? ["Situação"] : []),
-                ...(existing.title !== next.title ? ["Título"] : []),
-                ...(existing.ml?.availableQuantity !==
-                observation.availableQuantity
-                  ? ["Estoque"]
-                  : []),
-                ...(contentChanged ? ["Conteúdo e mídia"] : []),
-              ],
+              fields: changeDetails.length
+                ? changeDetails.map((detail) => detail.label)
+                : ["Condições comerciais"],
+              details: changeDetails,
             },
           }
         : {}),
@@ -1295,6 +1297,12 @@ async function importItem(
               status: existing.status,
               description: existing.description,
               sku: existing.sku,
+              mlConditions: Object.fromEntries(
+                contextFields.map((field) => [
+                  field,
+                  existing.ml?.[field] ?? null,
+                ]),
+              ),
               mlContent: Object.fromEntries(
                 contentFields.map((field) => [
                   field,

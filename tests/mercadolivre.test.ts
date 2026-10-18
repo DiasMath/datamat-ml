@@ -463,10 +463,23 @@ test("listing import is idempotent, detects real quality gaps and preserves loca
   assert.equal(JSON.parse((await get("costs", o.id))!.data_json).goods, "40");
   assert.equal((await get("tasks", task.id))?.status, "todo");
   const current = await importedOffer();
+  assert.equal(
+    current.ml_last_change.details.find((d: Row) => d.field === "price").before,
+    "100.00",
+  );
+  assert.equal(
+    current.ml_last_change.details.find((d: Row) => d.field === "price").after,
+    "90.00",
+  );
+  assert.ok(current.ml_last_change.fields.includes("Preço"));
   await mocked(listings([item("MLB1234", { price: 90 })]), () =>
     ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
   );
   assert.equal((await importedOffer()).version, current.version);
+  assert.deepEqual(
+    (await importedOffer()).ml_last_change,
+    current.ml_last_change,
+  );
 });
 test("interrupted scan resumes the saved page without advancing or duplicating the first listing", async () => {
   await mocked(

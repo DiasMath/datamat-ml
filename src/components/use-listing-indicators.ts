@@ -6,6 +6,7 @@ import {
 } from "../domain/listing-batches";
 import { jsonRequest } from "./ui";
 import { useToast } from "./toasts";
+import type { IndicatorIssue } from "./listing-indicator-issues";
 
 type Result = {
   id: string;
@@ -33,6 +34,9 @@ export default function useListingIndicators({
     total: number;
     phase?: "catalog" | "indicators";
   } | null>(null);
+  const [issues, setIssues] = useState<IndicatorIssue[]>([]);
+  const status = useRef(new Map<string, IndicatorIssue>());
+  const catalogComplete = useRef(false);
   const request = useRef<AbortController | null>(null);
   const resume = useRef<{ key: string; ids: string[] } | null>(null);
   const changed = useRef(onChanged);
@@ -46,28 +50,45 @@ export default function useListingIndicators({
         onWorking(false);
       }
       setProgress(null);
+      status.current.clear();
+      catalogComplete.current = false;
+      setIssues([]);
     },
     [scope, onWorking],
   );
   const cancel = useCallback(() => request.current?.abort(), []);
-  const start = async (ids: string[]) => {
+  const start = async (ids: string[], retry = false) => {
     if (request.current || store === "all") return;
     const controller = new AbortController();
     request.current = controller;
     const key = scope + ":" + [...new Set(ids)].sort().join(",");
+    const continuing = retry || resume.current?.key === key;
     const pending =
-      resume.current?.key === key ? resume.current.ids : [...new Set(ids)];
+      continuing && status.current.size
+        ? [...status.current.values()]
+            .filter((row) => !row.metrics || !row.fees)
+            .map((row) => row.id)
+        : [...new Set(ids)];
+    if (!continuing) {
+      status.current.clear();
+      catalogComplete.current = false;
+    }
+    for (const id of pending)
+      if (!status.current.has(id))
+        status.current.set(id, { id, metrics: false, fees: false });
     resume.current = { key, ids: pending };
+    setIssues([]);
+    const needsCatalog = syncCatalog && !catalogComplete.current;
     onWorking(true);
     setProgress({
       done: 0,
       total: pending.length,
-      phase: syncCatalog ? "catalog" : "indicators",
+      phase: needsCatalog ? "catalog" : "indicators",
     });
     const deadline = Date.now() + 180000;
-    let issues = 0;
+    let catalogSynced = false;
     try {
-      if (syncCatalog) {
+      if (needsCatalog) {
         let complete = false,
           consulted = 0;
         for (let step = 0; step < 100 && Date.now() < deadline; step++) {
@@ -120,6 +141,8 @@ export default function useListingIndicators({
             "Catálogo parcialmente atualizado. Clique novamente para continuar as páginas pendentes.",
           );
       }
+      if (needsCatalog) catalogComplete.current = true;
+      catalogSynced = needsCatalog;
       if (Date.now() >= deadline)
         throw new Error(
           "Catálogo atualizado. Consulte novamente para concluir os indicadores pendentes.",
@@ -130,18 +153,40 @@ export default function useListingIndicators({
         async (batch) => {
           const result = await jsonRequest<{ results: Result[] }>(
             "/api/catalog/indicators?" + new URLSearchParams({ store }),
-            { ids: batch },
+            {
+              ids: batch,
+              parts: Object.fromEntries(
+                batch.map((id) => {
+                  const current = status.current.get(id)!;
+                  return [
+                    id,
+                    [
+                      !current.metrics && "metrics",
+                      !current.fees && "fees",
+                    ].filter(Boolean),
+                  ];
+                }),
+              ),
+            },
             "POST",
             controller.signal,
             "foreground",
             Math.min(65000, Math.max(1, deadline - Date.now())),
           );
-          issues += result.results.filter(
-            (r) => !r.deferred && r.errors?.length && (r.metrics || r.fees),
-          ).length;
-          return result.results;
+          return result.results.map((row) => {
+            const current = status.current.get(row.id);
+            if (!current || !batch.includes(row.id)) return row;
+            const merged = {
+              id: row.id,
+              metrics: current.metrics || row.metrics,
+              fees: current.fees || row.fees,
+              error: row.errors?.join(" · "),
+            };
+            status.current.set(row.id, merged);
+            return { ...row, metrics: merged.metrics, fees: merged.fees };
+          });
         },
-        (r) => r.metrics || r.fees,
+        (r) => r.metrics && r.fees,
         (done, total) => {
           if (request.current === controller) setProgress({ done, total });
         },
@@ -154,15 +199,17 @@ export default function useListingIndicators({
         },
       );
       if (request.current !== controller) return;
-      resume.current = outcome.pendingIds.length
-        ? { key, ids: outcome.pendingIds }
+      const remaining = [...status.current.values()].filter(
+        (row) => !row.metrics || !row.fees,
+      );
+      resume.current = remaining.length
+        ? { key, ids: remaining.map((row) => row.id) }
         : null;
-      const warnings = issues + outcome.failed;
+      for (const row of remaining)
+        if (!row.error && outcome.error) row.error = outcome.error;
       notify(
-        `${syncCatalog ? "Catálogo da loja sincronizado. " : ""}${outcome.successful} anúncios com indicadores consultados.${warnings ? ` ${warnings} com dados indisponíveis ou parciais.` : ""}${outcome.pendingIds.length ? ` ${outcome.pendingIds.length} pendentes; clique novamente para continuar.` : ""}${outcome.error ? ` ${outcome.error}` : ""}`,
-        warnings || outcome.pendingIds.length || outcome.error
-          ? "warning"
-          : "success",
+        `${catalogSynced ? "Catálogo da loja sincronizado. " : ""}${outcome.successful} anúncios com indicadores consultados.${remaining.length ? ` ${remaining.length} pendentes; abra as pendências para reconsultar apenas os dados que faltam.` : ""}${outcome.error ? ` ${outcome.error}` : ""}`,
+        remaining.length || outcome.error ? "warning" : "success",
       );
     } catch (error) {
       if (request.current !== controller) return;
@@ -176,10 +223,21 @@ export default function useListingIndicators({
       if (request.current === controller) {
         request.current = null;
         setProgress(null);
+        setIssues(
+          [...status.current.values()].filter(
+            (row) => !row.metrics || !row.fees,
+          ),
+        );
         onWorking(false);
         changed.current();
       }
     }
   };
-  return { start, cancel, progress };
+  return {
+    start,
+    cancel,
+    progress,
+    issues,
+    retry: () => start([...status.current.keys()], true),
+  };
 }

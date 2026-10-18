@@ -1,3 +1,5 @@
+import { firestoreReadClientConfig } from "../src/server/firestore-settings";
+import { createRequire } from "node:module";
 import { databaseFailure } from "../src/server/database-failure";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -332,4 +334,41 @@ test("database failures classify authentication, quota, permission and transient
     "FIRESTORE_INDEX_REQUIRED",
   );
   assert.equal(databaseFailure(new TypeError("unexpected data")), null);
+});
+
+test("Firestore read settings stop quota retries while preserving bounded transient retries and commit semantics", () => {
+  const require = createRequire(import.meta.url);
+  const { constructSettings } = require("google-gax/fallback");
+  const { Status } = require("google-gax");
+  const base = require("@google-cloud/firestore-api/build/src/v1/firestore_client_config.json");
+  const settings = constructSettings(
+    "google.firestore.v1.Firestore",
+    base,
+    firestoreReadClientConfig,
+    Status,
+  );
+  const defaults = constructSettings(
+    "google.firestore.v1.Firestore",
+    base,
+    {},
+    Status,
+  );
+  for (const method of [
+    "getDocument",
+    "batchGetDocuments",
+    "runQuery",
+    "beginTransaction",
+  ]) {
+    assert.ok(
+      !settings[method].retry.retryCodes.includes(Status.RESOURCE_EXHAUSTED),
+    );
+    assert.ok(settings[method].retry.retryCodes.includes(Status.UNAVAILABLE));
+    assert.ok(
+      settings[method].retry.backoffSettings.totalTimeoutMillis <= 15000,
+    );
+  }
+  assert.deepEqual(
+    settings.commit.retry.retryCodes,
+    defaults.commit.retry.retryCodes,
+  );
 });

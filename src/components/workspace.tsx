@@ -107,6 +107,10 @@ import CopyCode from "./copy-code";
 import QuickTaskForm from "./quick-task-form";
 import useListingIndicators from "./use-listing-indicators";
 import ListingUpdateProgress from "./listing-update-progress";
+import ListingChanges from "./listing-changes";
+import ListingIndicatorIssues, {
+  type IndicatorIssue,
+} from "./listing-indicator-issues";
 import ListingTableControls from "./listing-table-controls";
 import useListingLayout from "./use-listing-layout";
 import { positionListingDropdown } from "./listing-dropdown";
@@ -363,6 +367,7 @@ export default function Workspace({ view }: { view: string[] }) {
       "GET",
       controller.signal,
       "background",
+      25000,
     )
       .then((result) => {
         if (!controller.signal.aborted) setNavigationData(result);
@@ -418,6 +423,7 @@ export default function Workspace({ view }: { view: string[] }) {
             "GET",
             controller.signal,
             background ? "background" : "foreground",
+            25000,
           ),
       offerId
         ? jsonRequest(
@@ -459,6 +465,7 @@ export default function Workspace({ view }: { view: string[] }) {
     };
   }, [cacheKey, offerId, refresh, home, dataKey, section, store]);
   useCatalogPolling({
+    revision: data?.workspaceRevision,
     store,
     offerId,
     enabled:
@@ -1084,7 +1091,9 @@ export default function Workspace({ view }: { view: string[] }) {
           ) : !data ? (
             <Empty
               title="Não foi possível carregar"
-              body="Verifique sua conexão e tente novamente."
+              body={
+                consultationError || "Verifique sua conexão e tente novamente."
+              }
               action={
                 <button
                   className="button"
@@ -1120,6 +1129,8 @@ export default function Workspace({ view }: { view: string[] }) {
                 <Offers
                   data={data}
                   query={query}
+                  indicatorIssues={indicatorUpdate.issues}
+                  onRetryIndicators={indicatorUpdate.retry}
                   selected={selection}
                   setSelected={setSelection}
                   onOpen={openOffer}
@@ -1907,8 +1918,12 @@ function Offers({
   busy,
   onIndicators,
   onChanged,
+  indicatorIssues,
+  onRetryIndicators,
 }: {
   data: Row;
+  indicatorIssues: IndicatorIssue[];
+  onRetryIndicators: () => void;
   query: string;
   selected: string[];
   setSelected: (s: string[]) => void;
@@ -2168,6 +2183,7 @@ function Offers({
       "type",
       "pending",
       "listingKind",
+      "changes",
     ].includes(k),
   );
   return (
@@ -2298,6 +2314,17 @@ function Offers({
               <Info size={13} />
             </summary>
             <div className="offers-counts-popover">
+              <label className="listing-changes-filter">
+                <input
+                  type="checkbox"
+                  key={`${q.get("store")}:${q.get("changes") || ""}`}
+                  defaultChecked={q.get("changes") === "recent"}
+                  onChange={(e) =>
+                    update("changes", e.target.checked ? ["recent"] : [])
+                  }
+                />
+                <span>Alterados no ML nos últimos 7 dias</span>
+              </label>
               {counts.mlIds > 0 && (
                 <>
                   <div className="offers-counts-stats">
@@ -2349,6 +2376,7 @@ function Offers({
                             type: "Tipo",
                             pending: "Pendência",
                             listingKind: "Publicação",
+                            changes: "Alterações ML",
                           } as Row
                         )[k]
                       }
@@ -2365,6 +2393,7 @@ function Offers({
                             catalog: "Catálogo",
                             traditional: "Tradicionais",
                             local: "Cadastros locais / referências",
+                            recent: "Últimos 7 dias",
                           } as Row
                         )[v] ||
                         v}
@@ -2432,6 +2461,12 @@ function Offers({
               <RefreshCw className={busy ? "spin" : ""} size={15} />
             </button>
           )}
+          <ListingIndicatorIssues
+            issues={indicatorIssues}
+            choices={data.offerChoices}
+            busy={busy}
+            onRetry={onRetryIndicators}
+          />
           {selected.length > 0 && (
             <span className="offers-selected orange">
               {selected.length} selecionados
@@ -2562,6 +2597,10 @@ function Offers({
                               </span>
                             )}
                           </small>
+                          <ListingChanges
+                            offer={o}
+                            onHistory={() => onOpen(o.id, "history")}
+                          />
                           {o.ml?.catalogListing && <small>Catálogo</small>}
                           <small className="mono offer-ml-code">
                             {o.ml_id || "Sem código ML"}

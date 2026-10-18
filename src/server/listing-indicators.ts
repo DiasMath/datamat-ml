@@ -79,6 +79,15 @@ export async function refreshListingIndicators(
         .array(z.string().min(1).max(200))
         .min(1)
         .max(LISTING_INDICATOR_BATCH_SIZE),
+      parts: z
+        .record(
+          z.string().min(1).max(200),
+          z
+            .array(z.enum(["metrics", "fees"]))
+            .min(1)
+            .max(2),
+        )
+        .optional(),
     })
     .strict()
     .parse(payload);
@@ -100,6 +109,17 @@ export async function refreshListingIndicators(
       );
   }
   validateScope(offers, selectedStore);
+  if (
+    p.parts &&
+    (Object.keys(p.parts).some((id) => !p.ids.includes(id)) ||
+      p.ids.some((id) => !p.parts?.[id]?.length))
+  )
+    throw new HttpError(
+      422,
+      "Informe os dados pendentes de cada anúncio do lote",
+    );
+  const wants = (id: string, part: "metrics" | "fees") =>
+    !p.parts || p.parts[id].includes(part);
   return withMlReadBatch(async () => {
     const deadline = Date.now() + 55000;
     const results: Array<{
@@ -118,7 +138,7 @@ export async function refreshListingIndicators(
     const financial = new Map<string, FinancialRefreshResult>();
     const stores = new Map<string, string[]>();
     for (const offer of offers) {
-      if (!offer) continue;
+      if (!offer || !wants(offer.id, "fees")) continue;
       stores.set(offer.store_id, [
         ...(stores.get(offer.store_id) || []),
         offer.id,
@@ -128,22 +148,26 @@ export async function refreshListingIndicators(
     // Two metrics workers and two financial workers share authorized GETs.
     // Financial work keeps one lease per store, avoiding competing per-item jobs.
     await Promise.all([
-      mapConcurrent(results, 2, async (result) => {
-        if (Date.now() > deadline - 20000) {
-          metricsDeferred.add(result.id);
-          return;
-        }
-        try {
-          await refreshMetrics(actor, result.id, 7, deadline);
-          result.metrics = true;
-        } catch (error) {
-          result.errors.push(
-            error instanceof HttpError
-              ? error.message
-              : "Não foi possível consultar as métricas de 7 dias.",
-          );
-        }
-      }),
+      mapConcurrent(
+        results.filter((result) => wants(result.id, "metrics")),
+        2,
+        async (result) => {
+          if (Date.now() > deadline - 20000) {
+            metricsDeferred.add(result.id);
+            return;
+          }
+          try {
+            await refreshMetrics(actor, result.id, 7, deadline);
+            result.metrics = true;
+          } catch (error) {
+            result.errors.push(
+              error instanceof HttpError
+                ? error.message
+                : "Não foi possível consultar as métricas de 7 dias.",
+            );
+          }
+        },
+      ),
       mapConcurrent([...stores], 1, async ([storeId, ids]) => {
         if (Date.now() > deadline - 22000) return;
         try {
@@ -177,12 +201,15 @@ export async function refreshListingIndicators(
     for (const result of results) {
       const fees = financial.get(result.id);
       result.fees = fees?.status === "updated";
-      if (!result.fees)
+      if (wants(result.id, "fees") && !result.fees)
         result.errors.push(
           fees?.error ||
             "Custos ML pendentes; confira a conexão e tente novamente.",
         );
-      if (metricsDeferred.has(result.id) || fees?.status === "deferred")
+      if (
+        (wants(result.id, "metrics") && metricsDeferred.has(result.id)) ||
+        (wants(result.id, "fees") && fees?.status === "deferred")
+      )
         result.deferred = true;
     }
     return { results };

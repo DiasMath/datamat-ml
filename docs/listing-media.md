@@ -57,3 +57,17 @@ Uma visão guarda busca, filtros, ordenação, tipo de tabela, quantidade por p�
 As visões ficam no Firestore, por organização e loja, e podem ser abertas em outro navegador. Há criação, renomeação, atualização com a configuração atual e exclusão confirmada. Nomes são únicos dentro da loja (ignorando caixa e espaços repetidos), com limite de 30 visões. Versões impedem que uma edição ou exclusão antiga sobrescreva outra alteração. Leitores podem abrir visões, mas não modificar as visões compartilhadas. Na opção **Todas as lojas**, é necessário escolher uma loja para salvar ou abrir visões.
 
 A escolha avulsa de colunas fica neste navegador, separada por loja e pelas tabelas **Operacional ML** e **Cadastro**. **Mostrar todas as colunas** restaura a exibição. Ocultar colunas não consulta novamente o workspace, não muda a ordenação nem a seleção. Anúncio/produto, seleção e ações permanecem disponíveis. A coluna do produto e a seleção ficam fixas durante a rolagem horizontal, com largura do produto limitada em telas pequenas.
+
+## Alterações recentes e consultas pendentes
+
+Anúncios próprios alterados por uma observação do ML nos últimos sete dias exibem **Alterado no ML**. O botão abre a comparação de preço, situação, estoque e demais campos disponíveis, incluindo estoque zero. Fotos, ficha técnica e descrição mostram uma indicação de conteúdo alterado; o histórico guarda os registros completos. A data é a da detecção pelo sistema, não a hora exata da edição no marketplace. Primeira importação e uma autorização anterior não herdam esse destaque. O filtro **Alterados no ML nos últimos 7 dias** fica no resumo de contagem/filtros e também pode ser salvo em uma visão.
+
+Quando tarifas ou métricas falham, o botão de pendências abre o resultado por anúncio. **Reconsultar dados pendentes** solicita apenas o componente que faltou: uma tarifa concluída não é consultada novamente porque só as métricas falharam, e vice-versa. A fila é desta aba/operação e não é um cadastro de tarefas; trocar de loja ou recarregar a página a reinicia. Interrupção durante o catálogo continua as páginas pendentes antes de consultar indicadores.
+
+## Consumo do Firestore
+
+As verificações automáticas de Anúncios consultam uma revisão pequena por loja a cada minuto. Com a revisão inalterada, não recarregam o workspace nem varrem anúncios no ML. Notificações atualizam os recursos envolvidos; uma conferência completa automática tem intervalo de 30 minutos, compartilhado entre abas pela data persistida da sincronização. A sincronização manual continua disponível por loja. O workspace é recarregado uma vez ao fim de uma passagem, em vez de uma vez por página do catálogo.
+
+Hoje também verifica revisões e reaproveita o retrato de vendas por até dez minutos entre consultas automáticas ao provedor. Alterações notificadas podem atualizar os dados salvos antes desse intervalo. A consulta de vendas não inicia uma varredura de catálogo adicional. Edições locais continuam invalidando os dados derivados pela revisão do Firestore.
+
+Uma cota diária esgotada não é tratada como falha de credencial: retorna `503 / FIRESTORE_QUOTA_EXCEEDED` com mensagem específica. As verificações automáticas aguardam 15 minutos após esse erro. O SDK não repete leituras por dez minutos tentando recuperar uma cota diária. Essas medidas reduzem leituras, mas não garantem uso gratuito para qualquer quantidade de anúncios, lojas, acessos ou notificações.

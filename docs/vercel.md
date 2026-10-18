@@ -84,3 +84,9 @@ O usuário já publicou em `https://datamat-ml.vercel.app`. Na revisão da confi
 ## Rotina diária e extensão
 
 O build também gera o pacote público da extensão, sem credenciais. Download em Configurações → Extensão. O cron chama /api/routine/scheduled diariamente às 09:00 UTC (06:00 de Brasília). Configure uma CRON_SECRET aleatória em Production e faça Redeploy para autorizar o cron; sem ela a rota responde 503 e não executa. As credenciais de cada loja continuam no próprio site. Webhooks e atualização da tela funcionam sem CRON_SECRET. Ver [rotina integrada](daily-operation.md).
+
+## Cota diária do Firestore
+
+`FIRESTORE_QUOTA_EXCEEDED` indica limite de uso, não erro no JSON administrativo. A retomada depende da renovação da cota do projeto ou de capacidade adicional no Firebase. Não troque credenciais por causa desse erro. O emulador isolado permite desenvolver e executar os testes sem consumir o projeto real.
+
+As APIs usam transporte HTTP no SDK fora do emulador, tempo limitado para novas tentativas de leitura e mensagens públicas sem detalhes de credenciais. O código preserva as regras de repetição do SDK para gravações/commit. Em caso de cota, as verificações do cliente espaçam novas tentativas; fechar ou recarregar a página não restaura a cota.

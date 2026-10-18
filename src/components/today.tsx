@@ -26,7 +26,7 @@ import {
   Banknote,
   ExternalLink,
 } from "lucide-react";
-import { money, jsonRequest, percent, labels } from "./ui";
+import { money, jsonRequest, ApiRequestError, percent, labels } from "./ui";
 import { MediaImage } from "./listing-media";
 import { useToast } from "./toasts";
 import MonthlyGoal from "./monthly-goal";
@@ -134,6 +134,7 @@ export default function Today({
     return () => clearTimeout(timer);
   }, [deferred, tick]);
   const canRefresh =
+    store !== "all" &&
     data.user.role !== "viewer" &&
     data.connections.some(
       (c: Row) =>
@@ -142,6 +143,9 @@ export default function Today({
   useEffect(() => {
     if (!canRefresh) return;
     let active = true,
+      retryIn = 60000,
+      lastError = "",
+      nextProviderRefresh = 0,
       timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
     const safe = () =>
@@ -152,7 +156,7 @@ export default function Today({
     const schedule = () => {
       clearTimeout(timer);
       if (active && !document.hidden)
-        timer = setTimeout(() => void refresh(false), 60000);
+        timer = setTimeout(() => void refresh(false), retryIn);
     };
     async function refresh(manual: boolean) {
       if (running.current || !safe()) {
@@ -162,13 +166,41 @@ export default function Today({
       running.current = true;
       setWorking(true);
       try {
+        let readOnly = false;
+        if (!manual) {
+          const state = await jsonRequest<{ revision: string }>(
+            "/api/catalog/revision?" + new URLSearchParams({ store }),
+            undefined,
+            "GET",
+            controller.signal,
+            "background",
+            25000,
+          );
+          const observed = Date.parse(latest.current.data.sales?.observedAt);
+          const due =
+            Date.now() >= nextProviderRefresh &&
+            (!Number.isFinite(observed) || Date.now() - observed >= 10 * 60000);
+          if (
+            !due &&
+            state.revision === latest.current.data.workspaceRevision
+          ) {
+            retryIn = 60000;
+            return;
+          }
+          readOnly = !due;
+        }
         const result = await jsonRequest(
-          "/api/today/refresh?" + new URLSearchParams({ store }),
-          {},
-          "POST",
+          (readOnly ? "/api/today?" : "/api/today/refresh?") +
+            new URLSearchParams({ store }),
+          readOnly ? undefined : {},
+          readOnly ? "GET" : "POST",
           controller.signal,
           manual ? "foreground" : "background",
+          65000,
         );
+        if (!readOnly) nextProviderRefresh = Date.now() + 10 * 60000;
+        retryIn = 60000;
+        lastError = "";
         if (safe()) {
           latest.current.onUpdated(result);
           const failed = result.sales.stores.filter((s: Row) => s.error);
@@ -179,8 +211,18 @@ export default function Today({
             );
         }
       } catch (e) {
-        if (active && !controller.signal.aborted)
-          notify((e as Error).message, "error");
+        if (active && !controller.signal.aborted) {
+          retryIn =
+            e instanceof ApiRequestError &&
+            e.code === "FIRESTORE_QUOTA_EXCEEDED"
+              ? 15 * 60000
+              : Math.min(15 * 60000, retryIn * 2);
+          const message = (e as Error).message;
+          if (lastError !== message) {
+            lastError = message;
+            notify(message, "error");
+          }
+        }
       } finally {
         running.current = false;
         if (active) setWorking(false);

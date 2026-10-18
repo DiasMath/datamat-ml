@@ -292,6 +292,15 @@ export function RequestLoading({
     </div>
   );
 }
+export class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+  }
+}
 export const jsonRequest = async <T = any,>(
   url: string,
   body?: unknown,
@@ -323,7 +332,11 @@ export const jsonRequest = async <T = any,>(
     );
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error || "Não foi possível concluir a operação");
+      throw new ApiRequestError(
+        data.error || "Não foi possível concluir a operação",
+        res.status,
+        typeof data.code === "string" ? data.code : undefined,
+      );
     }
     return data;
   };

@@ -1,3 +1,4 @@
+import { firestoreReadClientConfig } from "./firestore-settings";
 import { randomUUID, createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
@@ -60,6 +61,8 @@ export function db() {
   database = initializeFirestore(app, {
     preferRest: configuration.mode !== "emulator",
   });
+  if (configuration.mode !== "emulator")
+    database.settings({ clientConfig: firestoreReadClientConfig });
   return database;
 }
 function doc(collection: string, documentId: string) {
@@ -138,6 +141,8 @@ const todayCollections = new Set([
   "ml_analytics",
   "ml_competition",
   "ml_financials",
+  "ml_metrics_7d",
+  "ml_current_quotes",
   "proposals",
   "tasks",
   "monthly_goals",

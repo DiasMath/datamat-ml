@@ -1,3 +1,4 @@
+import { AUTOMATIC_CATALOG_INTERVAL } from "./catalog-revision";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { admin, authorizeStore, HttpError, type Actor } from "./access";
@@ -12,6 +13,7 @@ export async function refreshCatalog(
   const p = z
       .object({
         offerId: z.string().min(1).max(200).optional(),
+        automatic: z.boolean().default(false),
         completedStoreIds: z
           .array(z.string().min(1).max(200))
           .max(100)
@@ -67,6 +69,27 @@ export async function refreshCatalog(
       break;
     }
     if (!c) continue;
+    const observed = Date.parse(
+      offer
+        ? offer.ml?.observedAt
+        : c.last_catalog_completed_at ||
+            (!c.has_more && !c.pending_batch ? c.last_catalog_sync_at : null),
+    );
+    if (
+      p.automatic &&
+      Number.isFinite(observed) &&
+      Date.now() - observed < AUTOMATIC_CATALOG_INTERVAL
+    ) {
+      results.push({
+        storeId: c.store_id,
+        status: "confirmed",
+        has_more: false,
+        processed: 0,
+        skipped: true,
+      });
+      continue;
+    }
+
     if (!offer && c.sync_until > Date.now()) {
       results.push({ storeId: c.store_id, status: "running", has_more: true });
       continue;

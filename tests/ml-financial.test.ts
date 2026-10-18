@@ -874,3 +874,49 @@ test("shared ML reads expire after each operation and failed reads can be retrie
       }),
   );
 });
+
+test("fee-only retries do not query visits or orders, and reject parts outside the authorized batch", async () => {
+  const offer = await ownOffer();
+  const paths: string[] = [];
+  const result = await mocked(
+    (url) => {
+      paths.push(url.pathname);
+      return handler(offer)(url);
+    },
+    () =>
+      refreshListingIndicators(
+        actor,
+        { ids: [offer.id], parts: { [offer.id]: ["fees"] } },
+        storeId,
+      ),
+  );
+  assert.equal(result.results[0].fees, true);
+  assert.equal(result.results[0].metrics, false);
+  assert.deepEqual(result.results[0].errors, []);
+  assert.ok(!paths.some((path) => /visits|orders|questions/.test(path)));
+  await mocked(
+    () => {
+      throw new Error("provider must not be called");
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          refreshListingIndicators(
+            actor,
+            { ids: [offer.id], parts: { outside: ["fees"] } },
+            storeId,
+          ),
+        /pendentes/,
+      );
+      await assert.rejects(
+        () =>
+          refreshListingIndicators(
+            actor,
+            { ids: [offer.id], parts: {} },
+            storeId,
+          ),
+        /pendentes/,
+      );
+    },
+  );
+});

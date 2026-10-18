@@ -1,3 +1,5 @@
+import { storeRevision } from "./catalog-revision";
+import { recentListingChange } from "../domain/listing-changes";
 import { z } from "zod";
 import Decimal from "decimal.js";
 import {
@@ -1050,6 +1052,7 @@ export async function noteToTask(
 export async function workspace(actor: Actor, query: URLSearchParams) {
   const selected = query.get("store"),
     ids = scoped(actor, selected);
+  const workspaceRevision = await storeRevision(ids);
   const [
     rawOffers,
     products,
@@ -1163,6 +1166,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       );
       return {
         ...enriched,
+        mlRecentChange: recentListingChange(o, account),
         metrics7d,
         financialStatus,
         settlementEstimate:
@@ -1231,6 +1235,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       if (values.length && !values.includes((o as Row)[field] || "__missing"))
         return false;
     }
+    if (query.get("changes") === "recent" && !o.mlRecentChange) return false;
     const listing = query.get("listingKind");
     if (listing === "catalog" && !o.ml?.catalogListing) return false;
     if (listing === "traditional" && (!o.ml?.sellerId || o.ml.catalogListing))
@@ -1292,6 +1297,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
   return {
     user: actor,
     stores: actor.stores,
+    workspaceRevision,
     offers: filtered,
     listingOverview: listingOverview(
       offers,

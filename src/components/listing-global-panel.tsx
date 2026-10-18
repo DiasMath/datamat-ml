@@ -119,7 +119,6 @@ export default function ListingGlobalPanel({
             ),
           (remaining) => {
             setPendingCompetition(remaining);
-            onChanged();
           },
           { maxDurationMs: 180000 },
         );
@@ -163,7 +162,6 @@ export default function ListingGlobalPanel({
                 ...new Set([...completedSyncStores.current, row.storeId]),
               ];
           }
-          onChanged();
           if (result.results.some((r: Row) => r.status === "running")) {
             setProgress(
               "Já existe uma sincronização em andamento. Os dados serão atualizados ao concluir.",

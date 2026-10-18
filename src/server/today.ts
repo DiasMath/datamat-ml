@@ -1,3 +1,4 @@
+import { storeRevision } from "./catalog-revision";
 import Decimal from "decimal.js";
 import { attachFinancial, effectiveMlCosts } from "../domain/ml-financial";
 import { z } from "zod";
@@ -105,6 +106,7 @@ async function buildTodayReport(
       (s) => store === "all" || store === s.id,
     ),
     ids = selected.map((s) => s.id as string);
+  const workspaceRevision = await storeRevision(ids);
   const day = businessDay(clock),
     todayRange = todayWindow(clock);
   const month = day.slice(0, 7);
@@ -284,6 +286,7 @@ async function buildTodayReport(
   ).length;
   return {
     user: actor,
+    workspaceRevision,
     stores: actor.stores,
     connections: connections.filter(Boolean).map((c) => publicConnection(c!)),
     tasks: tasks
@@ -380,7 +383,7 @@ async function cachedToday(actor: Actor, store: string, clock: Date) {
     actor.stores.map((s) => [s.id, s.name]),
     store,
     businessDay(clock),
-    Math.floor(clock.getTime() / 20000),
+    Math.floor(clock.getTime() / 60000),
     revisions.map((r) => r?.revision || 0),
   ]);
   const entry = reportCache.get(scope);
@@ -394,7 +397,7 @@ async function cachedToday(actor: Actor, store: string, clock: Date) {
     new URLSearchParams({ store }),
     clock,
   );
-  reportCache.set(scope, { until: Date.now() + 20000, promise });
+  reportCache.set(scope, { until: Date.now() + 60000, promise });
   try {
     return await promise;
   } catch (error) {

@@ -1,3 +1,4 @@
+import { catalogRevision } from "@/server/catalog-revision";
 import { todayReport, todayQueuePage, nextTodayOffer } from "@/server/today";
 import {
   saveMonthlyGoal,
@@ -122,6 +123,13 @@ async function handle(req: NextRequest, context: Context) {
         "Login e usuários locais foram removidos; o acesso será integrado ao portal",
       );
     const actor = await workspaceActor();
+    if (
+      resource === "catalog" &&
+      key === "revision" &&
+      path.length === 2 &&
+      req.method === "GET"
+    )
+      return response(await catalogRevision(actor, req.nextUrl.searchParams));
     if (resource === "listing-views") {
       if (path.length === 1 && req.method === "GET")
         return response(
@@ -790,7 +798,11 @@ async function handle(req: NextRequest, context: Context) {
         { error: unavailable.error, code: unavailable.code },
         {
           status: unavailable.status,
-          headers: { ...headers, "Retry-After": "30" },
+          headers: {
+            ...headers,
+            "Retry-After":
+              unavailable.code === "FIRESTORE_QUOTA_EXCEEDED" ? "900" : "30",
+          },
         },
       );
     }

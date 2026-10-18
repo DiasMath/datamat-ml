@@ -110,11 +110,14 @@ test("monthly progress uses the saved sales snapshot and invalidates across proc
     last_error: null,
   });
   // The UI's automatic daily refresh is controlled; no external ML account is used.
+  let providerRefreshes = 0;
   await page.route("**/api/today/refresh?*", async (route) => {
+    providerRefreshes++;
     await route.fulfill({
       json: await (await request.get(`/api/today?store=${storeId}`)).json(),
     });
   });
+  await page.clock.install();
   await page.goto(`/?store=${storeId}`);
   const panel = page.locator(".today-monthly-goal");
   await expect(panel.locator(".monthly-goal-values > strong")).toContainText(
@@ -122,6 +125,8 @@ test("monthly progress uses the saved sales snapshot and invalidates across proc
   );
   await expect(panel.getByRole("meter")).toHaveAttribute("value", "50");
   await expect(panel).toContainText("50%");
+  await page.clock.fastForward(61000);
+  expect(providerRefreshes).toBe(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await panel.scrollIntoViewIfNeeded();
   await page.screenshot({

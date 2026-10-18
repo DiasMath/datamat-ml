@@ -1,3 +1,4 @@
+import { catalogRevision, storeRevision } from "../src/server/catalog-revision";
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, randomBytes } from "node:crypto";
@@ -898,4 +899,50 @@ test("batch competition validates the complete scope before requests, isolates d
     )!.status,
     null,
   );
+});
+
+test("lightweight catalogue checks reuse the displayed revision and throttle automatic scans while allowing manual refresh", async () => {
+  const connectionId = key("juntos-com", "mercadolivre"),
+    previous = (await get("connections", connectionId))!;
+  await put("connections", connectionId, {
+    ...previous,
+    status: "connected",
+    last_catalog_completed_at: new Date().toISOString(),
+    has_more: false,
+    pending_batch: false,
+    sync_until: 0,
+  });
+  try {
+    const query = new URLSearchParams({ store: "juntos-com" });
+    const before = await catalogRevision(actor, query);
+    assert.equal(before.refreshDue, false);
+    assert.equal(before.revision, await storeRevision(["juntos-com"]));
+    assert.deepEqual(await catalogRevision(actor, query), before);
+    const skipped = await mocked(
+      () => {
+        throw new Error("a fresh automatic scan must not query ML");
+      },
+      () => refreshCatalog(actor, query, { automatic: true }),
+    );
+    assert.equal(skipped.results[0].skipped, true);
+    assert.equal(skipped.results[0].processed, 0);
+    let calls = 0;
+    await mocked(
+      (url) => {
+        calls++;
+        assert.ok(url.pathname.endsWith("/items/search"));
+        return json({ results: [], paging: { total: 0 } });
+      },
+      () => refreshCatalog(actor, query, {}),
+    );
+    assert.equal(calls, 1);
+    const after = await catalogRevision(actor, query);
+    assert.notEqual(after.revision, before.revision);
+    await assert.rejects(
+      () => catalogRevision(actor, new URLSearchParams({ store: "outside" })),
+      /Loja/,
+    );
+  } finally {
+    await put("connections", connectionId, previous);
+  }
 });

@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useMemo, useState, useRef, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Decimal from "decimal.js";
 import { ListingHint } from "./listing-information";
@@ -13,6 +20,7 @@ export type TableColumn<T> = {
   kind?: "number" | "date";
   header?: ReactNode;
   fixed?: boolean;
+  pinned?: boolean;
   className?: string;
 };
 export type TableSort = { id: string; direction: "asc" | "desc" } | null;
@@ -30,6 +38,8 @@ export function useSmartTable<T>(
     sort?: TableSort;
     onSort?: (sort: NonNullable<TableSort>) => void;
     pageId?: string;
+    hiddenColumns?: string[];
+    maxPinnedWidth?: number;
   } = {},
 ) {
   const [localSort, setSort] = useState<TableSort>(null);
@@ -50,7 +60,32 @@ export function useSmartTable<T>(
       setWidths({});
     }
   }, [id, defaults]);
-  const width = (column: TableColumn<T>) => widths[column.id] ?? column.width;
+  const width = (column: TableColumn<T>) => {
+    const value = widths[column.id] ?? column.width;
+    return column.pinned && !column.fixed && options.maxPinnedWidth
+      ? Math.min(value, options.maxPinnedWidth)
+      : value;
+  };
+  const visibleColumns = columns.filter(
+    (c) => !options.hiddenColumns?.includes(c.id),
+  );
+  const cellProps = (id: string) => {
+    const column = columns.find((c) => c.id === id);
+    const pinned = !!column?.pinned;
+    const index = visibleColumns.findIndex((c) => c.id === id);
+    const left = visibleColumns
+      .slice(0, Math.max(0, index))
+      .filter((c) => c.pinned)
+      .reduce((sum, c) => sum + width(c), 0);
+    return {
+      hidden: !!options.hiddenColumns?.includes(id),
+      "data-column": id,
+      "data-pinned": pinned || undefined,
+      style: pinned
+        ? ({ position: "sticky", left } as CSSProperties)
+        : undefined,
+    };
+  };
   function resize(column: TableColumn<T>, value: number) {
     setWidths((previous) => {
       const next = { ...previous, [column.id]: clamp(value) };
@@ -113,20 +148,21 @@ export function useSmartTable<T>(
     if (options.onSort) options.onSort(value);
     else setSort(value);
   }
-  const total = columns.reduce((n, c) => n + width(c), 0);
+  const total = visibleColumns.reduce((n, c) => n + width(c), 0);
   const header = (overrides: Record<string, ReactNode> = {}) => (
     <>
       <colgroup>
-        {columns.map((c) => (
+        {visibleColumns.map((c) => (
           <col key={c.id} style={{ width: width(c) }} />
         ))}
       </colgroup>
       <thead>
         <tr>
-          {columns.map((c) => (
+          {visibleColumns.map((c) => (
             <th
               key={c.id}
               scope="col"
+              {...cellProps(c.id)}
               className={c.className}
               aria-sort={
                 !c.value
@@ -233,6 +269,7 @@ export function useSmartTable<T>(
   return {
     rows,
     header,
+    cellProps,
     sortKey,
     props: {
       style: { tableLayout: "fixed" as const, width: total, minWidth: total },

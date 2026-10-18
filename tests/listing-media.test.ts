@@ -1,7 +1,14 @@
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { initializeDatabase, get, find, put, key } from "../src/server/db";
+import {
+  initializeDatabase,
+  get,
+  find,
+  put,
+  key,
+  remove,
+} from "../src/server/db";
 import { workspaceActor, type Actor } from "../src/server/access";
 import {
   saveOffer,
@@ -25,6 +32,17 @@ import {
 } from "../src/domain/listing-table";
 import { runListingBatches } from "../src/domain/listing-batches";
 import { oauthPopupResponse } from "../src/server/oauth-popup";
+import {
+  listingViews,
+  saveListingView,
+  deleteListingView,
+} from "../src/server/listing-views";
+import {
+  captureListingView,
+  applyListingView,
+  listingViewConfigSchema,
+  listingViewSignature,
+} from "../src/domain/listing-views";
 let actor: Actor;
 test("listing metrics cannot look current when the observation or period has expired or has an invalid date", () => {
   const clock = Date.UTC(2026, 9, 17, 12);
@@ -593,4 +611,218 @@ test("indicator batching handles ten per request, keeps order and never repeats 
   assert.deepEqual(calls.flat(), ids);
   assert.equal(result.successful, 23);
   assert.deepEqual(result.pendingIds, []);
+});
+
+test("saved views capture only supported filters and restore them without changing the shop or retaining pagination", () => {
+  const config = captureListingView(
+    new URLSearchParams(
+      "store=juntos-com&page=3&q=tomada&brand=B&brand=A&status=paused&sort=price&sortDir=asc&pageSize=20&returnTo=outside",
+    ),
+    false,
+    ["brand", "name", "price", "unknown"],
+  );
+  assert.deepEqual(config.hiddenColumns, ["brand", "price"]);
+  const next = applyListingView(
+    new URLSearchParams("store=juntos-data&page=9&category=old&pending=yes"),
+    config,
+  );
+  assert.equal(next.get("store"), "juntos-data");
+  assert.equal(next.has("page"), false);
+  assert.equal(next.has("category"), false);
+  assert.equal(next.has("pending"), false);
+  assert.equal(next.has("returnTo"), false);
+  assert.deepEqual(next.getAll("brand"), ["A", "B"]);
+  assert.equal(next.get("sort"), "price");
+  assert.equal(next.get("pageSize"), "20");
+  assert.equal(
+    listingViewSignature(config),
+    listingViewSignature({
+      ...config,
+      filters: { ...config.filters, brand: ["B", "A", "A"] },
+    }),
+  );
+  assert.throws(() =>
+    listingViewConfigSchema.parse({
+      ...config,
+      filters: { ...config.filters, store: "outside" },
+    }),
+  );
+  assert.throws(() =>
+    listingViewConfigSchema.parse({ ...config, hiddenColumns: ["name"] }),
+  );
+  const invalid = captureListingView(
+    new URLSearchParams("sort=stock&pageSize=999&status=invalid"),
+    true,
+    [],
+  );
+  assert.equal(invalid.filters.sort, "updated");
+  assert.equal(invalid.filters.pageSize, "50");
+  assert.equal(invalid.filters.status, undefined);
+});
+test("saved listing views persist by shop, validate access, reject duplicate names and protect concurrent edits/deletes", async () => {
+  const config = captureListingView(
+    new URLSearchParams("sort=price&sortDir=asc"),
+    false,
+    ["sku"],
+  );
+  const input = {
+    storeId: "juntos-com",
+    name: "Revisar " + randomUUID(),
+    config,
+    version: 0,
+  };
+  const saved = await saveListingView(actor, input);
+  try {
+    assert.deepEqual((await get("listing_views", saved.id))!.config, config);
+    assert.ok(
+      (await listingViews(actor, "juntos-com")).views.some(
+        (v) => v.id === saved.id,
+      ),
+    );
+    assert.ok(
+      !(await listingViews(actor, "juntos-data")).views.some(
+        (v) => v.id === saved.id,
+      ),
+    );
+    await assert.rejects(() => listingViews(actor, "all"), /Loja/);
+    await assert.rejects(
+      () =>
+        listingViews(
+          {
+            ...actor,
+            stores: actor.stores.filter((s) => s.id !== "juntos-com"),
+          },
+          "juntos-com",
+        ),
+      /Loja/,
+    );
+    await assert.rejects(
+      () => saveListingView({ ...actor, role: "viewer" }, input),
+      /consulta/,
+    );
+    await assert.rejects(
+      () =>
+        saveListingView(actor, {
+          ...input,
+          name: "  " + input.name.toUpperCase() + "  ",
+        }),
+      /esse nome/,
+    );
+    await assert.rejects(
+      () =>
+        saveListingView(
+          actor,
+          { ...input, storeId: "juntos-data", version: 1 },
+          saved.id,
+        ),
+      /nesta loja/,
+    );
+    await assert.rejects(
+      () =>
+        deleteListingView(actor, saved.id, {
+          storeId: "juntos-data",
+          version: 1,
+        }),
+      /nesta loja/,
+    );
+    const edits = await Promise.allSettled([
+      saveListingView(
+        actor,
+        { ...input, name: input.name + " A", version: 1 },
+        saved.id,
+      ),
+      saveListingView(
+        actor,
+        { ...input, name: input.name + " B", version: 1 },
+        saved.id,
+      ),
+    ]);
+    assert.equal(edits.filter((e) => e.status === "fulfilled").length, 1);
+    assert.equal(edits.filter((e) => e.status === "rejected").length, 1);
+    assert.equal((await get("listing_views", saved.id))!.version, 2);
+    await assert.rejects(
+      () =>
+        deleteListingView(actor, saved.id, {
+          storeId: "juntos-com",
+          version: 1,
+        }),
+      /visão mudou/,
+    );
+    await assert.rejects(
+      () =>
+        deleteListingView({ ...actor, role: "viewer" }, saved.id, {
+          storeId: "juntos-com",
+          version: 2,
+        }),
+      /consulta/,
+    );
+    await deleteListingView(actor, saved.id, {
+      storeId: "juntos-com",
+      version: 2,
+    });
+    assert.equal(await get("listing_views", saved.id), undefined);
+  } finally {
+    await remove("listing_views", saved.id);
+  }
+});
+test("saved views never expose or overwrite another organization and bound the per-shop collection", async () => {
+  const foreign = randomUUID();
+  const config = captureListingView(new URLSearchParams(), false, []);
+  await put("listing_views", foreign, {
+    organization_id: "outside",
+    store_id: "juntos-com",
+    name: "Privada",
+    config,
+    version: 1,
+  });
+  const ids: string[] = [];
+  try {
+    assert.ok(
+      !(await listingViews(actor, "juntos-com")).views.some(
+        (v) => v.id === foreign,
+      ),
+    );
+    await assert.rejects(
+      () =>
+        saveListingView(
+          actor,
+          { storeId: "juntos-com", name: "Alterada", config, version: 1 },
+          foreign,
+        ),
+      /não encontrada/,
+    );
+    await assert.rejects(
+      () =>
+        deleteListingView(actor, foreign, {
+          storeId: "juntos-com",
+          version: 1,
+        }),
+      /não encontrada/,
+    );
+    for (let i = 0; i < 30; i++) {
+      const id = randomUUID();
+      ids.push(id);
+      await put("listing_views", id, {
+        organization_id: actor.organization_id,
+        store_id: "juntos-data",
+        name: "Visão " + i,
+        config,
+        version: 1,
+      });
+    }
+    await assert.rejects(
+      () =>
+        saveListingView(actor, {
+          storeId: "juntos-data",
+          name: "Extra",
+          config,
+          version: 0,
+        }),
+      /Limite de 30/,
+    );
+  } finally {
+    await Promise.all(
+      [...ids, foreign].map((id) => remove("listing_views", id)),
+    );
+  }
 });

@@ -6155,3 +6155,208 @@ button.today-metric:hover {
   margin-left: auto;
   font-size: 11px;
 }
+
+/* Compact controls share the listing toolbar; their menus never shift rows. */
+.listing-table-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.listing-preferences {
+  position: relative;
+}
+.listing-preferences > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 31px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+.listing-preferences > summary::after {
+  content: none;
+}
+.listing-preferences > summary::marker,
+.listing-preferences > summary::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+.listing-preferences > summary > span:first-of-type {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listing-preferences > summary:hover,
+.listing-preferences[open] > summary,
+.listing-preferences > .has-active-view {
+  color: var(--orange);
+  border-color: #ffb03f55;
+  background: #ffb03f08;
+}
+.listing-preferences-popover {
+  z-index: 70;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface2);
+  box-shadow: 0 12px 30px #0008;
+}
+.listing-preferences-heading {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.listing-preferences-heading small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.listing-views-list {
+  display: grid;
+  gap: 3px;
+}
+.listing-view-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.listing-view-apply {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 9px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.listing-view-apply span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.listing-view-apply[aria-pressed="true"],
+.listing-view-apply:hover {
+  color: var(--orange);
+  background: #ffb03f0c;
+}
+.listing-view-row .icon-button {
+  min-width: 30px;
+  width: 30px;
+  min-height: 30px;
+}
+.listing-view-actions {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.listing-view-replace {
+  display: grid;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.listing-view-replace select {
+  min-width: 0;
+  width: 100%;
+}
+.listing-column-choice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 2px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.listing-column-choice small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.listing-column-choice input {
+  margin: 0;
+}
+.listing-column-choice + .text-link {
+  margin-top: 10px;
+}
+.listing-views-skeleton {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+.listing-views-skeleton span {
+  height: 25px;
+  border-radius: 5px;
+}
+.listing-view-form {
+  display: grid;
+  gap: 16px;
+}
+.offers-table [hidden] {
+  display: none !important;
+}
+.offers-table td[data-pinned] {
+  z-index: 2;
+  background: var(--surface);
+}
+.offers-table th[data-pinned] {
+  z-index: 5;
+  background: var(--surface2);
+}
+.offers-table .row-selected td[data-pinned] {
+  background: #262018;
+}
+.offers-table tr:hover td[data-pinned] {
+  background: var(--surface2);
+}
+.offers-table [data-pinned][data-column="name"] {
+  border-right: 1px solid var(--line);
+}
+@media (max-width: 620px) {
+  .listing-preferences > summary {
+    min-height: 36px;
+  }
+  .listing-column-choice {
+    min-height: 36px;
+  }
+}
+
+.listing-preferences:first-child > summary {
+  width: 96px;
+}
+.listing-preferences:last-of-type > summary {
+  width: 32px;
+  justify-content: center;
+}
+.listing-preferences > summary .offers-filter-count {
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  font-size: 8px;
+}
+
+@media (max-width: 620px) {
+  .listing-preferences:first-child > summary {
+    width: 32px;
+    justify-content: center;
+  }
+  .listing-preferences:first-child > summary > span {
+    display: none;
+  }
+}

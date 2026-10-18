@@ -107,6 +107,10 @@ import CopyCode from "./copy-code";
 import QuickTaskForm from "./quick-task-form";
 import useListingIndicators from "./use-listing-indicators";
 import ListingUpdateProgress from "./listing-update-progress";
+import ListingTableControls from "./listing-table-controls";
+import useListingLayout from "./use-listing-layout";
+import { positionListingDropdown } from "./listing-dropdown";
+import { applyListingView, captureListingView } from "../domain/listing-views";
 
 type Row = Record<string, any>;
 const navigation = [
@@ -1979,6 +1983,10 @@ function Offers({
   const operational = q.get("tableView")
     ? q.get("tableView") === "operational"
     : data.offers.some((o: Row) => !!o.ml);
+  const layout = useListingLayout(
+    q.get("store") || "all",
+    operational ? "operational" : "registry",
+  );
   const counts = listingCounts(data.offers);
   const eligible = data.offers.filter(
     (o: Row) =>
@@ -1989,10 +1997,11 @@ function Offers({
   const columns = useMemo<TableColumn<Row>[]>(
     () => [
       ...(canWrite
-        ? [{ id: "select", label: "", width: 44, fixed: true }]
+        ? [{ id: "select", label: "", width: 44, fixed: true, pinned: true }]
         : []),
       {
         id: "name",
+        pinned: true,
         className: "offer-align-left",
         label: "Anúncio / produto",
         width: operational ? 260 : 290,
@@ -2100,6 +2109,8 @@ function Offers({
     [canWrite, operational],
   );
   const table = useSmartTable<Row>("offers", data.offers, columns, {
+    hiddenColumns: layout.hidden,
+    maxPinnedWidth: layout.compact ? 180 : undefined,
     sort: {
       id: sort,
       direction:
@@ -2385,6 +2396,19 @@ function Offers({
               <option value="registry">Cadastro</option>
             </select>
           </label>
+          <ListingTableControls
+            key={q.get("store") || "all"}
+            store={q.get("store") || "all"}
+            canWrite={canWrite}
+            columns={columns}
+            config={captureListingView(q, operational, layout.hidden)}
+            onHidden={(hidden) => layout.change(hidden)}
+            onApply={(config) => {
+              layout.change(config.hiddenColumns, config.filters.tableView);
+              setSelected([]);
+              navigate("anuncios", applyListingView(q, config));
+            }}
+          />
           <ListingGlobalPanel
             overview={data.listingOverview}
             store={q.get("store") || "all"}
@@ -2474,7 +2498,7 @@ function Offers({
                     className={selected.includes(o.id) ? "row-selected" : ""}
                   >
                     {canWrite && (
-                      <td>
+                      <td {...table.cellProps("select")}>
                         <input
                           type="checkbox"
                           aria-label={"Selecionar " + o.title}
@@ -2492,7 +2516,10 @@ function Offers({
                         />
                       </td>
                     )}
-                    <td className="offer-product-col">
+                    <td
+                      {...table.cellProps("name")}
+                      className="offer-product-col"
+                    >
                       <div className="offer-product-cell">
                         <button
                           className="offer-photo-button"
@@ -2565,20 +2592,22 @@ function Offers({
                     </td>
                     {!operational && (
                       <>
-                        <td>
+                        <td {...table.cellProps("store")}>
                           <span className="store-pill">{o.store_name}</span>
                         </td>
-                        <td>
+                        <td {...table.cellProps("brand")}>
                           {o.brand || <span className="muted">Sem marca</span>}
                           <small>{o.category || "Sem categoria"}</small>
                         </td>
-                        <td className="mono">{o.sku || "—"}</td>
-                        <td>
+                        <td {...table.cellProps("sku")} className="mono">
+                          {o.sku || "—"}
+                        </td>
+                        <td {...table.cellProps("status")}>
                           <Badge value={o.status} />
                         </td>
                       </>
                     )}
-                    <td className="numeric mono">
+                    <td {...table.cellProps("price")} className="numeric mono">
                       <ListingHint
                         content={() =>
                           listingRowInformation(o, "price", onPreview)
@@ -2589,7 +2618,7 @@ function Offers({
                     </td>
                     {operational && (
                       <>
-                        <td>
+                        <td {...table.cellProps("conditions")}>
                           <span>{listingType(o.ml?.listingTypeId)}</span>
                           <ListingHint
                             content={() =>
@@ -2638,7 +2667,10 @@ function Offers({
                                 : "Frete por conta do comprador"}
                           </small>
                         </td>
-                        <td className="numeric">
+                        <td
+                          {...table.cellProps("settlement")}
+                          className="numeric"
+                        >
                           <ListingHint
                             content={() =>
                               listingRowInformation(o, "settlement", onPreview)
@@ -2690,7 +2722,7 @@ function Offers({
                                 : "Estimativa incompleta"}
                           </small>
                         </td>
-                        <td>
+                        <td {...table.cellProps("metrics")}>
                           {o.metrics7d?.stale ? (
                             <>
                               <ListingHint
@@ -2748,7 +2780,7 @@ function Offers({
                             <span className="small muted">Não consultado</span>
                           )}
                         </td>
-                        <td>
+                        <td {...table.cellProps("quality")}>
                           {o.ml?.health == null ? (
                             <span className="small muted">ML não informou</span>
                           ) : (
@@ -2768,7 +2800,7 @@ function Offers({
                             </small>
                           </ListingHint>
                         </td>
-                        <td>
+                        <td {...table.cellProps("status")}>
                           <Badge value={o.status} />
                           {o.ml?.subStatus?.includes("paused_by_seller") && (
                             <small>Pausado pelo vendedor</small>
@@ -2777,7 +2809,7 @@ function Offers({
                       </>
                     )}
 
-                    <td>
+                    <td {...table.cellProps("margin")}>
                       <ListingHint
                         content={() =>
                           listingRowInformation(o, "margin", onPreview)
@@ -2833,7 +2865,7 @@ function Offers({
                         </button>
                       </ListingHint>
                     </td>
-                    <td>
+                    <td {...table.cellProps("pending")}>
                       {o.financialStatus?.ownPending.length > 0 && (
                         <ListingHint
                           content={() =>
@@ -2874,7 +2906,7 @@ function Offers({
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td {...table.cellProps("updated")}>
                       <ListingHint
                         content={() =>
                           listingRowInformation(o, "updated", onPreview)
@@ -2883,7 +2915,7 @@ function Offers({
                         <span>{date(o.updated_at)}</span>
                       </ListingHint>
                     </td>
-                    <td>
+                    <td {...table.cellProps("open")}>
                       <button
                         className="icon-button"
                         aria-label={"Prévia de " + o.title}
@@ -2982,38 +3014,6 @@ function Offers({
   );
 }
 // Fixed menus escape the bounded table layout and fit above or below their trigger.
-function positionListingDropdown(
-  details: HTMLDetailsElement,
-  selector: string,
-  preferredWidth = 260,
-  preferredHeight = 260,
-) {
-  if (!details.open) return;
-  const popup = details.querySelector<HTMLElement>(selector);
-  const anchor = details.querySelector("summary");
-  if (!popup || !anchor) return;
-  const bounds = anchor.getBoundingClientRect();
-  const width = Math.min(preferredWidth, window.innerWidth - 16);
-  const minimumTop =
-    (document.querySelector(".topbar")?.getBoundingClientRect().bottom || 0) +
-    8;
-  Object.assign(popup.style, {
-    position: "fixed",
-    width: `${width}px`,
-    minWidth: "0",
-    right: "auto",
-    transform: "none",
-    maxHeight: `${preferredHeight}px`,
-  });
-  const desiredHeight = Math.min(popup.scrollHeight + 2, preferredHeight);
-  const below = Math.max(0, window.innerHeight - bounds.bottom - 14);
-  const above = Math.max(0, bounds.top - minimumTop - 6);
-  const upwards = desiredHeight > below && above > below;
-  const height = Math.min(desiredHeight, upwards ? above : below);
-  popup.style.left = `${Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8))}px`;
-  popup.style.top = `${upwards ? bounds.top - height - 6 : bounds.bottom + 6}px`;
-  popup.style.maxHeight = `${height}px`;
-}
 function MultiFilter({
   label,
   values,

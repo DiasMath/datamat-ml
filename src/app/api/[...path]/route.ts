@@ -37,6 +37,11 @@ import { applyApprovedPrice } from "@/server/ml-price-application";
 import { batchListingStatus } from "@/server/ml-status";
 import * as campaign from "@/server/campaigns";
 import { refreshCatalog } from "@/server/catalog-refresh";
+import {
+  listingViews,
+  saveListingView,
+  deleteListingView,
+} from "@/server/listing-views";
 import { csvCell } from "@/domain/csv";
 import {
   offersWorkbook,
@@ -116,6 +121,22 @@ async function handle(req: NextRequest, context: Context) {
         "Login e usuários locais foram removidos; o acesso será integrado ao portal",
       );
     const actor = await workspaceActor();
+    if (resource === "listing-views") {
+      if (path.length === 1 && req.method === "GET")
+        return response(
+          await listingViews(
+            actor,
+            req.nextUrl.searchParams.get("store") || "all",
+          ),
+        );
+      if (path.length === 1 && req.method === "POST")
+        return response(await saveListingView(actor, body), 201);
+      if (path.length === 2 && req.method === "PUT")
+        return response(await saveListingView(actor, body, key));
+      if (path.length === 2 && req.method === "DELETE")
+        return response(await deleteListingView(actor, key, body));
+      throw new HttpError(404, "Operação de visão não encontrada");
+    }
     if (
       resource === "media-storage" &&
       key === "status" &&

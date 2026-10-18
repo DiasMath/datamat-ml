@@ -47,3 +47,13 @@ O nome original é preservado no Drive. IDs reservados permitem confirmar um env
 Clientes Google em modo de teste podem ter refresh tokens com validade de sete dias; para operação contínua, publique a tela de consentimento segundo os requisitos do Google. Esta revisão exercita OAuth, renovação, armazenamento e exclusão com respostas controladas. A conexão à conta real e o upload real requerem que o operador cadastre e autorize o cliente OAuth; nenhum arquivo de teste foi enviado ao Drive real.
 
 Referências: [Drive OAuth](https://developers.google.com/workspace/drive/api/guides/api-specific-auth), [uploads](https://developers.google.com/workspace/drive/api/guides/manage-uploads), [IDs reservados](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/generateIds), [OAuth web server](https://developers.google.com/identity/protocols/oauth2/web-server).
+
+## Visões salvas e colunas
+
+A barra da tabela inclui **Visões salvas** (marcador) e **Colunas visíveis**. No celular, os controles usam apenas os ícones. Os menus fecham ao clicar fora ou pressionar Escape e permanecem sobre o conteúdo.
+
+Uma visão guarda busca, filtros, ordenação, tipo de tabela, quantidade por página e colunas ocultas. A paginação atual e a seleção de anúncios não são salvas. Aplicar uma visão volta à primeira página e mantém a loja selecionada. Não altera anúncios nem dispara sincronização com o ML.
+
+As visões ficam no Firestore, por organização e loja, e podem ser abertas em outro navegador. Há criação, renomeação, atualização com a configuração atual e exclusão confirmada. Nomes são únicos dentro da loja (ignorando caixa e espaços repetidos), com limite de 30 visões. Versões impedem que uma edição ou exclusão antiga sobrescreva outra alteração. Leitores podem abrir visões, mas não modificar as visões compartilhadas. Na opção **Todas as lojas**, é necessário escolher uma loja para salvar ou abrir visões.
+
+A escolha avulsa de colunas fica neste navegador, separada por loja e pelas tabelas **Operacional ML** e **Cadastro**. **Mostrar todas as colunas** restaura a exibição. Ocultar colunas não consulta novamente o workspace, não muda a ordenação nem a seleção. Anúncio/produto, seleção e ações permanecem disponíveis. A coluna do produto e a seleção ficam fixas durante a rolagem horizontal, com largura do produto limitada em telas pequenas.

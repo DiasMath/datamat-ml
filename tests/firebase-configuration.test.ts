@@ -1,3 +1,4 @@
+import { databaseFailure } from "../src/server/database-failure";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createPrivateKey } from "node:crypto";
@@ -299,4 +300,36 @@ test("deployment validator rejects missing credentials, local URLs and incomplet
     }).status,
     1,
   );
+});
+
+// Authentication failures must be actionable without exposing provider payloads.
+
+test("database failures classify authentication, quota, permission and transient errors without leaking details", () => {
+  for (const [code, expected] of [
+    [8, "FIRESTORE_QUOTA_EXCEEDED"],
+    [7, "FIREBASE_PERMISSION_DENIED"],
+    [14, "FIRESTORE_UNAVAILABLE"],
+    [4, "FIRESTORE_UNAVAILABLE"],
+    [16, "FIREBASE_AUTH_FAILED"],
+  ] as const) {
+    const error = Object.assign(new Error("PRIVATE-PROVIDER-DETAILS"), {
+      code,
+    });
+    const result = databaseFailure(error)!;
+    assert.equal(result.status, 503);
+    assert.equal(result.code, expected);
+    assert.ok(!JSON.stringify(result).includes("PRIVATE-PROVIDER-DETAILS"));
+  }
+  assert.equal(
+    databaseFailure(new Error("invalid_grant: JWT signature PRIVATE-KEY"))
+      ?.code,
+    "FIREBASE_AUTH_FAILED",
+  );
+  assert.equal(
+    databaseFailure(
+      Object.assign(new Error("query requires an index"), { code: 9 }),
+    )?.code,
+    "FIRESTORE_INDEX_REQUIRED",
+  );
+  assert.equal(databaseFailure(new TypeError("unexpected data")), null);
 });

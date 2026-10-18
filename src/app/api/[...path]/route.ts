@@ -13,6 +13,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { workspaceActor, HttpError } from "@/server/access";
 import { initializeDatabase, DatabaseConfigurationError } from "@/server/db";
+import { databaseFailure } from "@/server/database-failure";
 import * as service from "@/server/services";
 import * as ml from "@/server/mercadolivre";
 import { oauthPopupResponse } from "@/server/oauth-popup";
@@ -778,6 +779,21 @@ async function handle(req: NextRequest, context: Context) {
         { error: "Um registro com essa identificação já existe" },
         409,
       );
+    const unavailable = databaseFailure(e);
+    if (unavailable) {
+      console.error(
+        "Falha de acesso aos dados:",
+        unavailable.code,
+        e instanceof Error ? e.stack : "Erro desconhecido",
+      );
+      return NextResponse.json(
+        { error: unavailable.error, code: unavailable.code },
+        {
+          status: unavailable.status,
+          headers: { ...headers, "Retry-After": "30" },
+        },
+      );
+    }
     console.error(
       "Erro interno:",
       e instanceof Error ? e.stack : "Erro desconhecido",
@@ -786,6 +802,7 @@ async function handle(req: NextRequest, context: Context) {
       {
         error:
           "Não foi possível concluir. Tente novamente ou consulte os registros do servidor.",
+        code: "SERVER_INTERNAL_ERROR",
       },
       500,
     );

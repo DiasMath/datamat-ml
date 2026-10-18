@@ -10,7 +10,22 @@ const png = Buffer.from(
   "base64",
 );
 let previous: Record<string, any>;
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ request, page }) => {
+  await page.route("**/api/catalog/refresh?*", (route) =>
+    route.fulfill({
+      json: {
+        partial: false,
+        results: [
+          {
+            storeId: "juntos-com",
+            status: "confirmed",
+            processed: 2,
+            has_more: false,
+          },
+        ],
+      },
+    }),
+  );
   await request.get("/api/workspace");
   previous = (
     await db().collection("connections").doc(connectionId).get()
@@ -481,7 +496,7 @@ test("listing information is readable and accessible, financial limits stay live
     });
     let receivedIds: string[] = [];
     let release = () => {};
-    await page.route("**/api/catalog/competition", async (route) => {
+    await page.route("**/api/catalog/competition*", async (route) => {
       const ids: string[] = route.request().postDataJSON().ids;
       const first = receivedIds.length === 0;
       receivedIds.push(...ids);
@@ -651,7 +666,7 @@ test("partial catalogue batches report every pending listing and resume without 
   const count = data.listingOverview.competition.rows.length;
   const calls: string[][] = [];
   let resuming = false;
-  await page.route("**/api/catalog/competition", (route) => {
+  await page.route("**/api/catalog/competition*", (route) => {
     const ids: string[] = route.request().postDataJSON().ids;
     calls.push(ids);
     if (!resuming && calls.length === 2)
@@ -709,7 +724,7 @@ test("indicator progress can be interrupted and resumes only unacknowledged list
   request,
 }) => {
   const { title, rows } = await seed(request);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 10; i++) {
     const id = randomUUID();
     await db()
       .collection("offers")
@@ -718,7 +733,7 @@ test("indicator progress can be interrupted and resumes only unacknowledged list
   }
   const calls: string[][] = [];
   let release = () => {};
-  await page.route("**/api/catalog/indicators", async (route) => {
+  await page.route("**/api/catalog/indicators*", async (route) => {
     const ids: string[] = route.request().postDataJSON().ids;
     calls.push(ids);
     if (calls.length === 2)
@@ -742,11 +757,11 @@ test("indicator progress can be interrupted and resumes only unacknowledged list
     await page.goto(
       `/anuncios?store=juntos-com&q=${encodeURIComponent(title)}&pageSize=50`,
     );
-    await expect(page.locator(".offers-table tbody tr")).toHaveCount(7);
+    await expect(page.locator(".offers-table tbody tr")).toHaveCount(12);
     const original = page.url();
     const top = (await page.locator(".offers-panel").boundingBox())!.y;
     const button = page.getByRole("button", {
-      name: "Consultar indicadores ML",
+      name: "Atualizar anúncios da loja",
       exact: true,
     });
     await button.click();
@@ -754,10 +769,10 @@ test("indicator progress can be interrupted and resumes only unacknowledged list
       name: "Atualização dos indicadores ML",
       exact: true,
     });
-    await expect(progress).toContainText("5 de 7 anúncios consultados");
+    await expect(progress).toContainText("10 de 12 anúncios consultados");
     await expect(progress.getByRole("progressbar")).toHaveAttribute(
       "value",
-      "5",
+      "10",
     );
     expect((await page.locator(".offers-panel").boundingBox())!.y).toBe(top);
     await progress
@@ -772,7 +787,7 @@ test("indicator progress can be interrupted and resumes only unacknowledged list
     release();
     await button.click();
     await expect(page.locator(".toast-viewport")).toContainText(
-      "2 anúncios consultados.",
+      "2 anúncios com indicadores consultados.",
     );
     expect(calls).toHaveLength(3);
     expect(calls[2]).toEqual(calls[1]);
@@ -815,7 +830,7 @@ test("a stalled indicator response body times out, clears every loader and remai
     };
   });
   const button = page.getByRole("button", {
-    name: "Consultar indicadores ML",
+    name: "Atualizar anúncios da loja",
     exact: true,
   });
   await button.click();
@@ -835,7 +850,7 @@ test("a stalled indicator response body times out, clears every loader and remai
   });
   await button.click();
   await expect(page.locator(".toast-viewport")).toContainText(
-    "2 anúncios consultados.",
+    "2 anúncios com indicadores consultados.",
   );
   const calls = await page.evaluate(() => (window as any).__indicatorCalls);
   expect(calls).toHaveLength(2);
@@ -884,7 +899,7 @@ test("catalogue synchronization closes or cancels promptly and can start again a
     });
     await icon.click();
     await dialog
-      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .getByRole("button", { name: "Atualizar catálogo da loja" })
       .click();
     await expect.poll(() => calls).toBe(1);
     await dialog
@@ -892,10 +907,10 @@ test("catalogue synchronization closes or cancels promptly and can start again a
       .click();
     await expect(dialog).toContainText("Consulta interrompida");
     await expect(
-      dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
+      dialog.getByRole("button", { name: "Atualizar catálogo da loja" }),
     ).toBeEnabled();
     await dialog
-      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .getByRole("button", { name: "Atualizar catálogo da loja" })
       .click();
     await expect.poll(() => calls).toBe(2);
     await page.mouse.click(2, 2);
@@ -903,99 +918,76 @@ test("catalogue synchronization closes or cancels promptly and can start again a
     await expect(icon.locator(".spin")).toHaveCount(0);
     await icon.click();
     await dialog
-      .getByRole("button", { name: "Atualizar catálogo das lojas" })
+      .getByRole("button", { name: "Atualizar catálogo da loja" })
       .click();
     await expect(dialog).toContainText(
       "Consulta do catálogo concluída · 2 anúncios consultados",
     );
     await expect(
-      dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
+      dialog.getByRole("button", { name: "Atualizar catálogo da loja" }),
     ).toBeEnabled();
     expect(calls).toBe(3);
   } finally {
     releases.forEach((release) => release());
   }
 });
-test("all-store catalogue continuation skips stores already completed rather than restarting them", async ({
+test("all-store overview cannot sync and selecting a shop only updates that shop", async ({
   page,
   request,
 }) => {
   const { title } = await seed(request);
-  const otherConnection = db()
-    .collection("connections")
-    .doc(key("juntos-data", "mercadolivre"));
-  const original = (await otherConnection.get()).data();
-  await otherConnection.set({
-    ...original,
-    store_id: "juntos-data",
-    provider: "mercadolivre",
-    status: "connected",
-    external_account: "222",
-    auth_version: 998,
-  });
-  try {
-    const bodies: any[] = [];
-    await page.route("**/api/catalog/refresh?*", async (route) => {
-      bodies.push(route.request().postDataJSON());
-      await route.fulfill({
-        json:
-          bodies.length === 1
-            ? {
-                partial: true,
-                results: [
-                  {
-                    storeId: "juntos-com",
-                    status: "confirmed",
-                    processed: 2,
-                    has_more: false,
-                  },
-                  {
-                    storeId: "juntos-data",
-                    status: "confirmed",
-                    processed: 20,
-                    has_more: true,
-                  },
-                ],
-              }
-            : {
-                partial: false,
-                results: [
-                  {
-                    storeId: "juntos-data",
-                    status: "confirmed",
-                    processed: 2,
-                    has_more: false,
-                  },
-                ],
-              },
-      });
+  const calls: string[] = [];
+  await page.route("**/api/catalog/refresh?*", async (route) => {
+    calls.push(new URL(route.request().url()).searchParams.get("store")!);
+    await route.fulfill({
+      json: {
+        partial: false,
+        results: [
+          {
+            storeId: "juntos-com",
+            status: "confirmed",
+            processed: 2,
+            has_more: false,
+          },
+        ],
+      },
     });
-    await page.goto(`/anuncios?store=all&q=${encodeURIComponent(title)}`);
-    await page
-      .getByRole("button", {
-        name: "Sincronização da tela com o ML",
-        exact: true,
-      })
-      .click();
-    const dialog = page.getByRole("dialog", {
+  });
+  await page.goto(`/anuncios?store=all&q=${encodeURIComponent(title)}`);
+  await expect(
+    page.getByRole("button", {
+      name: "Atualizar anúncios da loja",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", {
       name: "Sincronização da tela com o ML",
       exact: true,
-    });
-    await dialog
-      .getByRole("button", { name: "Atualizar catálogo das lojas" })
-      .click();
-    await expect(dialog).toContainText(
-      "Consulta do catálogo concluída · 24 anúncios consultados",
-    );
-    expect(bodies).toEqual([{}, { completedStoreIds: ["juntos-com"] }]);
-    await expect(
-      dialog.getByRole("button", { name: "Atualizar catálogo das lojas" }),
-    ).toBeEnabled();
-    await page.unrouteAll({ behavior: "wait" });
-  } finally {
-    if (original) await otherConnection.set(original);
-    else await otherConnection.delete();
-  }
+    })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Sincronização da tela com o ML",
+    exact: true,
+  });
+  await expect(
+    dialog.getByRole("button", { name: "Atualizar catálogo da loja" }),
+  ).toBeDisabled();
+  await expect(dialog).toContainText("Selecione uma loja no filtro");
+  expect(calls).toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Loja global").selectOption("juntos-com");
+  await page
+    .getByRole("button", {
+      name: "Sincronização da tela com o ML",
+      exact: true,
+    })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Atualizar catálogo da loja" })
+    .click();
+  await expect(dialog).toContainText("Consulta do catálogo concluída");
+  expect(calls).toEqual(["juntos-com"]);
 });
 test("indicator requests show loading and update cached seven-day data without losing filters", async ({
   page,
@@ -1007,7 +999,7 @@ test("indicator requests show loading and update cached seven-day data without l
     encodeURIComponent(title) +
     "&pageSize=50";
   let release!: () => void;
-  await page.route("**/api/catalog/indicators", async (route) => {
+  await page.route("**/api/catalog/indicators*", async (route) => {
     await new Promise<void>((resolve) => (release = resolve));
     for (const row of rows)
       await db()
@@ -1027,13 +1019,16 @@ test("indicator requests show loading and update cached seven-day data without l
   });
   await page.goto(target);
   await page
-    .getByRole("button", { name: "Consultar indicadores ML", exact: true })
+    .getByRole("button", { name: "Atualizar anúncios da loja", exact: true })
     .click();
   await expect(
     page.getByRole("progressbar", { name: "Operação em andamento" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Consultar indicadores ML", exact: true }),
+    page.getByRole("button", {
+      name: "Atualizar anúncios da loja",
+      exact: true,
+    }),
   ).toBeDisabled();
   await expect.poll(() => typeof release).toBe("function");
   release();
@@ -1287,4 +1282,109 @@ test("media API parses multipart files, rejects invalid and oversized content, a
   expect(
     (await (await request.get(`/api/offers/${offer.id}`)).json()).draftMedia,
   ).toEqual([]);
+});
+
+test("primary update finishes every catalogue page for the selected shop before indicators and reconciles the header", async ({
+  page,
+  request,
+}) => {
+  const { title, rows } = await seed(request);
+  await db()
+    .collection("connections")
+    .doc(connectionId)
+    .set({ has_more: true, last_catalog_completed_at: null }, { merge: true });
+  const calls: string[] = [];
+  let pages = 0;
+  await page.route("**/api/catalog/refresh?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("store")).toBe(
+      "juntos-com",
+    );
+    pages++;
+    calls.push("catalog");
+    const partial = pages === 1;
+    await db()
+      .collection("connections")
+      .doc(connectionId)
+      .set(
+        {
+          has_more: partial,
+          last_catalog_completed_at: partial ? null : new Date().toISOString(),
+        },
+        { merge: true },
+      );
+    await route.fulfill({
+      json: {
+        partial,
+        results: [
+          {
+            storeId: "juntos-com",
+            status: "confirmed",
+            processed: partial ? 2 : 0,
+            has_more: partial,
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/catalog/indicators*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("store")).toBe(
+      "juntos-com",
+    );
+    calls.push("indicators");
+    await route.fulfill({
+      json: {
+        results: rows.map((o) => ({
+          id: o.id,
+          metrics: true,
+          fees: true,
+          errors: [],
+        })),
+      },
+    });
+  });
+  await page.goto(`/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`);
+  await expect(page.locator(".topbar .today-freshness")).toContainText(
+    "Catálogo parcial",
+  );
+  await page
+    .getByRole("button", { name: "Atualizar anúncios da loja", exact: true })
+    .click();
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "Catálogo da loja sincronizado",
+  );
+  await expect(page.locator(".topbar .today-freshness")).toContainText(
+    "Catálogo sincronizado",
+  );
+  expect(calls).toEqual(["catalog", "catalog", "indicators"]);
+  await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+});
+test("catalogue failure never reports success or consults indicators and preserves the store filter", async ({
+  page,
+  request,
+}) => {
+  const { title } = await seed(request);
+  let indicatorCalls = 0;
+  await page.route("**/api/catalog/refresh?*", (route) =>
+    route.fulfill({
+      status: 502,
+      json: { error: "ML temporariamente indisponível" },
+    }),
+  );
+  await page.route("**/api/catalog/indicators*", async (route) => {
+    indicatorCalls++;
+    await route.fulfill({ json: { results: [] } });
+  });
+  await page.goto(`/anuncios?store=juntos-com&q=${encodeURIComponent(title)}`);
+  const button = page.getByRole("button", {
+    name: "Atualizar anúncios da loja",
+    exact: true,
+  });
+  await button.click();
+  await expect(page.locator(".toast-viewport")).toContainText(
+    "ML temporariamente indisponível",
+  );
+  await expect(button).toBeEnabled();
+  await expect(page.getByLabel("Loja global")).toHaveValue("juntos-com");
+  await expect(page.locator(".listing-update-progress")).toHaveCount(0);
+  expect(indicatorCalls).toBe(0);
 });

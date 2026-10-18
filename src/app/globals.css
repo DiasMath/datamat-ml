@@ -6099,9 +6099,16 @@ button.today-metric:hover {
   font-size: inherit;
 }
 .header-summary .today-freshness {
+  min-width: 0;
   font-size: 10px;
   line-height: 1.4;
   min-height: 20px;
+}
+.header-summary .today-freshness > span:not(.dot) {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .header-summary .today-coverage-help {
   width: 20px;

@@ -23,7 +23,13 @@ import {
 } from "../src/server/services";
 import { extensionOffer } from "../src/server/extension";
 import { applyApprovedPrice } from "../src/server/ml-price-application";
-import { encryptSecret, quoteTariff } from "../src/server/mercadolivre";
+import {
+  encryptSecret,
+  quoteTariff,
+  withMlReadBatch,
+  withSellerData,
+} from "../src/server/mercadolivre";
+import { refreshListingIndicators } from "../src/server/listing-indicators";
 import { refreshFinancialCosts } from "../src/server/ml-financial-sync";
 import {
   automaticMlCosts,
@@ -734,4 +740,137 @@ test("automatic snapshots never reuse or expose records belonging to another org
   )!;
   assert.equal(JSON.parse(history.old_value).mlPercent, null);
   assert.ok(!history.old_value.includes("12345"));
+});
+
+test("ten indicators share item, fee and order reads while retaining per-offer metrics and manual costs", async () => {
+  const offers: Row[] = [];
+  for (let i = 0; i < 10; i++) offers.push(await ownOffer());
+  const byMlId = new Map(offers.map((o) => [o.ml_id, o]));
+  const counts = new Map<string, number>();
+  const end = new Date().toISOString();
+  const start = new Date(Date.now() - 7 * 86400000).toISOString();
+  let active = 0,
+    peak = 0;
+  const result = await mocked(
+    async (url) => {
+      const route = url.pathname + url.search;
+      counts.set(route, (counts.get(route) || 0) + 1);
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      if (url.pathname.endsWith("/visits/time_window"))
+        return json({ total_visits: 20, date_from: start, date_to: end });
+      if (url.pathname === "/orders/search")
+        return json({
+          paging: { total: 1 },
+          results: [
+            {
+              id: 100,
+              seller: { id: 111 },
+              status: "paid",
+              date_created: end,
+              currency_id: "BRL",
+              order_items: offers.map((o, i) => ({
+                item: { id: o.ml_id },
+                quantity: i + 1,
+                unit_price: 100,
+              })),
+            },
+          ],
+        });
+      if (url.pathname === "/questions/search") return json({ total: 0 });
+      const itemId = url.pathname.startsWith("/seller-promotions/items/")
+        ? url.pathname.split("/")[3]
+        : url.pathname.startsWith("/items/")
+          ? url.pathname.split("/")[2]
+          : url.searchParams.get("item_id");
+      return handler(byMlId.get(itemId!) || offers[0])(url);
+    },
+    () =>
+      refreshListingIndicators(
+        actor,
+        { ids: offers.map((o) => o.id) },
+        storeId,
+      ),
+  );
+  assert.equal(result.results.length, 10);
+  assert.ok(
+    result.results.every(
+      (r) => r.metrics && r.fees && !r.deferred && !r.errors.length,
+    ),
+  );
+  assert.ok(peak > 1, "independent reads should execute concurrently");
+  assert.ok(peak <= 10, "provider concurrency must stay bounded");
+  assert.equal(
+    [...counts]
+      .filter(([path]) => path.startsWith("/orders/search"))
+      .reduce((n, [, count]) => n + count, 0),
+    1,
+  );
+  assert.equal(
+    [...counts]
+      .filter(([path]) => path.startsWith("/sites/MLB/listing_prices"))
+      .reduce((n, [, count]) => n + count, 0),
+    1,
+  );
+  for (const [i, o] of offers.entries()) {
+    assert.equal(counts.get("/items/" + o.ml_id), 1);
+    const metrics = (await get("ml_metrics_7d", o.id))!;
+    assert.equal(metrics.units, i + 1);
+    assert.equal(metrics.grossRevenue, ((i + 1) * 100).toFixed(2));
+    assert.equal(JSON.parse((await get("costs", o.id))!.data_json).goods, "30");
+    assert.equal((await get("ml_financials", o.id))!.shipping.amount, "8.00");
+  }
+});
+test("indicator scope rejects mixed shops or a mismatched filter before any provider call", async () => {
+  const a = await ownOffer(),
+    b = await ownOffer();
+  await put("offers", b.id, { ...b, store_id: "juntos-data" });
+  await mocked(
+    () => {
+      throw new Error("provider must not be called");
+    },
+    async () => {
+      await assert.rejects(
+        () => refreshListingIndicators(actor, { ids: [a.id, b.id] }),
+        /única loja/,
+      );
+      await assert.rejects(
+        () => refreshListingIndicators(actor, { ids: [a.id] }, "juntos-data"),
+        /loja selecionada/,
+      );
+      await assert.rejects(
+        () => refreshListingIndicators(actor, { ids: [a.id] }, "all"),
+        /única loja/,
+      );
+    },
+  );
+});
+test("shared ML reads expire after each operation and failed reads can be retried within the batch", async () => {
+  let calls = 0;
+  const read = () =>
+    withSellerData(actor, connectionId, (api) => api("/test-shared"));
+  await mocked(
+    () => json({ read: ++calls }),
+    async () => {
+      await withMlReadBatch(async () => {
+        const [a, b] = await Promise.all([read(), read()]);
+        assert.deepEqual(a, b);
+        assert.equal(calls, 1);
+      });
+      assert.deepEqual(await withMlReadBatch(read), { read: 2 });
+    },
+  );
+  calls = 0;
+  await mocked(
+    () =>
+      ++calls === 1 ? json({ error: "forbidden" }, 403) : json({ ok: true }),
+    () =>
+      withMlReadBatch(async () => {
+        await assert.rejects(read);
+        assert.deepEqual(await read(), { ok: true });
+        assert.equal(calls, 2);
+      }),
+  );
 });

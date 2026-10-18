@@ -4,10 +4,12 @@ import { LoaderCircle, X } from "lucide-react";
 export default function ListingUpdateProgress({
   done,
   total,
+  phase,
   onCancel,
 }: {
   done: number;
   total: number;
+  phase?: "catalog" | "indicators";
   onCancel: () => void;
 }) {
   return createPortal(
@@ -18,9 +20,15 @@ export default function ListingUpdateProgress({
       <div>
         <LoaderCircle size={17} className="spin" aria-hidden="true" />
         <div>
-          <strong>Atualizando indicadores ML</strong>
+          <strong>
+            {phase === "catalog"
+              ? "Atualizando catálogo da loja"
+              : "Atualizando indicadores ML"}
+          </strong>
           <span role="status">
-            {done} de {total} anúncios consultados
+            {phase === "catalog"
+              ? `${done} anúncios consultados no catálogo`
+              : `${done} de ${total} anúncios consultados`}
           </span>
         </div>
         <button
@@ -33,7 +41,7 @@ export default function ListingUpdateProgress({
       </div>
       <progress
         aria-label="Anúncios consultados"
-        value={done}
+        value={phase === "catalog" ? undefined : done}
         max={total || 1}
       />
       <small>Você pode interromper e continuar depois.</small>

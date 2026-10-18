@@ -15,11 +15,13 @@ export default function WorkspaceFreshness({
   section,
   error,
   analysis,
+  catalogRefreshing = false,
 }: {
   data: Row;
   section: string;
   error?: string;
   analysis?: AnalysisFreshness;
+  catalogRefreshing?: boolean;
 }) {
   const id = useId();
   const popover = useRef<HTMLDivElement>(null);
@@ -28,7 +30,17 @@ export default function WorkspaceFreshness({
   const catalogue = ["anuncios", "precificacao", "concorrencia"].includes(
     section,
   );
-  const partial = catalogue && sources.some((s: Row) => s.partial || s.error);
+  const catalogError = sources.some((s: Row) => !!s.error);
+  const catalogUpdating =
+    catalogRefreshing || sources.some((s: Row) => s.running);
+  const catalogMissing =
+    !sources.length ||
+    sources.some((s: Row) => !s.lastCatalogSync || s.status !== "connected");
+  const partial =
+    catalogue &&
+    sources.some(
+      (s: Row) => s.partial || s.error || s.running || !s.lastCatalogSync,
+    );
   const failure = error || analysis?.error;
   const observedAt =
     section === "analises"
@@ -36,16 +48,31 @@ export default function WorkspaceFreshness({
           .map((s) => s.observedAt)
           .filter(Boolean)
           .sort()[0]
-      : data.sales?.observedAt || data.listingOverview?.generatedAt;
+      : catalogue
+        ? data.listingOverview?.generatedAt
+        : data.sales?.observedAt || data.listingOverview?.generatedAt;
   const complete =
-    !failure && (section === "analises" ? report?.complete : !partial);
+    !failure &&
+    (section === "analises"
+      ? report?.complete
+      : !(partial || (catalogue && (catalogMissing || catalogUpdating))));
   const status = failure
     ? "Atualização pendente"
-    : section === "analises" && !report?.available
-      ? "Sem consulta de vendas"
-      : complete
-        ? "Dados completos"
-        : "Dados parciais";
+    : catalogue
+      ? catalogError
+        ? "Atualização pendente"
+        : catalogUpdating
+          ? "Catálogo em atualização"
+          : partial && sources.some((s: Row) => s.partial)
+            ? "Catálogo parcial"
+            : catalogMissing
+              ? "Catálogo não sincronizado"
+              : "Catálogo sincronizado"
+      : section === "analises" && !report?.available
+        ? "Sem consulta de vendas"
+        : complete
+          ? "Dados completos"
+          : "Dados parciais";
   const time =
     observedAt && Number.isFinite(Date.parse(observedAt))
       ? new Intl.DateTimeFormat("pt-BR", {
@@ -89,7 +116,9 @@ export default function WorkspaceFreshness({
         <p>
           {section === "analises"
             ? "O horário corresponde à consulta de vendas mais antiga das lojas selecionadas. A cobertura só fica completa quando todas as lojas retornam os pedidos do período."
-            : "O horário corresponde à consulta do cadastro salvo no sistema. Dados completos indica que essa leitura foi concluída; não significa que todos os custos e indicadores do Mercado Livre já foram consultados."}
+            : catalogue
+              ? "O horário indica quando esta tela leu o cadastro salvo. Abaixo aparece a última sincronização completa do catálogo no ML. Tarifas e indicadores têm datas de consulta próprias em cada anúncio."
+              : "O horário corresponde à leitura dos dados salvos no sistema."}
         </p>
         {failure && <p>{failure}</p>}
         {catalogue && sources.length > 0 && (
@@ -99,11 +128,17 @@ export default function WorkspaceFreshness({
                 <strong>{s.storeName}</strong>
                 <span>
                   {s.error ||
-                    (s.partial
-                      ? "Importação do catálogo incompleta."
-                      : s.lastCatalogSync
-                        ? "Catálogo sincronizado."
-                        : "Sem sincronização completa do catálogo ML.")}
+                    (s.status !== "connected"
+                      ? "Conta ML não conectada; sincronizações anteriores foram preservadas."
+                      : s.running || catalogRefreshing
+                        ? "Consulta do catálogo em andamento."
+                        : s.partial
+                          ? s.lastCatalogSync
+                            ? "Atualização parcial; há páginas pendentes. A última sincronização completa continua disponível."
+                            : "Importação do catálogo incompleta."
+                          : s.lastCatalogSync
+                            ? "Catálogo sincronizado."
+                            : "Sem sincronização completa do catálogo ML.")}
                 </span>
                 {s.lastCatalogSync && (
                   <small>

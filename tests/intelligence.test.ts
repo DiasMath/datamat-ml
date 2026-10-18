@@ -734,7 +734,7 @@ test("catalogue refresh validates role, organization, store and authorization be
   );
   await put("offers", o.id, o);
 });
-test("catalogue continuation skips completed stores and rejects skips outside the authorized scope", async () => {
+test("catalogue updates require a single store and never query another connected account", async () => {
   const otherId = key("juntos-data", "mercadolivre");
   const previous = await get("connections", otherId);
   await put("connections", otherId, {
@@ -763,11 +763,17 @@ test("catalogue continuation skips completed stores and rejects skips outside th
         return json({ results: [], paging: { total: 0 } });
       },
       () =>
-        refreshCatalog(actor, new URLSearchParams(), {
-          completedStoreIds: ["juntos-com"],
-        }),
+        refreshCatalog(
+          actor,
+          new URLSearchParams({ store: "juntos-data" }),
+          {},
+        ),
     );
     assert.deepEqual(paths, ["/users/222/items/search"]);
+    await assert.rejects(
+      () => refreshCatalog(actor, new URLSearchParams(), {}),
+      /Selecione uma loja/,
+    );
     assert.equal(result.partial, false);
     assert.equal(result.results.length, 1);
     assert.equal(result.results[0].storeId, "juntos-data");

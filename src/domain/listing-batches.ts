@@ -1,4 +1,5 @@
 type Result = { id: string; deferred?: boolean };
+export const LISTING_INDICATOR_BATCH_SIZE = 10;
 // Each completed ID leaves the queue exactly once. A deferred or missing result
 // remains pending; a request that makes no progress stops rather than looping.
 export async function runListingBatches<T extends Result>(
@@ -7,10 +8,18 @@ export async function runListingBatches<T extends Result>(
   succeeded: (result: T) => boolean,
   onProgress: (done: number, total: number) => void,
   onBatch: (pending: string[]) => void = () => {},
-  options: { maxDurationMs?: number; clock?: () => number } = {},
+  options: {
+    maxDurationMs?: number;
+    clock?: () => number;
+    batchSize?: number;
+  } = {},
 ) {
   const clock = options.clock || Date.now;
   const deadline = clock() + (options.maxDurationMs ?? Infinity);
+  const batchSize = Math.max(
+    1,
+    Math.min(10, Math.floor(options.batchSize || 5)),
+  );
   let pendingIds = [...new Set(ids)];
   const total = pendingIds.length;
   let successful = 0,
@@ -22,7 +31,7 @@ export async function runListingBatches<T extends Result>(
         "A consulta foi dividida em etapas. Continue para atualizar os anúncios pendentes.";
       break;
     }
-    const batch = pendingIds.slice(0, 5);
+    const batch = pendingIds.slice(0, batchSize);
     onProgress(total - pendingIds.length, total);
     let results: T[];
     try {

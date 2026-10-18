@@ -339,6 +339,8 @@ export default function Workspace({ view }: { view: string[] }) {
   );
   const indicatorUpdate = useListingIndicators({
     scope: `${route}:${store}`,
+    store,
+    syncCatalog: data?.user.role === "admin",
     onWorking: setBusy,
     onChanged: () => reloadInBackground((n) => n + 1),
   });
@@ -457,6 +459,7 @@ export default function Workspace({ view }: { view: string[] }) {
     offerId,
     enabled:
       !home &&
+      store !== "all" &&
       data?.user.role === "admin" &&
       !!data?.connections.some(
         (c: Row) =>
@@ -872,6 +875,9 @@ export default function Workspace({ view }: { view: string[] }) {
                   <WorkspaceFreshness
                     data={data}
                     section={section}
+                    catalogRefreshing={
+                      indicatorUpdate.progress?.phase === "catalog"
+                    }
                     error={consultationError}
                     analysis={
                       analysisFreshness?.scope === analysisScope
@@ -934,7 +940,9 @@ export default function Workspace({ view }: { view: string[] }) {
                 mlAuthorization.connectionId
                   ? "Aguardando autorização…"
                   : indicatorUpdate.progress
-                    ? `Consultando ML: ${indicatorUpdate.progress.done} de ${indicatorUpdate.progress.total} concluídos…`
+                    ? indicatorUpdate.progress.phase === "catalog"
+                      ? "Atualizando catálogo da loja…"
+                      : `Consultando ML: ${indicatorUpdate.progress.done} de ${indicatorUpdate.progress.total} concluídos…`
                     : undefined
               }
             />
@@ -2388,9 +2396,13 @@ function Offers({
           {eligible.length > 0 && canWrite && (
             <button
               className="button compact offers-refresh"
-              aria-label="Consultar indicadores ML"
-              title="Consultar tarifas, frete e indicadores ML dos anúncios filtrados ou selecionados"
-              disabled={busy}
+              aria-label="Atualizar anúncios da loja"
+              title={
+                q.get("store") === "all"
+                  ? "Selecione uma loja para atualizar"
+                  : "Atualizar catálogo da loja e consultar tarifas e indicadores dos anúncios filtrados ou selecionados"
+              }
+              disabled={busy || !q.get("store") || q.get("store") === "all"}
               onClick={() => onIndicators(eligible.map((o: Row) => o.id))}
             >
               <RefreshCw className={busy ? "spin" : ""} size={15} />

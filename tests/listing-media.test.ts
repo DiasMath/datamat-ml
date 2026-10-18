@@ -571,3 +571,26 @@ test("listing estimates normalize money and hide expired quotes or metrics from 
     if (original) await put("connections", connectionId, original);
   }
 });
+
+test("indicator batching handles ten per request, keeps order and never repeats acknowledged IDs", async () => {
+  const ids = Array.from({ length: 23 }, (_, i) => String(i));
+  const calls: string[][] = [];
+  const result = await runListingBatches(
+    ids,
+    async (batch) => {
+      calls.push(batch);
+      return batch.map((id) => ({ id }));
+    },
+    () => true,
+    () => {},
+    () => {},
+    { batchSize: 10 },
+  );
+  assert.deepEqual(
+    calls.map((batch) => batch.length),
+    [10, 10, 3],
+  );
+  assert.deepEqual(calls.flat(), ids);
+  assert.equal(result.successful, 23);
+  assert.deepEqual(result.pendingIds, []);
+});

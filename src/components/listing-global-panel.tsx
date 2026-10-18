@@ -88,7 +88,7 @@ export default function ListingGlobalPanel({
   const pages = Math.max(1, Math.ceil(selected.length / 20));
   const current = Math.min(page, pages);
   async function refresh(kind: "competition" | "sync") {
-    if (request.current) return;
+    if (request.current || store === "all") return;
     const controller = new AbortController();
     request.current = controller;
     setRunning(kind);
@@ -103,7 +103,7 @@ export default function ListingGlobalPanel({
           pending.length ? pending : ids,
           async (batch) => {
             const result = await jsonRequest(
-              "/api/catalog/competition",
+              "/api/catalog/competition?" + new URLSearchParams({ store }),
               { ids: batch },
               "POST",
               controller.signal,
@@ -352,7 +352,10 @@ export default function ListingGlobalPanel({
                     <button
                       className="button compact"
                       disabled={
-                        !!running || !competition.total || !connected.length
+                        store === "all" ||
+                        !!running ||
+                        !competition.total ||
+                        !connected.length
                       }
                       onClick={() => void refresh("competition")}
                     >
@@ -522,7 +525,7 @@ export default function ListingGlobalPanel({
                 {canSync && (
                   <button
                     className="button compact"
-                    disabled={!!running || !connected.length}
+                    disabled={store === "all" || !!running || !connected.length}
                     onClick={() => void refresh("sync")}
                   >
                     {running === "sync" ? (
@@ -530,10 +533,15 @@ export default function ListingGlobalPanel({
                     ) : (
                       <RefreshCw size={15} />
                     )}
-                    Atualizar catálogo das lojas
+                    Atualizar catálogo da loja
                   </button>
                 )}
               </>
+            )}
+            {store === "all" && (
+              <p className="small">
+                Selecione uma loja no filtro para atualizar os dados.
+              </p>
             )}
             <p className="listing-global-progress small" role="status">
               {running && <LoaderCircle className="spin" size={14} />}

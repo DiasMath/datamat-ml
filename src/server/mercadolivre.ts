@@ -38,6 +38,17 @@ import { readFirebaseConfiguration } from "./firebase-configuration";
 
 const API = "https://api.mercadolibre.com";
 const requestDeadline = new AsyncLocalStorage<number>();
+const readBatch = new AsyncLocalStorage<{
+  responses: Map<string, Promise<unknown>>;
+  tokens: Map<string, Promise<string>>;
+}>();
+// Read sharing lasts for one authorized operation only. Scan cursors are stateful
+// and are deliberately excluded; credentials and responses never become a global cache.
+export function withMlReadBatch<T>(run: () => Promise<T>): Promise<T> {
+  return readBatch.getStore()
+    ? run()
+    : readBatch.run({ responses: new Map(), tokens: new Map() }, run);
+}
 export const ML_STATE_COOKIE = "datamat-ml-oauth";
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -859,13 +870,52 @@ async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
   }
 }
 async function api(c: Row, path: string) {
-  const token = await accessToken(c);
+  const batch = readBatch.getStore();
+  if (!batch || path.includes("/items/search?")) return apiUnshared(c, path);
+  const cacheKey = JSON.stringify([
+    c.id,
+    c.auth_version,
+    c.external_account,
+    path,
+  ]);
+  let pending = batch.responses.get(cacheKey);
+  if (!pending) {
+    pending = apiUnshared(c, path);
+    batch.responses.set(cacheKey, pending);
+    pending.catch(() => {
+      if (batch.responses.get(cacheKey) === pending)
+        batch.responses.delete(cacheKey);
+    });
+  }
+  return pending;
+}
+async function batchAccessToken(c: Row, rejectedToken?: string) {
+  const batch = readBatch.getStore();
+  if (!batch) return accessToken(c, rejectedToken);
+  const key = JSON.stringify([c.id, c.auth_version, c.external_account]);
+  const cacheKey = rejectedToken
+    ? key + ":renew:" + digest(rejectedToken)
+    : key;
+  let pending = batch.tokens.get(cacheKey);
+  if (!pending) {
+    pending = accessToken(c, rejectedToken);
+    batch.tokens.set(cacheKey, pending);
+    if (rejectedToken) batch.tokens.set(key, pending);
+    pending.catch(() => {
+      if (batch.tokens.get(cacheKey) === pending) batch.tokens.delete(cacheKey);
+      if (batch.tokens.get(key) === pending) batch.tokens.delete(key);
+    });
+  }
+  return pending;
+}
+async function apiUnshared(c: Row, path: string) {
+  const token = await batchAccessToken(c);
   try {
     return await http(path, { headers: { Authorization: `Bearer ${token}` } });
   } catch (e) {
     if (!(e instanceof HttpError) || e.status !== 401) throw e;
     return http(path, {
-      headers: { Authorization: `Bearer ${await accessToken(c, token)}` },
+      headers: { Authorization: `Bearer ${await batchAccessToken(c, token)}` },
     });
   }
 }

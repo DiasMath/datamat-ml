@@ -270,14 +270,26 @@ async function handle(req: NextRequest, context: Context) {
       path.length === 2 &&
       req.method === "POST"
     )
-      return response(await refreshListingIndicators(actor, body));
+      return response(
+        await refreshListingIndicators(
+          actor,
+          body,
+          req.nextUrl.searchParams.get("store"),
+        ),
+      );
     if (
       resource === "catalog" &&
       key === "competition" &&
       path.length === 2 &&
       req.method === "POST"
     )
-      return response(await refreshListingCompetition(actor, body));
+      return response(
+        await refreshListingCompetition(
+          actor,
+          body,
+          req.nextUrl.searchParams.get("store"),
+        ),
+      );
     if (
       resource === "offers" &&
       key &&

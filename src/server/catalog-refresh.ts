@@ -38,12 +38,15 @@ export async function refreshCatalog(
     if (offer.origin === "reference" || !/^MLB\d+$/.test(offer.ml_id || ""))
       throw new HttpError(422, "Selecione um anúncio próprio do ML");
   }
+  const selectedStore = offer?.store_id || store;
+  if (selectedStore === "all")
+    throw new HttpError(422, "Selecione uma loja para atualizar o catálogo");
   const results: Array<Record<string, any>> = [],
     deadline = Date.now() + 55000;
   const selected = actor.stores.filter(
     (s) =>
       (!offer || s.id === offer.store_id) &&
-      (store === "all" || s.id === store) &&
+      s.id === selectedStore &&
       !p.completedStoreIds.includes(s.id),
   );
   const accounts = (
@@ -90,7 +93,7 @@ export async function refreshCatalog(
       );
     results.push({ storeId: c.store_id, ...result });
   }
-  if (offer && !results.length)
+  if (!results.length && !p.completedStoreIds.includes(selectedStore))
     throw new HttpError(
       401,
       "Autorize a conta ML desta loja antes de consultar",

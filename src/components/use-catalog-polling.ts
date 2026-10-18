@@ -18,7 +18,7 @@ export default function useCatalogPolling({
   const { notify } = useToast(),
     lastError = useRef("");
   useEffect(() => {
-    if (!enabled || blocked) return;
+    if (!enabled || blocked || store === "all") return;
     let active = true,
       running = false,
       timer: ReturnType<typeof setTimeout> | undefined,
@@ -43,22 +43,45 @@ export default function useCatalogPolling({
       running = true;
       lastAttempt = Date.now();
       try {
-        const result = await jsonRequest(
-          "/api/catalog/refresh?" + new URLSearchParams({ store }),
-          offerId ? { offerId } : {},
-          "POST",
-          controller.signal,
-          "background",
-          65000,
-        );
-        if (safe()) {
-          onReload((n) => n + 1);
-          lastError.current = "";
-          if (result.results?.some((r: any) => r.updated > 0))
-            notify("Alterações do ML atualizadas no cadastro.", "success");
+        const deadline = Date.now() + 180000;
+        let changes = 0;
+        for (
+          let step = 0;
+          step < 100 && safe() && Date.now() < deadline;
+          step++
+        ) {
+          const result = await jsonRequest(
+            "/api/catalog/refresh?" + new URLSearchParams({ store }),
+            offerId ? { offerId } : {},
+            "POST",
+            controller.signal,
+            "background",
+            Math.min(65000, Math.max(1, deadline - Date.now())),
+          );
+          if (safe()) {
+            onReload((n) => n + 1);
+            lastError.current = "";
+            changes +=
+              result.results?.reduce(
+                (sum: number, r: any) => sum + (r.updated || 0),
+                0,
+              ) || 0;
+          }
+          if (!result.partial) {
+            if (safe() && changes > 0)
+              notify("Alterações do ML atualizadas no cadastro.", "success");
+            break;
+          }
+          if (
+            !result.results?.length ||
+            result.results.some((r: any) => r.status === "running") ||
+            result.results.every((r: any) => !r.processed)
+          )
+            break;
         }
       } catch (e) {
         if (active && !controller.signal.aborted) {
+          if (safe()) onReload((n) => n + 1);
           lastAttempt = Date.now();
           const message = (e as Error).message;
           if (lastError.current !== message) {

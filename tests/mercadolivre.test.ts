@@ -586,6 +586,107 @@ test("invalid ML fields identify the failing listing without exposing values, pr
   assert.ok(await importedOffer("MLB9202"));
   assert.equal(await get("ml_sync_pages", connectionId), undefined);
 });
+
+test("custom ML attributes without IDs retain their content without becoming official financial attributes", async () => {
+  const remote = item("MLB4728930469", {
+    attributes: [
+      { id: null, name: "Acabamento personalizado", value_name: "Fosco" },
+      { name: "Medida personalizada", value_id: "0007" },
+      { id: "", name: "Cor personalizada", value_name: "Azul" },
+      { id: null, name: "SELLER_PACKAGE_WEIGHT", value_name: "999 kg" },
+      { id: "SELLER_PACKAGE_WEIGHT", value_name: "500 g" },
+      { id: "BRAND", name: null, value_name: "Marca válida" },
+      { id: null, name: null, value_name: "Característica livre" },
+    ],
+  });
+  await mocked(listings([remote]), () =>
+    ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
+  );
+  const imported = await importedOffer(remote.id);
+  assert.deepEqual(imported.ml.attributes.slice(0, 4), [
+    { id: null, name: "Acabamento personalizado", value: "Fosco" },
+    { id: null, name: "Medida personalizada", value: "0007" },
+    { id: null, name: "Cor personalizada", value: "Azul" },
+    { id: null, name: "SELLER_PACKAGE_WEIGHT", value: "999 kg" },
+  ]);
+  assert.deepEqual(imported.ml.financialAttributes, [
+    { id: "SELLER_PACKAGE_WEIGHT", value: "500 g" },
+  ]);
+  assert.equal(imported.ml.attributes[5].name, "BRAND");
+  assert.equal(
+    imported.ml.attributes[6].name,
+    "Característica sem identificação",
+  );
+  assert.ok(
+    imported.ml.missingRequiredAttributes.some((a: Row) => a.id === "MODEL"),
+  );
+  const detail = await s.offerDetail(actor, imported.id);
+  assert.equal(detail.offer.brand, "Marca válida");
+  assert.deepEqual(detail.offer.ml.attributes, imported.ml.attributes);
+  await mocked(
+    listings([
+      {
+        ...remote,
+        attributes: remote.attributes.map((a: Row) => ({
+          ...a,
+          id: a.id || null,
+        })),
+      },
+    ]),
+    () => ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
+  );
+  assert.equal((await importedOffer(remote.id)).version, imported.version);
+});
+
+test("a corrected custom attribute resumes the saved batch without rereading or duplicating completed items", async () => {
+  const firstId = "MLB9261",
+    secondId = "MLB9262";
+  await mocked(
+    listings([
+      item(firstId),
+      item(secondId, {
+        attributes: [
+          { id: 123, name: "Característica livre", value_name: "Valor" },
+        ],
+      }),
+    ]),
+    () =>
+      assert.rejects(
+        ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
+        /anúncio MLB9262.*attributes\.0\.id/,
+      ),
+  );
+  assert.deepEqual((await get("ml_sync_pages", connectionId))!.processed_ids, [
+    firstId,
+  ]);
+  const first = await importedOffer(firstId);
+  const requests: string[] = [];
+  const handler = listings([
+    item(firstId),
+    item(secondId, {
+      attributes: [
+        { id: null, name: "Característica livre", value_name: "Valor" },
+      ],
+    }),
+  ]);
+  await mocked(
+    (url, init) => {
+      requests.push(url.pathname);
+      return handler(url, init);
+    },
+    () => ml.syncListings(actor, connectionId, { requestId: randomUUID() }),
+  );
+  assert.ok(!requests.some((path) => path.endsWith("/items/search")));
+  assert.ok(!requests.includes("/items/" + firstId));
+  assert.equal((await importedOffer(firstId)).version, first.version);
+  assert.equal((await find("history", { offer_id: first.id })).length, 1);
+  assert.equal(
+    (await find("offers", { store_id: "juntos-com", ml_id: secondId })).length,
+    1,
+  );
+  assert.equal((await importedOffer(secondId)).ml.attributes[0].value, "Valor");
+  assert.equal(await get("ml_sync_pages", connectionId), undefined);
+});
 function tariffHandler(price = 90, totalOverride?: number): Handler {
   return (url, init) => {
     if (url.pathname === "/sites/MLB/listing_prices") {

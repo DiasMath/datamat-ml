@@ -126,8 +126,8 @@ export function ListingChecklist({
             este retorno inclua todos os vídeos.
           </p>
           <dl className="ml-attributes">
-            {(detail.offer.ml.attributes || []).map((a: Row) => (
-              <div key={a.id}>
+            {(detail.offer.ml.attributes || []).map((a: Row, index: number) => (
+              <div key={a.id || `custom-${index}`}>
                 <dt>{a.name}</dt>
                 <dd>{a.value || "Não informado"}</dd>
               </div>

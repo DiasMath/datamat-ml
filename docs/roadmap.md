@@ -2,6 +2,18 @@
 
 **Login removido.** O site abre diretamente, sem cadastro inicial, senhas locais ou saída própria. O contexto atual usa um responsável único definido no servidor. A identidade individual e permissões do portal existente ainda precisam ser conectadas.
 
+## Precificação — melhoria solicitada em 22/10/2026
+
+Pedido registrado para implementação após a correção da sincronização:
+
+- Cadastrar o custo unitário de compra do fornecedor no produto e utilizá-lo como base dos anúncios vinculados. Definir herança e exceções por anúncio, preservando custos já preenchidos, composições de kits e histórico das propostas.
+- Calcular a margem sobre o preço de venda: `(venda − custo de compra − demais custos) ÷ venda × 100`, com meta **acima de 40%**. Essa porcentagem é margem sobre a venda, não acréscimo sobre o custo. Manter o recálculo ao digitar.
+- Considerar as tarifas próprias de **Clássico e Premium**, parcelas fixas/percentuais aplicáveis e o custo do vendedor no frete, com ou sem frete grátis. Campanhas, publicidade e promoções são componentes separados e não representam todos os custos do ML.
+- Incluir também os demais custos próprios e impostos aplicáveis. Custo desconhecido continua pendente, sem ser convertido em zero. Confirmar fontes e validade dos custos automáticos antes de apresentar a margem como calculável.
+- Disponibilizar o custo de compra em cadastro, edição e importação/exportação Excel. Alterações devem atualizar os cálculos e exigir revisão das propostas afetadas sem reescrever seus retratos históricos.
+
+Esta seção registra o pedido; o custo no cadastro do produto e a nova meta ainda não estão implementados. Os custos já existentes por anúncio e as consultas automáticas de tarifas/frete continuam disponíveis conforme seus limites atuais.
+
 ## Já entregue nesta revisão
 
 - Rolagem limitada e paginação de 20/50/100 para anúncios, ações, notas, histórico, registros e prévia de importação.

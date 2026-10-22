@@ -1066,8 +1066,9 @@ const itemSchema = z.object({
   permalink: z.string().optional(),
   attributes: z.array(
     z.object({
-      id: z.string(),
-      name: z.string().optional(),
+      // Custom attributes can have a name/value without an official ML ID.
+      id: z.string().nullish(),
+      name: z.string().nullish(),
       value_name: z.string().nullable().optional(),
       value_id: z.string().nullable().optional(),
     }),
@@ -1502,12 +1503,14 @@ async function syncListingsInside(
         freeShipping: item.shipping.free_shipping ?? null,
         shippingDimensions: item.shipping.dimensions ?? null,
         financialAttributes: item.attributes
-          .filter((a) =>
+          .flatMap((a) =>
+            typeof a.id === "string" &&
             /^(PACKAGE_|SELLER_PACKAGE_)?(HEIGHT|WIDTH|LENGTH|WEIGHT)$/.test(
               a.id,
-            ),
+            )
+              ? [{ id: a.id, value: a.value_name || a.value_id || null }]
+              : [],
           )
-          .map((a) => ({ id: a.id, value: a.value_name || a.value_id || null }))
           .sort((a, b) => a.id.localeCompare(b.id)),
         availableQuantity: item.available_quantity,
         soldQuantityLifetime: item.sold_quantity,
@@ -1526,8 +1529,8 @@ async function syncListingsInside(
         health: item.health ?? null,
         subStatus: item.sub_status || [],
         attributes: item.attributes.map((a) => ({
-          id: a.id,
-          name: a.name || a.id,
+          id: a.id || null,
+          name: a.name || a.id || "Característica sem identificação",
           value: a.value_name || a.value_id || null,
         })),
         variationDetails: item.variations.slice(0, 100).map((v) => ({

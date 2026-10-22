@@ -325,6 +325,16 @@ test("listing diagnostics separates decline and margin and displays official med
 }) => {
   const o = await ownOffer(request);
   await db()
+    .collection("offers")
+    .doc(o.id)
+    .update({
+      "ml.attributes": [
+        { id: "BRAND", name: "Marca", value: "Marca" },
+        { id: null, name: "Formato especial", value: "Arredondado" },
+        { id: null, name: "Comprimento personalizado", value: "15 cm" },
+      ],
+    });
+  await db()
     .collection("parameters")
     .doc("juntos-com")
     .set({
@@ -389,6 +399,14 @@ test("listing diagnostics separates decline and margin and displays official med
     page.getByRole("img", { name: "Foto 1 de " + o.title }),
   ).toBeVisible();
   await expect(page.locator(".ml-attributes")).toContainText("Marca");
+  await expect(page.locator(".ml-attributes")).toContainText(
+    "Formato especial",
+  );
+  await expect(page.locator(".ml-attributes")).toContainText("Arredondado");
+  await expect(page.locator(".ml-attributes")).toContainText(
+    "Comprimento personalizado",
+  );
+  await expect(page.locator(".ml-attributes")).toContainText("15 cm");
   await expect(page.getByText(/Vídeo legado na API/)).toContainText(
     "video-legado",
   );
@@ -438,9 +456,12 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
   request,
 }) => {
   const o = await ownOffer(request);
-  await db().collection("offers").doc(o.id).update({
-    "ml.observedAt": new Date(Date.now() - 31 * 60000).toISOString(),
-  });
+  await db()
+    .collection("offers")
+    .doc(o.id)
+    .update({
+      "ml.observedAt": new Date(Date.now() - 31 * 60000).toISOString(),
+    });
   let calls = 0;
   let reads = 0;
   let release: () => void = () => {};
@@ -535,9 +556,12 @@ test("catalogue polling reflects external changes and pauses for drafts, dialogs
   });
   await page.clock.fastForward(180000);
   expect(calls).toBe(1);
-  await db().collection("offers").doc(o.id).update({
-    "ml.observedAt": new Date(Date.now() - 31 * 60000).toISOString(),
-  });
+  await db()
+    .collection("offers")
+    .doc(o.id)
+    .update({
+      "ml.observedAt": new Date(Date.now() - 31 * 60000).toISOString(),
+    });
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
       configurable: true,

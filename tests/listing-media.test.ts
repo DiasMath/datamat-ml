@@ -1,3 +1,5 @@
+import { runCatalogSync } from "../src/domain/catalog-sync";
+import { matchesOfferSearch } from "../src/domain/offer-search";
 import {
   observedListingChanges,
   recentListingChange,
@@ -909,4 +911,150 @@ test("recent change labels expire, ignore future/invalid dates and cannot surviv
     recentListingChange(offer, { ...account, status: "disconnected" }, clock),
     null,
   );
+});
+
+test("catalogue continuation traverses every page sequentially and automatically respects ML backoff", async () => {
+  const waits: number[] = [];
+  let calls = 0,
+    active = 0,
+    maximum = 0;
+  const result = await runCatalogSync(
+    "juntos-com",
+    async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      try {
+        calls++;
+        if (calls === 2)
+          throw Object.assign(new Error("ML limit"), {
+            status: 429,
+            retryAfterMs: 12000,
+          });
+        return {
+          partial: calls < 28,
+          results: [
+            {
+              storeId: "juntos-com",
+              status: "confirmed",
+              processed: calls < 28 ? 20 : 0,
+              has_more: calls < 28,
+            },
+          ],
+        };
+      } finally {
+        active--;
+      }
+    },
+    () => {},
+    {
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    },
+  );
+  assert.equal(maximum, 1);
+  assert.equal(calls, 28);
+  assert.equal(result.pages, 27);
+  assert.equal(result.processed, 520);
+  assert.ok(waits.includes(12000));
+  assert.equal(waits.filter((ms) => ms === 500).length, 26);
+});
+test("automatic continuation stops on quota, foreign-store data and cancellation without restarting a scan", async () => {
+  let calls = 0;
+  await assert.rejects(
+    runCatalogSync("juntos-com", async () => {
+      calls++;
+      throw Object.assign(new Error("Quota"), {
+        status: 503,
+        code: "FIRESTORE_QUOTA_EXCEEDED",
+      });
+    }),
+    /Quota/,
+  );
+  assert.equal(calls, 1);
+  await assert.rejects(
+    runCatalogSync("juntos-com", async () => ({
+      partial: false,
+      results: [{ storeId: "juntos-data", status: "confirmed" }],
+    })),
+    /loja selecionada/,
+  );
+  const controller = new AbortController();
+  calls = 0;
+  await assert.rejects(
+    runCatalogSync(
+      "juntos-com",
+      async () => {
+        calls++;
+        return {
+          partial: true,
+          results: [
+            {
+              storeId: "juntos-com",
+              status: "confirmed",
+              processed: 20,
+              has_more: true,
+            },
+          ],
+        };
+      },
+      () => {},
+      {
+        signal: controller.signal,
+        wait: async () => {
+          controller.abort();
+        },
+      },
+    ),
+    { name: "AbortError" },
+  );
+  assert.equal(calls, 1);
+});
+test("indicator rate limits retry only incomplete IDs, preserving completed work and pacing the next request", async () => {
+  const sent: string[][] = [],
+    waits: number[] = [];
+  const result = await runListingBatches(
+    ["a", "b", "c"],
+    async (ids) => {
+      sent.push(ids);
+      return ids.map((id) => ({
+        id,
+        updated: id !== "b" || sent.length > 1,
+        ...(id === "b" && sent.length === 1 ? { retryAfterMs: 7000 } : {}),
+      }));
+    },
+    (row) => row.updated,
+    () => {},
+    () => {},
+    {
+      retryDeferred: true,
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    },
+  );
+  assert.deepEqual(sent, [["a", "b", "c"], ["b"]]);
+  assert.deepEqual(waits, [7000]);
+  assert.equal(result.successful, 3);
+  assert.deepEqual(result.pendingIds, []);
+});
+test("offer search accepts accents, unordered terms, identifiers with separators and pasted ML URLs", () => {
+  const row = {
+    title: "Fone de ouvido Azul",
+    product_name: "Áudio Profissional",
+    model: "M-2026",
+    sku: "SKU-0009",
+    ml_id: "MLB4728930469",
+  };
+  for (const query of [
+    "audio azul",
+    "azul fone",
+    "SKU0009",
+    "MLB-4728930469",
+    "https://produto.mercadolivre.com.br/MLB-4728930469-algum-titulo?tracking=outro",
+    "m2026",
+    "   ",
+  ])
+    assert.equal(matchesOfferSearch(row, query), true, query);
+  assert.equal(matchesOfferSearch(row, "fone vermelho"), false);
 });

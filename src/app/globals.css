@@ -2259,6 +2259,12 @@ fieldset.form-grid {
   color: var(--text);
   font-size: 11px;
 }
+.comparison-row strong.green {
+  color: var(--green);
+}
+.comparison-row strong.orange {
+  color: var(--orange);
+}
 .comparison-row .mono {
   font-size: 10px;
   white-space: nowrap;
@@ -2337,16 +2343,17 @@ fieldset.form-grid {
   margin-top: 20px;
 }
 .offer-picker {
-  display: flex;
-  gap: 25px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
   align-items: center;
 }
 .offer-picker .field {
   flex: 1;
 }
 .offer-picker p {
-  flex: 1;
-  margin: 15px 0 0;
+  grid-column: 1 / -1;
+  margin: 0;
 }
 .unavailable-metric {
   display: flex;
@@ -2860,6 +2867,7 @@ fieldset.form-grid {
     padding: 20px 16px;
   }
   .offer-picker {
+    grid-template-columns: minmax(0, 1fr);
     display: block;
   }
   .offer-picker p {

@@ -21,6 +21,8 @@ import {
 import GoogleDriveSettings from "./google-drive-settings";
 import IntegrationForm from "./integration-form";
 import useMlAuthorization from "./use-ml-authorization";
+import { synchronizeCatalog } from "./catalog-sync";
+import { matchesOfferSearch } from "../domain/offer-search";
 import {
   useEffect,
   useMemo,
@@ -181,6 +183,47 @@ export default function Workspace({ view }: { view: string[] }) {
     [sidebarCollapsed, setSidebarCollapsed] = useState(false),
     [mobile, setMobile] = useState(false),
     [selection, setSelection] = useState<string[]>([]);
+  const [syncProgress, setSyncProgress] = useState<{
+    storeId: string;
+    processed: number;
+    waitingMs?: number;
+  } | null>(null);
+  const catalogRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => catalogRequest.current?.abort(), []);
+  async function syncConnection(c: Row) {
+    if (busy || catalogRequest.current) return;
+    if (c.provider !== "mercadolivre") {
+      await mutate(
+        "/api/connections/" + c.id,
+        { requestId: crypto.randomUUID() },
+        "Verificação concluída.",
+      );
+      return;
+    }
+    const controller = new AbortController();
+    catalogRequest.current = controller;
+    setBusy(true);
+    setSyncProgress({ storeId: c.store_id, processed: 0 });
+    try {
+      const result = await synchronizeCatalog(
+        c.store_id,
+        controller.signal,
+        (progress) => setSyncProgress({ storeId: c.store_id, ...progress }),
+        { restart: !!c.restart },
+      );
+      setToast({
+        text: `Catálogo da loja sincronizado · ${result.processed} anúncios consultados.`,
+      });
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setToast({ text: (error as Error).message, error: true });
+    } finally {
+      catalogRequest.current = null;
+      setSyncProgress(null);
+      setBusy(false);
+      reloadInBackground((n) => n + 1);
+    }
+  }
   const workspaceCache = useRef<{
     key: string;
     revision: number;
@@ -282,6 +325,8 @@ export default function Workspace({ view }: { view: string[] }) {
   const dataQuery = new URLSearchParams(query);
   dataQuery.delete("profile");
   if (section === "anuncios" && !offerId) dataQuery.set("profile", "listings");
+  if (section === "anuncios" && !offerId) dataQuery.delete("q");
+  if (section === "precificacao") dataQuery.delete("offer");
   for (const key of [
     "todayFocus",
     "todayPage",
@@ -500,7 +545,11 @@ export default function Workspace({ view }: { view: string[] }) {
     if (busy) return false;
     return (!dirty && !hasUnsaved()) || (await confirm(discardChanges));
   }
-  async function navigate(path: string, params?: URLSearchParams) {
+  async function navigate(
+    path: string,
+    params?: URLSearchParams,
+    replace = false,
+  ) {
     if (!(await guard())) return;
     setDirty(false);
     setMenu(false);
@@ -511,9 +560,12 @@ export default function Workspace({ view }: { view: string[] }) {
         ? new URLSearchParams({ store })
         : new URLSearchParams(query));
     startTransition(() =>
-      router.push("/" + path + (targetQuery.size ? "?" + targetQuery : ""), {
-        scroll: path !== route,
-      }),
+      router[replace ? "replace" : "push"](
+        "/" + path + (targetQuery.size ? "?" + targetQuery : ""),
+        {
+          scroll: path !== route,
+        },
+      ),
     );
   }
   function changeParam(key: string, value: string) {
@@ -1516,18 +1568,8 @@ export default function Workspace({ view }: { view: string[] }) {
                   onTab={(v) => changeParam("configTab", v)}
                   onStore={(s?: Row) => open("store", s)}
                   onParameters={(p) => open("parameters", p)}
-                  onSync={(c) =>
-                    mutate(
-                      "/api/connections/" + c.id,
-                      {
-                        requestId: crypto.randomUUID(),
-                        restart: Boolean(c.restart),
-                      },
-                      c.provider === "mercadolivre"
-                        ? "Lote consultado. Confira os registros e continue se houver mais anúncios."
-                        : "Verificação concluída.",
-                    )
-                  }
+                  onSync={syncConnection}
+                  syncProgress={syncProgress}
                   onAuthorize={(c) => mlAuthorization.authorize(c.id)}
                   authorizingId={mlAuthorization.connectionId}
                   onCancelAuthorization={mlAuthorization.cancel}
@@ -1758,12 +1800,12 @@ export default function Workspace({ view }: { view: string[] }) {
               busy={busy}
               onDirty={() => setDirty(true)}
               onWorking={setBusy}
-              onDone={(count) => {
+              onDone={(count, kind) => {
                 setDirty(false);
                 setModal(null);
                 setRefresh((v) => v + 1);
                 setToast({
-                  text: `${count} anúncios importados com histórico preservado.`,
+                  text: `${count} ${kind} importados com histórico preservado.`,
                 });
               }}
             />
@@ -1932,7 +1974,7 @@ function Offers({
   onOpen: (id: string, initialTab?: string) => void;
   onPreview: (id: string, initialTab?: string) => void;
   canWrite: boolean;
-  navigate: (p: string, q: URLSearchParams) => void;
+  navigate: (p: string, q: URLSearchParams, replace?: boolean) => void;
   onNew: () => void;
   onBatch: () => void;
   busy: boolean;
@@ -1941,6 +1983,43 @@ function Offers({
 }) {
   const q = new URLSearchParams(query),
     [input, setInput] = useState(q.get("q") || "");
+  const appliedSearch = q.get("q") || "";
+  const lastSearch = useRef(appliedSearch);
+  const latestQuery = useRef(query);
+  latestQuery.current = query;
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const searchNavigate = useRef(navigate);
+  searchNavigate.current = navigate;
+  data = {
+    ...data,
+    offers: data.offers.filter((o: Row) =>
+      matchesOfferSearch(o, appliedSearch),
+    ),
+  };
+  function applySearch(value: string) {
+    clearTimeout(searchTimer.current);
+    const next = value.trim();
+    lastSearch.current = next;
+    const params = new URLSearchParams(latestQuery.current);
+    if ((params.get("q") || "") === next) return;
+    next ? params.set("q", next) : params.delete("q");
+    params.delete("page");
+    searchNavigate.current("anuncios", params, true);
+  }
+  useEffect(() => {
+    if (appliedSearch !== lastSearch.current) {
+      clearTimeout(searchTimer.current);
+      setInput(appliedSearch);
+      lastSearch.current = appliedSearch;
+    }
+  }, [appliedSearch]);
+  useEffect(() => {
+    if (input.trim() !== appliedSearch)
+      searchTimer.current = setTimeout(() => applySearch(input), 250);
+    return () => clearTimeout(searchTimer.current);
+  }, [input, appliedSearch]);
   const scrollArea = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1982,9 +2061,6 @@ function Offers({
   for (const key of ["page", "pageSize", "sort", "sortDir"])
     selectionQuery.delete(key);
   const selectionKey = selectionQuery.toString();
-  useEffect(() => {
-    setInput(new URLSearchParams(query).get("q") || "");
-  }, [query]);
   useEffect(() => {
     setSelected([]);
   }, [selectionKey]);
@@ -2196,7 +2272,7 @@ function Offers({
             className="search-input"
             onSubmit={(e) => {
               e.preventDefault();
-              update("q", input ? [input] : []);
+              applySearch(input);
             }}
           >
             <Search size={17} />
@@ -2212,6 +2288,16 @@ function Offers({
               placeholder="Buscar por produto, SKU, modelo ou código ML…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={(e) => {
+                e.preventDefault();
+                const node = e.currentTarget;
+                const value =
+                  node.value.slice(0, node.selectionStart ?? 0) +
+                  e.clipboardData.getData("text").replace(/[\r\n]+/g, " ") +
+                  node.value.slice(node.selectionEnd ?? node.value.length);
+                setInput(value);
+                applySearch(value);
+              }}
             />
             {input && (
               <button
@@ -2220,7 +2306,7 @@ function Offers({
                 type="button"
                 onClick={() => {
                   setInput("");
-                  update("q", []);
+                  applySearch("");
                 }}
               >
                 <X size={14} />
@@ -2866,33 +2952,33 @@ function Offers({
                                 {money(o.calculation.margin)}{" "}
                                 <span
                                   className={
-                                    Number(o.calculation.margin) < 0
+                                    o.calculation.salesMarginMet !== true
                                       ? "orange"
                                       : "green"
                                   }
                                 >
-                                  {percent(o.calculation.marginPercent, 1)}
+                                  {percent(o.calculation.saleMarginPercent, 1)}
                                 </span>
                               </strong>
                               <small>
                                 Piso{" "}
                                 <b>
-                                  {o.calculation.minPrice == null
+                                  {o.calculation.policyMinPrice == null
                                     ? "A definir"
-                                    : money(o.calculation.minPrice)}
+                                    : money(o.calculation.policyMinPrice)}
                                 </b>
                               </small>
                               <small>
                                 Desc. máx.{" "}
                                 <b>
-                                  {o.calculation.maxDiscount == null
-                                    ? o.calculation.minPrice != null &&
-                                      Number(o.calculation.minPrice) >
+                                  {o.calculation.policyMaxDiscount == null
+                                    ? o.calculation.policyMinPrice != null &&
+                                      Number(o.calculation.policyMinPrice) >
                                         Number(o.price)
                                       ? "Sem desconto"
                                       : "A definir"
                                     : listingDiscountLimit(
-                                        o.calculation.maxDiscount,
+                                        o.calculation.policyMaxDiscount,
                                       )}
                                 </b>
                               </small>
@@ -3127,7 +3213,7 @@ function Overview({
         <div className="panel metric">
           <span>Margem de contribuição</span>
           <strong>
-            {money(r.margin)} <small>{percent(r.marginPercent)}</small>
+            {money(r.margin)} <small>{percent(r.saleMarginPercent)}</small>
           </strong>
           <small>
             {r.pending.length
@@ -3137,7 +3223,7 @@ function Overview({
         </div>
         <div className="panel metric">
           <span>Preço mínimo estimado</span>
-          <strong>{money(r.minPrice)}</strong>
+          <strong>{money(r.policyMinPrice)}</strong>
           <small>Custos constantes · sem subsídio ML</small>
         </div>
       </div>
@@ -3210,7 +3296,10 @@ function Overview({
                 <p>{p.reason}</p>
                 <small className="muted">
                   Contribuição: {money(p.snapshot.proposed.margin)} ·{" "}
-                  {percent(p.snapshot.proposed.marginPercent)}
+                  {percent(
+                    p.snapshot.proposed.saleMarginPercent ??
+                      p.snapshot.proposed.marginPercent,
+                  )}
                 </small>
                 {p.snapshot.input.proposedTitle &&
                   p.snapshot.input.proposedTitle !== p.snapshot.offer.title && (
@@ -3267,9 +3356,28 @@ function CostSummary({ result }: { result: Row }) {
       <div className="comparison-row">
         <span>Contribuição</span>
         <strong>
-          {money(result.margin)} · {percent(result.marginPercent)}
+          {money(result.margin)} ·{" "}
+          {percent(result.saleMarginPercent ?? result.marginPercent)}
         </strong>
       </div>
+      {result.salesMarginTarget != null && (
+        <div className="comparison-row">
+          <span>
+            Meta sobre a venda: acima de {percent(result.salesMarginTarget)}
+          </span>
+          <strong
+            className={result.salesMarginMet === true ? "green" : "orange"}
+          >
+            {result.salesMarginMet === true
+              ? "Atendida"
+              : result.salesMarginMet === null
+                ? "Custos pendentes"
+                : result.enforceSalesMargin
+                  ? "Bloqueada"
+                  : "Alerta"}
+          </strong>
+        </div>
+      )}
       {result.pending.length > 0 && (
         <p className="small orange">Pendente: {result.pending.join(", ")}</p>
       )}
@@ -3300,6 +3408,15 @@ function PricingPage({
   const offer = data.offerChoices.find((o: Row) => o.id === selected);
   const [detail, setDetail] = useState<Row | null>(null),
     [error, setError] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+  const matches = data.offerChoices.filter(
+    (o: Row) =>
+      o.origin !== "reference" && matchesOfferSearch(o, productSearch),
+  );
+  const choices =
+    offer && !matches.some((o: Row) => o.id === offer.id)
+      ? [offer, ...matches]
+      : matches;
   useEffect(() => {
     let active = true;
     setDetail(null);
@@ -3322,24 +3439,49 @@ function PricingPage({
   return (
     <>
       <section className="panel offer-picker">
+        <Field label="Buscar produto para precificar">
+          <div className="search-input">
+            <Search size={16} />
+            <input
+              aria-label="Buscar produto para precificar"
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="Produto, SKU, modelo ou código ML…"
+            />
+            {productSearch && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Limpar busca de produto"
+                onClick={() => setProductSearch("")}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </Field>
         <Field label="Selecione uma oferta">
           <select
             value={offer?.id || ""}
             onChange={(e) => choose(e.target.value)}
           >
             <option value="">Selecione um anúncio para simular</option>
-            {data.offerChoices
-              .filter((o: Row) => o.origin !== "reference")
-              .map((o: Row) => (
-                <option key={o.id} value={o.id}>
-                  {o.store_name} · {o.title} · {o.sku || "Sem SKU"}
-                </option>
-              ))}
+            {choices.map((o: Row) => (
+              <option key={o.id} value={o.id}>
+                {o.store_name} · {o.title} · {o.sku || "Sem SKU"}
+              </option>
+            ))}
+            {!matches.length && (
+              <option disabled>
+                Nenhum anúncio encontrado para esta busca
+              </option>
+            )}
           </select>
         </Field>
         <p className="muted small">
-          Compare o preço atual com o cenário proposto. A decisão fica vinculada
-          ao anúncio e à loja.
+          {productSearch ? `${matches.length} anúncios encontrados. ` : ""}
+          Selecione o anúncio para comparar preço, custos e margem. A busca não
+          altera o anúncio em edição.
         </p>
       </section>
       {offer ? (
@@ -4060,6 +4202,7 @@ function Configuration({
   onStore,
   onParameters,
   onSync,
+  syncProgress,
   onAuthorize,
   onDisconnect,
   onApplication,
@@ -4074,6 +4217,11 @@ function Configuration({
   onStore: (store?: Row) => void;
   onParameters: (p: Row) => void;
   onSync: (c: Row) => void;
+  syncProgress?: {
+    storeId: string;
+    processed: number;
+    waitingMs?: number;
+  } | null;
   onAuthorize: (c: Row) => void;
   onDisconnect: (c: Row) => void;
   onApplication: (c: Row) => void;
@@ -4168,6 +4316,18 @@ function Configuration({
                       <Badge value="active" />
                     </div>
                     <dl className="description-list">
+                      <div>
+                        <dt>Meta sobre a venda</dt>
+                        <dd>Acima de {percent(p.salesMarginTarget ?? "40")}</dd>
+                      </div>
+                      <div>
+                        <dt>Regra da meta</dt>
+                        <dd>
+                          {p.enforceSalesMargin !== false
+                            ? "Bloquear aprovação e aplicação"
+                            : "Alertar e sugerir preço"}
+                        </dd>
+                      </div>
                       <div>
                         <dt>Margem mínima</dt>
                         <dd>{percent(p.minMargin)}</dd>
@@ -4271,11 +4431,23 @@ function Configuration({
                 {c.provider === "mercadolivre" && (
                   <>
                     <p className="small muted">
-                      Última consulta:{" "}
-                      {c.last_sync_at
-                        ? date(c.last_sync_at)
-                        : "Ainda não realizada"}
-                      {c.has_more ? " · há mais anúncios para importar" : ""}
+                      {syncProgress && syncProgress.storeId === c.store_id ? (
+                        syncProgress.waitingMs ? (
+                          `Aguardando o ML · ${syncProgress.processed} anúncios consultados · retomada automática`
+                        ) : (
+                          `Sincronizando · ${syncProgress.processed} anúncios consultados…`
+                        )
+                      ) : (
+                        <>
+                          Última consulta:{" "}
+                          {c.last_sync_at
+                            ? date(c.last_sync_at)
+                            : "Ainda não realizada"}
+                          {c.has_more
+                            ? " · páginas pendentes, com continuação automática"
+                            : ""}
+                        </>
+                      )}
                     </p>
                     {c.last_notification_at && (
                       <p className="small muted">
@@ -4303,8 +4475,8 @@ function Configuration({
                           ) : (
                             <RefreshCw size={15} />
                           )}
-                          {c.has_more
-                            ? "Continuar importação · 20 anúncios"
+                          {syncProgress && syncProgress.storeId === c.store_id
+                            ? "Sincronizando…"
                             : "Sincronizar anúncios"}
                         </button>
                       )}

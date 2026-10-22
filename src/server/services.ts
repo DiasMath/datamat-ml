@@ -1,4 +1,8 @@
 import { storeRevision } from "./catalog-revision";
+import { matchesOfferSearch } from "../domain/offer-search";
+import { offerPurchaseCost, purchaseComponents } from "./purchase-cost";
+import { purchaseCost } from "../domain/purchase-cost";
+import { enforcePricingPolicy } from "./pricing-policy";
 import { recentListingChange } from "../domain/listing-changes";
 import { z } from "zod";
 import Decimal from "decimal.js";
@@ -50,6 +54,7 @@ import {
   decisionSchema,
   importSchema,
   importPreviewSchema,
+  productCostImportSchema,
 } from "./schemas";
 import { adapters, reportUrl, type Provider } from "./integrations";
 import {
@@ -197,6 +202,9 @@ export async function getOffer(actor: Actor, offerId: string): Promise<Row> {
     brand: b?.name || null,
     category: c?.name || null,
     store_name: s.name,
+    product_purchase_cost: p.purchase_cost ?? null,
+    product_version: p.version || 1,
+    purchaseCost: await offerPurchaseCost(actor, o, p),
   };
 }
 async function lookup(
@@ -224,19 +232,16 @@ async function product(actor: Actor, p: z.infer<typeof offerSchema>) {
           409,
           "Produto alterado por outra operação; recarregue o cadastro",
         );
-      const offers = await find("offers", { product_id: existing.id });
-      for (const offer of offers) authorizeStore(actor, offer.store_id);
-      if (offers.length > 75)
-        throw new HttpError(
-          422,
-          "Este produto exige atualização em lotes; procure o administrador",
-        );
+      const offers = await productOffers(actor, existing.id);
       const updated = await put("products", existing.id, {
         ...existing,
         name: p.name,
         model: nullable(p.model),
         brand_id: await lookup(actor, "brands", p.brand),
         category_id: await lookup(actor, "categories", p.category),
+        ...(p.purchaseCost !== undefined
+          ? { purchase_cost: p.purchaseCost }
+          : {}),
         version: (existing.version || 1) + 1,
         updated_at: now(),
       });
@@ -267,8 +272,44 @@ async function product(actor: Actor, p: z.infer<typeof offerSchema>) {
     model: nullable(p.model),
     brand_id: await lookup(actor, "brands", p.brand),
     category_id: await lookup(actor, "categories", p.category),
+    purchase_cost: p.purchaseCost ?? null,
   });
   return productId;
+}
+async function productOffers(actor: Actor, productId: string) {
+  const [direct, components] = await Promise.all([
+    find("offers", { product_id: productId }),
+    find("components", { product_id: productId }),
+  ]);
+  const related = await Promise.all(
+    [...new Set(components.map((c) => c.offer_id))].map((id) =>
+      get("offers", id),
+    ),
+  );
+  const offers = [
+    ...new Map(
+      [...direct, ...related.filter((o): o is Row => !!o)].map((o) => [
+        o.id,
+        o,
+      ]),
+    ).values(),
+  ];
+  if (offers.length > 75)
+    throw new HttpError(
+      422,
+      "Este produto exige atualização em lotes; procure o administrador",
+    );
+  for (const offer of offers) {
+    authorizeStore(actor, offer.store_id);
+    if (offer.organization_id !== actor.organization_id)
+      throw new HttpError(404, "Produto não encontrado");
+    if (offer.ml_apply_until > Date.now())
+      throw new HttpError(
+        409,
+        "Aplicação de preço em andamento em um anúncio vinculado; aguarde a conferência",
+      );
+  }
+  return offers;
 }
 export async function saveOffer(
   actor: Actor,
@@ -616,6 +657,9 @@ async function simulateInside(
       description: o.description,
       price: o.price,
       version: o.version,
+      productId: o.product_id,
+      productVersion: o.product_version,
+      purchaseCost: o.purchaseCost,
     },
     input,
     costs: c,
@@ -730,11 +774,24 @@ export async function decideProposal(
     if (op.existing) return proposal;
     const snapshot = parse(proposal.snapshot_json),
       offer = await getOffer(actor, proposal.offer_id);
+    const validatePricing = async () => {
+      const pr = await get("parameters", offer.store_id);
+      if (
+        offer.version !== proposal.base_version ||
+        snapshot.parametersRevision !== (pr?.version || 1)
+      )
+        throw new HttpError(
+          409,
+          "Dados atuais mudaram após a proposta; prepare uma nova proposta",
+        );
+      enforcePricingPolicy(snapshot, pr ? parse(pr.data_json) : {});
+    };
     let status = "";
     if (p.action === "approve" || p.action === "reject") {
       canApprove(actor);
       if (proposal.status !== "review")
         throw new HttpError(409, "A proposta não está aguardando revisão");
+      if (p.action === "approve") await validatePricing();
       status = p.action === "approve" ? "approved" : "rejected";
       await put("approvals", id(), {
         proposal_id: proposalId,
@@ -758,6 +815,7 @@ export async function decideProposal(
           409,
           "A proposta precisa estar aprovada para solicitar aplicação",
         );
+      await validatePricing();
       status = "pending_application";
     } else if (p.action === "fail") {
       if (proposal.status !== "pending_application")
@@ -774,6 +832,7 @@ export async function decideProposal(
     } else {
       if (proposal.status !== "pending_application")
         throw new HttpError(409, "Solicite a aplicação após a aprovação");
+      await validatePricing();
       const pr = await get("parameters", offer.store_id);
       if (
         offer.version !== proposal.base_version ||
@@ -1106,6 +1165,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
         .filter(Boolean)
         .map((p) => [p!.store_id, parse(p!.data_json)]),
     );
+  const components = await purchaseComponents(rawOffers);
   const offers = rawOffers.map(
     (o): Row & { calculation: ReturnType<typeof calculate> } => {
       const p = productMap.get(o.product_id);
@@ -1113,7 +1173,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
       const c = costMap.get(o.id),
         parameter = parameterMap.get(o.store_id);
       const enriched = attachFinancial(
-        o,
+        { ...o, purchaseCost: purchaseCost(o, productMap, components) },
         financialMap.get(o.id),
         connectionMap.get(o.store_id),
         actor.organization_id,
@@ -1200,6 +1260,8 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
             }
           : {}),
         product_name: p.name,
+        product_purchase_cost: p.purchase_cost ?? null,
+        product_version: p.version || 1,
         model: p.model,
         brand,
         category,
@@ -1223,16 +1285,7 @@ export async function workspace(actor: Actor, query: URLSearchParams) {
     },
   );
   const filtered = offers.filter((o) => {
-    const q = query.get("q")?.toLocaleLowerCase("pt-BR") || "";
-    if (
-      q &&
-      ![o.title, o.product_name, o.sku, o.ml_id, o.model, o.brand]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase("pt-BR")
-        .includes(q)
-    )
-      return false;
+    if (!matchesOfferSearch(o, query.get("q") || "")) return false;
     for (const field of ["brand", "category", "status", "type"]) {
       const values = query.getAll(field);
       if (values.length && !values.includes((o as Row)[field] || "__missing"))
@@ -1654,6 +1707,8 @@ export async function deleteRecord(
 }
 export async function importPreview(actor: Actor, payload: unknown) {
   canWrite(actor);
+  if ((payload as Row)?.mode === "costs")
+    return productCostPreview(actor, payload);
   const p = importPreviewSchema.parse(payload);
   authorizeStore(actor, p.storeId);
   const seen = new Set<string>(),
@@ -1705,6 +1760,17 @@ export async function importPreview(actor: Actor, payload: unknown) {
             );
           const product = await getOffer(actor, current.id);
           if (
+            row.purchaseCost !== undefined &&
+            (row.purchaseCost == null || product.product_purchase_cost == null
+              ? row.purchaseCost !== product.product_purchase_cost
+              : !new Decimal(row.purchaseCost).eq(
+                  product.product_purchase_cost,
+                ))
+          )
+            errors.push(
+              "Para alterar o custo de compra, importe a aba Produtos na operação Atualizar custos de produtos",
+            );
+          if (
             ["name", "model", "brand", "category"].some(
               (k) =>
                 (row as Row)[k] !== undefined &&
@@ -1743,6 +1809,8 @@ export async function importPreview(actor: Actor, payload: unknown) {
   };
 }
 export async function confirmImport(actor: Actor, payload: unknown) {
+  if ((payload as Row)?.mode === "costs")
+    return confirmProductCosts(actor, payload);
   const p = importSchema.extend({ requestId: z.uuid() }).parse(payload);
   canWrite(actor);
   authorizeStore(actor, p.storeId);
@@ -1778,6 +1846,132 @@ export async function confirmImport(actor: Actor, payload: unknown) {
         }),
         current?.id,
       );
+    }
+    const importId = id();
+    await put("imports", importId, {
+      store_id: p.storeId,
+      request_id: p.requestId,
+      payload_hash: op.hash,
+      count: p.rows.length,
+      created_at: now(),
+    });
+    await recordOperation(actor, op, importId, p.storeId);
+    return { count: p.rows.length, id: importId };
+  });
+}
+async function productCostPreview(actor: Actor, payload: unknown) {
+  const p = productCostImportSchema.parse(payload);
+  authorizeStore(actor, p.storeId);
+  const seen = new Set<string>();
+  const rows = [];
+  for (const [index, row] of p.rows.entries()) {
+    const errors: string[] = [];
+    const product = await get("products", row.productId);
+    if (seen.has(row.productId))
+      errors.push("Produto duplicado: importe uma linha por produto");
+    seen.add(row.productId);
+    if (!product || product.organization_id !== actor.organization_id)
+      errors.push("Produto não encontrado");
+    else {
+      if (row.productVersion !== (product.version || 1))
+        errors.push("Produto alterado; exporte a planilha novamente");
+      try {
+        const offers = await productOffers(actor, product.id);
+        if (!offers.some((o) => o.store_id === p.storeId))
+          errors.push("Produto sem anúncio vinculado à loja selecionada");
+      } catch (error) {
+        if (!(error instanceof HttpError)) throw error;
+        errors.push(error.message);
+      }
+    }
+    rows.push({
+      line: index + 2,
+      data: {
+        ...row,
+        title:
+          product?.organization_id === actor.organization_id
+            ? product.name
+            : row.productId,
+      },
+      errors,
+      pending:
+        row.purchaseCost === null ? ["Custo de compra ficará pendente"] : [],
+    });
+  }
+  return {
+    storeId: p.storeId,
+    mode: p.mode,
+    rows,
+    total: rows.length,
+    valid: rows.every((r) => !r.errors.length),
+    pending: rows.filter((r) => r.pending.length).length,
+  };
+}
+async function confirmProductCosts(actor: Actor, payload: unknown) {
+  canWrite(actor);
+  const p = productCostImportSchema
+    .extend({
+      rows: productCostImportSchema.shape.rows.max(40),
+      requestId: z.uuid(),
+    })
+    .parse(payload);
+  authorizeStore(actor, p.storeId);
+  return transaction(async () => {
+    const op = await operation(actor, "product-cost-import", p.requestId, {
+      storeId: p.storeId,
+      rows: p.rows,
+    });
+    if (op.existing) {
+      const previous = (await get("imports", op.existing.entity_id))!;
+      return { count: previous.count, id: previous.id };
+    }
+    const preview = await productCostPreview(actor, p);
+    if (!preview.valid)
+      throw new HttpError(
+        422,
+        "Resolva os erros da prévia antes de importar os custos",
+      );
+    // All validation and writes share the transaction, including version conflicts.
+    let affected = 0;
+    for (const row of p.rows) {
+      const product = (await get("products", row.productId))!;
+      const offers = await productOffers(actor, product.id);
+      affected += offers.length;
+      if (affected > 100)
+        throw new HttpError(
+          422,
+          "Muitos anúncios vinculados neste lote; importe menos produtos por arquivo",
+        );
+      if (
+        product.purchase_cost === row.purchaseCost ||
+        (product.purchase_cost != null &&
+          row.purchaseCost != null &&
+          new Decimal(product.purchase_cost).eq(row.purchaseCost))
+      )
+        continue;
+      const updated = await put("products", product.id, {
+        ...product,
+        purchase_cost: row.purchaseCost,
+        version: (product.version || 1) + 1,
+        updated_at: now(),
+      });
+      for (const offer of offers) {
+        await put("offers", offer.id, {
+          ...offer,
+          version: offer.version + 1,
+          updated_at: now(),
+        });
+        await log(
+          actor,
+          offer.store_id,
+          offer.id,
+          "product.purchase_cost",
+          product,
+          updated,
+          "Custo de compra atualizado por Excel",
+          "import",
+        );
+      }
     }
     const importId = id();
     await put("imports", importId, {

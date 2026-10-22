@@ -4,7 +4,7 @@
 
 ## Precificação — melhoria solicitada em 22/10/2026
 
-Pedido registrado para implementação após a correção da sincronização:
+Implementado após a correção da sincronização:
 
 - Cadastrar o custo unitário de compra do fornecedor no produto e utilizá-lo como base dos anúncios vinculados. Definir herança e exceções por anúncio, preservando custos já preenchidos, composições de kits e histórico das propostas.
 - Calcular a margem sobre o preço de venda: `(venda − custo de compra − demais custos) ÷ venda × 100`, com meta **acima de 40%**. Essa porcentagem é margem sobre a venda, não acréscimo sobre o custo. Manter o recálculo ao digitar.
@@ -12,7 +12,20 @@ Pedido registrado para implementação após a correção da sincronização:
 - Incluir também os demais custos próprios e impostos aplicáveis. Custo desconhecido continua pendente, sem ser convertido em zero. Confirmar fontes e validade dos custos automáticos antes de apresentar a margem como calculável.
 - Disponibilizar o custo de compra em cadastro, edição e importação/exportação Excel. Alterações devem atualizar os cálculos e exigir revisão das propostas afetadas sem reescrever seus retratos históricos.
 
-Esta seção registra o pedido; o custo no cadastro do produto e a nova meta ainda não estão implementados. Os custos já existentes por anúncio e as consultas automáticas de tarifas/frete continuam disponíveis conforme seus limites atuais.
+O produto agora tem custo de compra unitário. Mercadoria vazia no anúncio herda esse custo; um valor específico, inclusive zero, permanece como exceção. Kits somam quantidades dos componentes. Variações com custos diferentes permanecem pendentes até a precificação individual. Alterações versionam todos os anúncios vinculados, incluindo composições, e preservam os snapshots históricos.
+
+A margem sobre o preço de venda tem meta padrão estritamente acima de 40%. Por padrão, aprovação e aplicação são bloqueadas quando a meta não é atingida; em Configurações → Editar parâmetros da loja, é possível alterar a meta ou desativar o bloqueio e manter somente os alertas e o preço sugerido. Rascunhos continuam permitidos. O preço sugerido é uma estimativa com custos constantes e sem subsídio promocional; a tarifa e o frete devem ser reconsultados para o novo preço.
+
+Na exportação Excel, a aba Produtos contém uma linha por produto, com productId, productVersion e purchaseCost. Para editar esses custos, importe essa aba com a operação Atualizar custos de produtos. A aba Anúncios mantém o custo como referência; novos cadastros também aceitam purchaseCost. Versões desatualizadas, produtos duplicados, lojas sem acesso e aplicações ML em andamento são rejeitados antes da gravação. A importação não altera custos específicos de anúncios nem publica preços no ML.
+
+Tarifas Clássico/Premium seguem a modalidade real do anúncio e as consultas oficiais, com parcela percentual e fixa separadas. Frete desconhecido continua pendente, inclusive sem gratuidade para o comprador. O sistema não presume tarifas de uma modalidade diferente nem custo zero de frete. Publicidade, promoções, embalagem, impostos e outros custos seguem separados.
+
+## Sincronização contínua e buscas — 22/10/2026
+
+- Um clique em Sincronizar anúncios nas integrações percorre todas as páginas da loja do cartão, com progresso visível. A tela de Anúncios e o painel global usam a mesma continuação. Os lotes de 20 continuam sendo uma unidade interna da API, sem exigir um clique por lote.
+- Uma requisição por vez, intervalo entre etapas, espera conforme Retry-After do ML, retomada da página salva e tentativas limitadas para falhas temporárias. Métricas/tarifas reconsultam apenas as partes incompletas após um 429. Falhas persistentes e quota do Firestore não viram loops infinitos nem sucesso falso. A execução ocorre enquanto a página está aberta; a posição salva permite retomar após interrupção.
+- Anúncios: busca ao digitar com debounce de 250 ms, colagem imediata e filtros preservados, usando o cadastro já carregado. Não há nova consulta ao Firestore por tecla. A busca aceita acentos, termos em qualquer ordem, SKU/modelo/código ML e URLs de anúncios coladas. Exportações usam a mesma regra de busca.
+- Precificação: campo de busca por produto, título, SKU, modelo ou código ML, com escolha explícita do anúncio. A busca e a troca da oferta não recarregam o cadastro completo.
 
 ## Já entregue nesta revisão
 

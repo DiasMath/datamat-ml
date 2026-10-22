@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { priceAmount, percent } from "../domain/finance";
+import { priceAmount, percent, amount } from "../domain/finance";
 export const text = z.string().trim().min(1).max(200);
 export const optionalText = z.string().trim().max(200).nullable().optional();
 export const offerSchema = z
@@ -8,6 +8,7 @@ export const offerSchema = z
     productId: optionalText,
     updateProduct: z.boolean().default(false),
     productVersion: z.number().int().positive().optional(),
+    purchaseCost: amount.optional(),
     name: text,
     model: optionalText,
     brand: optionalText,
@@ -109,6 +110,7 @@ export const decisionSchema = z.object({
   requestId: z.uuid(),
 });
 export const importRowSchema = z.object({
+  purchaseCost: amount.optional(),
   id: optionalText,
   version: z.number().int().positive().optional(),
   storeId: optionalText,
@@ -134,5 +136,20 @@ export const importSchema = z.object({
 });
 export const importPreviewSchema = importSchema.extend({
   rows: z.array(importRowSchema).min(1).max(1000),
+});
+export const productCostImportSchema = z.object({
+  storeId: text,
+  mode: z.literal("costs"),
+  requestId: z.uuid().optional(),
+  rows: z
+    .array(
+      z.object({
+        productId: text,
+        productVersion: z.number().int().positive(),
+        purchaseCost: amount,
+      }),
+    )
+    .min(1)
+    .max(1000),
 });
 export { percent };

@@ -715,6 +715,7 @@ test("quote binds price/account/version, server overrides forged fees and keeps 
     managementRate: "1",
     managementBase: "price",
     reviewDays: 30,
+    enforceSalesMargin: false,
   });
   const quote = await mocked(tariffHandler(), () =>
     ml.quoteTariff(actor, o.id, { price: "85", offerVersion: o.version }),

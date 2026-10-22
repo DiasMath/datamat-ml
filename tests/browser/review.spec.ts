@@ -49,9 +49,7 @@ test("UI creates, edits and deletes offers and shared product metadata in Firest
     .getByRole("button", { name: "Rascunho CRUD UI", exact: true })
     .click();
   await page.getByRole("button", { name: "Editar cadastro" }).click();
-  await modal
-    .getByLabel("Corrigir nome, modelo, marca e categoria do produto")
-    .check();
+  await modal.getByLabel("Editar dados e custo de compra do produto").check();
   await modal.getByLabel("Nome do produto *").fill("Produto CRUD corrigido");
   await modal.getByLabel("Marca", { exact: true }).fill("Marca corrigida UI");
   await modal.getByLabel("Título do anúncio *").fill("Rascunho corrigido UI");

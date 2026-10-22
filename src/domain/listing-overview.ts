@@ -106,10 +106,10 @@ export function listingOverview(
       storeId: o.store_id,
       storeName: o.store_name,
       ...result,
-      minPrice: o.calculation?.minPrice ?? null,
+      minPrice: o.calculation?.policyMinPrice ?? null,
       belowFloor:
-        result.priceToWin != null && o.calculation?.minPrice != null
-          ? new Decimal(result.priceToWin).lt(o.calculation.minPrice)
+        result.priceToWin != null && o.calculation?.policyMinPrice != null
+          ? new Decimal(result.priceToWin).lt(o.calculation.policyMinPrice)
           : null,
     };
   });

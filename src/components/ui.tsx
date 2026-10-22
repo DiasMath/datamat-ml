@@ -297,6 +297,7 @@ export class ApiRequestError extends Error {
     message: string,
     public status: number,
     public code?: string,
+    public retryAfterMs?: number,
   ) {
     super(message);
   }
@@ -336,6 +337,7 @@ export const jsonRequest = async <T = any,>(
         data.error || "Não foi possível concluir a operação",
         res.status,
         typeof data.code === "string" ? data.code : undefined,
+        Number.isFinite(data.retryAfterMs) ? data.retryAfterMs : undefined,
       );
     }
     return data;

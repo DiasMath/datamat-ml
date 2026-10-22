@@ -517,7 +517,7 @@ async function handle(req: NextRequest, context: Context) {
         const data = await service.workspace(actor, req.nextUrl.searchParams);
         if (req.nextUrl.searchParams.get("format") === "xlsx") {
           return new NextResponse(
-            new Uint8Array(await offersWorkbook(data.offers)),
+            new Uint8Array(await offersWorkbook(data.offers, data.products)),
             {
               headers: {
                 ...headers,
@@ -770,7 +770,14 @@ async function handle(req: NextRequest, context: Context) {
   } catch (e) {
     if (e instanceof DatabaseConfigurationError)
       return response({ error: e.message }, 503);
-    if (e instanceof HttpError) return response({ error: e.message }, e.status);
+    if (e instanceof HttpError)
+      return response(
+        {
+          error: e.message,
+          ...(e.retryAfterMs != null ? { retryAfterMs: e.retryAfterMs } : {}),
+        },
+        e.status,
+      );
     if (e instanceof z.ZodError)
       return response(
         {

@@ -1,4 +1,5 @@
 import { storeRevision } from "./catalog-revision";
+import { purchaseCostCatalog } from "./purchase-cost";
 import Decimal from "decimal.js";
 import { attachFinancial, effectiveMlCosts } from "../domain/ml-financial";
 import { z } from "zod";
@@ -16,6 +17,8 @@ import { pendingDecisions, todayQueue, todayWindow } from "../domain/today";
 import { safePictureUrl, publicConnection } from "./mercadolivre";
 const fields = {
   offers: [
+    "product_id",
+    "type",
     "organization_id",
     "store_id",
     "title",
@@ -149,6 +152,14 @@ async function buildTodayReport(
     connectionMap = new Map(
       connections.filter(Boolean).map((r) => [r!.store_id, r!]),
     );
+  const withPurchaseCost = await purchaseCostCatalog(
+    actor,
+    raw.filter((o) => {
+      if (!scoped(o)) return false;
+      const row = costMap.get(o.id);
+      return !row || JSON.parse(row.data_json).goods == null;
+    }),
+  );
   const offers: Row[] = raw.filter(scoped).map((o): Row => {
     const row = costMap.get(o.id),
       parameters = parameterMap.get(o.store_id);
@@ -158,7 +169,7 @@ async function buildTodayReport(
         "Parâmetros financeiros da loja não encontrados",
       );
     const enriched = attachFinancial(
-      o,
+      withPurchaseCost(o),
       financialMap.get(o.id),
       connectionMap.get(o.store_id),
       actor.organization_id,

@@ -44,6 +44,13 @@ export const parameterSchema = z
     managementRate: percent,
     managementBase: base,
     reviewDays: z.number().int().min(1).max(3650),
+    salesMarginTarget: percent
+      .refine(
+        (v) => v !== null && new Decimal(v).lt(100),
+        "A meta deve ser menor que 100%",
+      )
+      .optional(),
+    enforceSalesMargin: z.boolean().optional(),
   })
   .refine(
     (p) =>
@@ -209,6 +216,12 @@ export function calculate(
     minPrice: string | null = null,
     maxDiscount: string | null = null,
     desiredPrice: string | null = null;
+  const salesMarginTarget = parameters.salesMarginTarget ?? "40";
+  let saleMarginPercent: string | null = null,
+    salesMarginMet: boolean | null = null,
+    salesTargetPrice: string | null = null;
+  let policyMinPrice: string | null = null,
+    policyMaxDiscount: string | null = null;
   if (!pending.length && price && revenue) {
     // Calculate unrounded amounts; round only the final displayed amounts.
     const fixed = [
@@ -233,6 +246,8 @@ export function calculate(
     total = money(costsTotal);
     margin = money(m);
     marginPercent = pct(m.div(revenue).mul(100));
+    saleMarginPercent = pct(m.div(price).mul(100));
+    salesMarginMet = m.div(price).mul(100).gt(salesMarginTarget);
     const limit = (target: string | null) => {
       if (target === null) return null;
       const denominator = d(1).sub(rate).sub(d(target).div(100));
@@ -252,6 +267,23 @@ export function calculate(
       desired = limit(parameters.desiredMargin);
     minPrice = minimum ? money(minimum) : null;
     desiredPrice = desired ? money(desired) : null;
+    const targetDenominator = d(1).sub(rate).sub(d(salesMarginTarget).div(100));
+    if (targetDenominator.gt(0)) {
+      // Strictly above the target, including when the boundary is an exact cent.
+      salesTargetPrice = money(
+        Decimal.max(
+          fixed
+            .div(targetDenominator)
+            .toDecimalPlaces(2, Decimal.ROUND_FLOOR)
+            .add("0.01"),
+          "0.01",
+        ),
+      );
+    } else warnings.push("Meta sobre a venda inviável com as taxas informadas");
+    if (!salesMarginMet)
+      warnings.push(
+        `Margem sobre a venda deve ser maior que ${salesMarginTarget}%`,
+      );
     if (minimum && currentPrice != null && d(currentPrice).gt(0)) {
       if (minimum.gt(currentPrice))
         warnings.push(
@@ -271,6 +303,18 @@ export function calculate(
       warnings.push("Esta condição tem contribuição negativa por venda");
     if (minimum && price.lt(minimum))
       warnings.push("Preço simulado abaixo do mínimo estimado");
+    const policyFloor =
+      parameters.enforceSalesMargin !== false
+        ? salesTargetPrice == null
+          ? null
+          : Decimal.max(salesTargetPrice, minimum ?? 0)
+        : minimum;
+    policyMinPrice = policyFloor ? money(policyFloor) : null;
+    if (policyFloor && currentPrice != null && policyFloor.lte(currentPrice))
+      policyMaxDiscount = d(1)
+        .sub(policyFloor.div(currentPrice))
+        .mul(100)
+        .toFixed(4, Decimal.ROUND_FLOOR);
   }
   return {
     price: price && price.gt(0) ? money(price) : null,
@@ -284,6 +328,13 @@ export function calculate(
     total,
     margin,
     marginPercent,
+    saleMarginPercent,
+    salesMarginTarget,
+    salesMarginMet,
+    salesTargetPrice,
+    policyMinPrice,
+    policyMaxDiscount,
+    enforceSalesMargin: parameters.enforceSalesMargin !== false,
     minPrice,
     maxDiscount,
     desiredPrice,

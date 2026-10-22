@@ -112,6 +112,8 @@ export default function useCatalogPolling({
             e.code === "FIRESTORE_QUOTA_EXCEEDED"
               ? 15 * 60000
               : Math.min(15 * 60000, retryIn * 2);
+          if (e instanceof ApiRequestError && e.retryAfterMs)
+            retryIn = Math.max(retryIn, e.retryAfterMs);
           const message = (e as Error).message;
           if (lastError.current !== message) {
             lastError.current = message;

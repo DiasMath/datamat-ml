@@ -40,6 +40,7 @@ const params = {
   managementRate: "1",
   managementBase: "price",
   reviewDays: 30,
+  enforceSalesMargin: false,
 };
 const complete = {
   ...emptyCosts(),
@@ -1200,4 +1201,225 @@ test("applying a draft that inherits rates removes old offer overrides instead o
   assert.equal(detail.costs.taxRate, undefined);
   assert.equal(detail.costs.managementRate, undefined);
   assert.equal(detail.calculation.margin, "34.00");
+});
+
+async function pricingFixture() {
+  const store = await s.createStore(admin, { name: "Precificação " + id() });
+  const actor = { ...admin, stores: [...admin.stores, store] };
+  await s.saveParameters(actor, store.id, {
+    ...params,
+    taxRate: "0",
+    managementRate: "0",
+    enforceSalesMargin: true,
+  });
+  const unit = await s.saveOffer(
+    actor,
+    offer(store.id, { purchaseCost: "20" }),
+  );
+  const inherited = {
+    ...complete,
+    goods: null,
+    mlPercent: "0",
+    mlFixed: "0",
+    shipping: "0",
+    packaging: "0",
+    advertising: "0",
+  };
+  await s.saveCosts(actor, unit.id, inherited);
+  return { actor, store, unit, inherited };
+}
+test("product purchase costs feed linked listings, kits, workspace and immutable pricing snapshots", async () => {
+  const { actor, store, unit, inherited } = await pricingFixture();
+  const linked = await s.saveOffer(
+    actor,
+    offer(store.id, { productId: unit.product_id }),
+  );
+  await s.saveCosts(actor, linked.id, { ...inherited, goods: "0" });
+  const kit = await s.saveOffer(
+    actor,
+    offer(store.id, {
+      type: "kit",
+      components: [{ productId: unit.product_id, quantity: 2 }],
+    }),
+  );
+  await s.saveCosts(actor, kit.id, inherited);
+  assert.equal(
+    (await s.offerDetail(actor, unit.id)).calculation.margin,
+    "80.00",
+  );
+  assert.equal(
+    (await s.offerDetail(actor, kit.id)).calculation.margin,
+    "60.00",
+  );
+  const proposal = await s.createProposal(actor, {
+    offerId: kit.id,
+    input: { mode: "price", price: "100" },
+    reason: "Custo herdado para auditoria",
+    requestId: id(),
+  });
+  assert.equal(proposal.snapshot.offer.purchaseCost.amount, "40.000000");
+  const saved = proposal.snapshot_json;
+  const current = await s.getOffer(actor, unit.id);
+  await s.saveOffer(
+    actor,
+    offer(store.id, {
+      productId: unit.product_id,
+      updateProduct: true,
+      productVersion: current.product_version,
+      purchaseCost: "35",
+      version: current.version,
+    }),
+    unit.id,
+  );
+  assert.equal(
+    (await s.offerDetail(actor, unit.id)).calculation.margin,
+    "65.00",
+  );
+  assert.equal(
+    (await s.offerDetail(actor, kit.id)).calculation.margin,
+    "30.00",
+  );
+  assert.equal(
+    (await s.offerDetail(actor, linked.id)).calculation.margin,
+    "100.00",
+  );
+  assert.equal((await s.offerDetail(actor, unit.id)).costs.goods, null);
+  assert.equal((await get("proposals", proposal.id))!.snapshot_json, saved);
+  await assert.rejects(
+    s.decideProposal(actor, proposal.id, {
+      action: "approve",
+      comment: "Rever após alteração",
+      requestId: id(),
+    }),
+    /mudaram/,
+  );
+  const workspace = await s.workspace(
+    actor,
+    new URLSearchParams({ store: store.id, profile: "listings" }),
+  );
+  assert.equal(
+    workspace.offers.find((o) => o.id === kit.id)!.calculation.margin,
+    "30.00",
+  );
+  // Omitted cost in older clients cannot clear the shared value.
+  const latest = await s.getOffer(actor, unit.id);
+  await s.saveOffer(
+    actor,
+    offer(store.id, {
+      productId: unit.product_id,
+      updateProduct: true,
+      productVersion: latest.product_version,
+      version: latest.version,
+    }),
+    unit.id,
+  );
+  assert.equal((await get("products", unit.product_id))!.purchase_cost, "35");
+});
+test("40 percent is blocked by default; warning-only policy is persisted per store and cannot bypass stale proposals", async () => {
+  const { actor, store, unit, inherited } = await pricingFixture();
+  await s.saveCosts(actor, unit.id, { ...inherited, goods: "60" });
+  const propose = () =>
+    s.createProposal(actor, {
+      offerId: unit.id,
+      input: { mode: "price", price: "100", conditionsVerified: true },
+      reason: "Conferir limite exato",
+      requestId: id(),
+    });
+  const proposal = await propose();
+  assert.equal(proposal.snapshot.proposed.salesMarginMet, false);
+  assert.equal(proposal.snapshot.proposed.salesTargetPrice, "100.01");
+  await assert.rejects(
+    s.decideProposal(actor, proposal.id, {
+      action: "approve",
+      comment: "Tentativa no limite",
+      requestId: id(),
+    }),
+    /maior que 40/,
+  );
+  assert.equal((await get("proposals", proposal.id))!.status, "review");
+  await s.saveParameters(actor, store.id, {
+    ...params,
+    taxRate: "0",
+    managementRate: "0",
+    enforceSalesMargin: false,
+  });
+  await assert.rejects(
+    s.decideProposal(actor, proposal.id, {
+      action: "approve",
+      comment: "Regra mudou",
+      requestId: id(),
+    }),
+    /mudaram/,
+  );
+  const warning = await propose();
+  for (const action of ["approve", "request", "apply_manual"])
+    await s.decideProposal(actor, warning.id, {
+      action,
+      comment: "Exceção configurada na loja",
+      requestId: id(),
+    });
+  assert.equal((await get("proposals", warning.id))!.status, "applied_manual");
+  assert.equal(
+    (await s.offerDetail(actor, unit.id)).parameters.enforceSalesMargin,
+    false,
+  );
+  assert.ok(
+    warning.snapshot.proposed.warnings.some((w: string) =>
+      w.includes("maior que 40"),
+    ),
+  );
+});
+test("Excel product-cost imports validate shared versions, preserve overrides and are idempotent", async () => {
+  const { actor, store, unit, inherited } = await pricingFixture();
+  const related = await s.saveOffer(
+    actor,
+    offer(store.id, { productId: unit.product_id }),
+  );
+  await s.saveCosts(actor, related.id, { ...inherited, goods: "0" });
+  const row = {
+    productId: unit.product_id,
+    productVersion: 1,
+    purchaseCost: "33.123456",
+  };
+  const body = {
+    storeId: store.id,
+    mode: "costs",
+    rows: [row],
+    requestId: id(),
+  };
+  assert.equal((await s.importPreview(actor, body)).valid, true);
+  const result = await s.confirmImport(actor, body);
+  assert.deepEqual(await s.confirmImport(actor, body), result);
+  assert.equal(
+    (await s.offerDetail(actor, unit.id)).calculation.breakdown.goods,
+    "33.12",
+  );
+  assert.equal((await s.offerDetail(actor, related.id)).costs.goods, "0");
+  assert.equal(
+    (await s.importPreview(actor, { ...body, requestId: id() })).valid,
+    false,
+  );
+  assert.equal(
+    (await s.importPreview(actor, { ...body, rows: [row, row] })).valid,
+    false,
+  );
+  const version = (await get("products", unit.product_id))!.version;
+  const clear = {
+    ...body,
+    requestId: id(),
+    rows: [{ ...row, productVersion: version, purchaseCost: null }],
+  };
+  await s.confirmImport(actor, clear);
+  assert.equal((await s.offerDetail(actor, unit.id)).calculation.margin, null);
+  const locked = await s.getOffer(actor, related.id);
+  await put("offers", related.id, {
+    ...locked,
+    ml_apply_until: Date.now() + 60000,
+  });
+  const lockPreview = await s.importPreview(actor, {
+    ...body,
+    rows: [{ ...row, productVersion: version + 1 }],
+  });
+  assert.equal(lockPreview.valid, false);
+  assert.match(lockPreview.rows[0].errors.join(" "), /andamento/);
 });

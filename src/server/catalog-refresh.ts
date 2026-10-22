@@ -14,6 +14,7 @@ export async function refreshCatalog(
       .object({
         offerId: z.string().min(1).max(200).optional(),
         automatic: z.boolean().default(false),
+        restart: z.boolean().default(false),
         completedStoreIds: z
           .array(z.string().min(1).max(200))
           .max(100)
@@ -77,6 +78,9 @@ export async function refreshCatalog(
     );
     if (
       p.automatic &&
+      !p.restart &&
+      !c.has_more &&
+      !c.pending_batch &&
       Number.isFinite(observed) &&
       Date.now() - observed < AUTOMATIC_CATALOG_INTERVAL
     ) {
@@ -106,7 +110,11 @@ export async function refreshCatalog(
     const result = await syncListings(
       actor,
       c.id,
-      { requestId: randomUUID(), ...(offer ? { itemIds: [offer.ml_id] } : {}) },
+      {
+        requestId: randomUUID(),
+        restart: p.restart,
+        ...(offer ? { itemIds: [offer.ml_id] } : {}),
+      },
       deadline,
     );
     if (result.status !== "confirmed")

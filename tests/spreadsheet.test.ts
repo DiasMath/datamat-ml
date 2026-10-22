@@ -20,6 +20,9 @@ test("Excel exports round-trip identifiers, zero, null, decimal money and formul
       store_id: "juntos-com",
       store_name: "juntos.com",
       product_name: "Produto",
+      product_id: "product-1",
+      product_version: 3,
+      product_purchase_cost: "12.345678",
       title: '=HYPERLINK("https://example.test")',
       sku: "000123",
       ml_id: "MLB1",
@@ -57,6 +60,15 @@ test("Excel exports round-trip identifiers, zero, null, decimal money and formul
   assert.equal(cell(0, "contributionPercent"), "");
   assert.equal(cell(1, "price"), "");
   assert.deepEqual(table.headers, offerColumns);
+  assert.equal(cell(0, "purchaseCost"), "12.345678");
+  assert.equal(sheets[1].sheet, "Produtos");
+  assert.deepEqual(sheets[1].data[0], [
+    "productId",
+    "productVersion",
+    "name",
+    "purchaseCost",
+  ]);
+  assert.deepEqual(sheets[1].data[1], ["product-1", 3, "Produto", 12.345678]);
 });
 test("Excel import model contains only headers and no invented operational records", async () => {
   const sheets = await readXlsxFile(await importTemplateWorkbook());

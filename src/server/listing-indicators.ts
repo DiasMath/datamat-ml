@@ -128,6 +128,7 @@ export async function refreshListingIndicators(
       fees: boolean;
       deferred?: boolean;
       errors: string[];
+      retryAfterMs?: number;
     }> = offers.map((offer) => ({
       id: offer!.id,
       metrics: false,
@@ -160,6 +161,8 @@ export async function refreshListingIndicators(
             await refreshMetrics(actor, result.id, 7, deadline);
             result.metrics = true;
           } catch (error) {
+            if (error instanceof HttpError && error.status === 429)
+              result.retryAfterMs = error.retryAfterMs || 60000;
             result.errors.push(
               error instanceof HttpError
                 ? error.message
@@ -190,6 +193,9 @@ export async function refreshListingIndicators(
             financial.set(id, {
               id,
               status: "failed",
+              ...(error instanceof HttpError && error.status === 429
+                ? { retryAfterMs: error.retryAfterMs || 60000 }
+                : {}),
               error:
                 error instanceof HttpError
                   ? error.message
@@ -200,6 +206,11 @@ export async function refreshListingIndicators(
     ]);
     for (const result of results) {
       const fees = financial.get(result.id);
+      if (fees?.retryAfterMs)
+        result.retryAfterMs = Math.max(
+          result.retryAfterMs || 0,
+          fees.retryAfterMs,
+        );
       result.fees = fees?.status === "updated";
       if (wants(result.id, "fees") && !result.fees)
         result.errors.push(

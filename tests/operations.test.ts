@@ -596,6 +596,7 @@ async function approved() {
     managementRate: "0",
     managementBase: "price",
     reviewDays: 30,
+    enforceSalesMargin: false,
   });
   let offer = (
     await find("offers", { store_id: "juntos-com", ml_id: "MLB500" })
@@ -774,4 +775,51 @@ test("foreign sellers, changed fees, unapproved proposals and viewer roles canno
     applyApprovedPrice(actor, proposal.id, { confirmed: true }),
     /aprovada/,
   );
+});
+
+test("ML application enforces selling-margin policy before any remote request, even for an already approved record", async () => {
+  const previous = await approved();
+  await saveParameters(actor, "juntos-com", {
+    minMargin: "10",
+    desiredMargin: "20",
+    taxRate: "0",
+    taxBase: "price",
+    managementRate: "0",
+    managementBase: "price",
+    reviewDays: 30,
+    enforceSalesMargin: true,
+  });
+  await saveCosts(actor, previous.offer_id, {
+    goods: "60",
+    mlPercent: "10",
+    mlFixed: "0",
+    shipping: "0",
+    packaging: "0",
+    advertising: "0",
+    other: "0",
+  });
+  const low = await createProposal(actor, {
+    offerId: previous.offer_id,
+    input: { mode: "price", price: "90", conditionsVerified: true },
+    reason: "Verificar defesa no servidor ML",
+    requestId: randomUUID(),
+  });
+  await put("proposals", low.id, {
+    ...(await get("proposals", low.id)),
+    status: "approved",
+  });
+  let network = 0;
+  await mocked(
+    () => {
+      network++;
+      throw new Error("Não deve consultar nem escrever no ML");
+    },
+    () =>
+      assert.rejects(
+        applyApprovedPrice(actor, low.id, { confirmed: true }),
+        /maior que 40/,
+      ),
+  );
+  assert.equal(network, 0);
+  assert.equal((await get("proposals", low.id))!.status, "approved");
 });

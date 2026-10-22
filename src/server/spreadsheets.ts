@@ -25,6 +25,11 @@ export const offerColumns = [
   "updatedAt",
   "contribution",
   "contributionPercent",
+  "productId",
+  "productVersion",
+  "purchaseCost",
+  "saleMarginPercent",
+  "salesTargetPrice",
 ];
 export const offerValues = (o: Row) => [
   o.id,
@@ -49,6 +54,15 @@ export const offerValues = (o: Row) => [
   o.calculation.marginPercent == null
     ? null
     : Number(o.calculation.marginPercent),
+  o.product_id,
+  o.product_version,
+  o.product_purchase_cost == null ? null : Number(o.product_purchase_cost),
+  o.calculation.saleMarginPercent == null
+    ? null
+    : Number(o.calculation.saleMarginPercent),
+  o.calculation.salesTargetPrice == null
+    ? null
+    : Number(o.calculation.salesTargetPrice),
 ];
 
 function sheet(
@@ -70,10 +84,17 @@ function sheet(
           return {
             value: v,
             type: Number,
-            format: ["price", "contribution", "contributionPercent"].includes(
-              columns[i],
-            )
-              ? "0.00"
+            format: [
+              "price",
+              "contribution",
+              "contributionPercent",
+              "purchaseCost",
+              "saleMarginPercent",
+              "salesTargetPrice",
+            ].includes(columns[i])
+              ? columns[i] === "purchaseCost"
+                ? "0.000000"
+                : "0.00"
               : "0",
           };
         // Explicit String cells: text beginning with '=' remains text, never a formula.
@@ -90,9 +111,45 @@ function sheet(
     })),
   };
 }
-export async function offersWorkbook(offers: Row[]) {
+export async function offersWorkbook(offers: Row[], products?: Row[]) {
+  const ids = new Set(
+    offers
+      .flatMap((o) => [o.product_id, ...(o.purchaseCost?.productIds || [])])
+      .filter(Boolean),
+  );
+  const rows = products
+    ? products
+        .filter((p) => ids.has(p.id))
+        .map((p) => [
+          p.id,
+          p.version || 1,
+          p.name,
+          p.purchase_cost == null ? null : Number(p.purchase_cost),
+        ])
+    : [
+        ...new Map(
+          offers
+            .filter((o) => o.product_id)
+            .map((o) => [
+              o.product_id,
+              [
+                o.product_id,
+                o.product_version || 1,
+                o.product_name,
+                o.product_purchase_cost == null
+                  ? null
+                  : Number(o.product_purchase_cost),
+              ],
+            ]),
+        ).values(),
+      ];
   return writeXlsxFile([
     sheet("Anúncios", offerColumns, offers.map(offerValues)),
+    sheet(
+      "Produtos",
+      ["productId", "productVersion", "name", "purchaseCost"],
+      rows,
+    ),
   ]).toBuffer();
 }
 export async function importTemplateWorkbook() {
@@ -108,6 +165,7 @@ export async function importTemplateWorkbook() {
         "category",
         "model",
         "price",
+        "purchaseCost",
         "type",
         "status",
         "description",

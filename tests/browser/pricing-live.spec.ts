@@ -8,6 +8,7 @@ const params = {
   managementRate: "1",
   managementBase: "price",
   reviewDays: 30,
+  enforceSalesMargin: false,
 };
 const costs = {
   goods: "40",

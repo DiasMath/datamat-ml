@@ -485,10 +485,51 @@ export default function Pricing({
               <span>Margem de contribuição</span>
               <strong>
                 {money(result.proposed.margin)}{" "}
-                <small>{percent(result.proposed.marginPercent)}</small>
+                <small>{percent(result.proposed.saleMarginPercent)}</small>
               </strong>
-              <p>Contribuição para despesas fixas e resultado.</p>
+              <p>
+                Margem sobre o preço de venda, após mercadoria, tarifas, frete,
+                impostos e demais custos.
+              </p>
             </div>
+            <div className="comparison-row" data-testid="sales-margin-policy">
+              <span>
+                Meta: acima de {percent(result.proposed.salesMarginTarget)}
+              </span>
+              <strong
+                className={
+                  result.proposed.salesMarginMet === true ? "green" : "orange"
+                }
+              >
+                {result.proposed.salesMarginMet === true
+                  ? "Meta atendida"
+                  : result.proposed.salesMarginMet === null
+                    ? "Custos pendentes"
+                    : result.proposed.enforceSalesMargin
+                      ? "Aprovação bloqueada"
+                      : "Abaixo da meta · alerta"}
+              </strong>
+            </div>
+            <div className="comparison-row">
+              <span>Preço estimado para superar a meta</span>
+              <strong>{money(result.proposed.salesTargetPrice)}</strong>
+            </div>
+            {offer.ml && (
+              <p className="small muted">
+                Tarifas de{" "}
+                {offer.ml.listingTypeId === "gold_pro"
+                  ? "Premium"
+                  : offer.ml.listingTypeId === "gold_special"
+                    ? "Clássico"
+                    : offer.ml.listingTypeId || "modalidade a conferir"}{" "}
+                ·{" "}
+                {offer.ml.freeShipping
+                  ? "frete grátis para o comprador"
+                  : "frete sem gratuidade"}
+                . O custo do vendedor depende da consulta ou da condição manual
+                informada. Publicidade e promoções são separadas.
+              </p>
+            )}
             <div className="comparison-row">
               <span>Desconto da loja</span>
               <strong>{percent(result.proposed.discount)}</strong>
@@ -525,23 +566,12 @@ export default function Pricing({
             </div>
             <div className="limit-grid">
               <div>
-                <span>Mínima / desejada</span>
-                <strong>
-                  {percent(result.proposed.minMargin)} /{" "}
-                  {percent(result.proposed.desiredMargin)}
-                </strong>
-              </div>
-              <div>
-                <span>Preço mínimo estimado</span>
-                <strong>{money(result.proposed.minPrice)}</strong>
-              </div>
-              <div>
-                <span>Preço desejado estimado</span>
-                <strong>{money(result.proposed.desiredPrice)}</strong>
+                <span>Piso estimado com a regra da loja</span>
+                <strong>{money(result.proposed.policyMinPrice)}</strong>
               </div>
               <div>
                 <span>Desconto máximo estimado</span>
-                <strong>{percent(result.proposed.maxDiscount, 4)}</strong>
+                <strong>{percent(result.proposed.policyMaxDiscount, 4)}</strong>
               </div>
             </div>
             <details className="expand calculation-conditions">
@@ -549,6 +579,14 @@ export default function Pricing({
                 <Info size={14} />
                 Condições e limites
               </summary>
+              <p className="small muted">
+                Referências adicionais configuradas: margem mínima{" "}
+                {percent(result.proposed.minMargin)}, desejada{" "}
+                {percent(result.proposed.desiredMargin)}; preço desejado
+                estimado {money(result.proposed.desiredPrice)}. A regra da meta
+                sobre a venda prevalece para aprovação quando o bloqueio está
+                ativo.
+              </p>
               <p className="small muted">
                 Bases: impostos — {basis(result.proposed.bases.tax)}; comissão —{" "}
                 {basis(result.proposed.bases.management)}.

@@ -15,6 +15,7 @@ export type FinancialRefreshResult = {
   id: string;
   status: "updated" | "failed" | "deferred" | "unavailable";
   error?: string;
+  retryAfterMs?: number;
 };
 
 export async function refreshFinancialCosts(
@@ -247,6 +248,9 @@ export async function refreshFinancialCosts(
             id: offer.id,
             status: "failed",
             error: message,
+            ...(error instanceof HttpError && error.status === 429
+              ? { retryAfterMs: error.retryAfterMs || 60000 }
+              : {}),
           });
           await transaction(async () => {
             const [current, account, old] = await Promise.all([

@@ -110,6 +110,7 @@ before(async () => {
     managementRate: "0",
     managementBase: "price",
     reviewDays: 30,
+    enforceSalesMargin: false,
   });
   await put("connections", connectionId, {
     store_id: storeId,

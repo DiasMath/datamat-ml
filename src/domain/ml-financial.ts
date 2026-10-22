@@ -64,6 +64,8 @@ export function effectiveMlCosts(
 ): Costs {
   const automatic = automaticMlCosts(offer, clock, price);
   const result = { ...costs };
+  if (result.goods == null && offer.purchaseCost?.amount != null)
+    result.goods = offer.purchaseCost.amount;
   for (const field of ML_COST_FIELDS)
     if (result[field] == null && automatic[field] != null)
       result[field] = automatic[field]!;

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { enforcePricingPolicy } from "./pricing-policy";
 import Decimal from "decimal.js";
 import {
   costsAfterProposal,
@@ -89,6 +90,12 @@ export async function applyApprovedPrice(
       throw new HttpError(
         422,
         "Complete os custos e confira tarifa e frete antes de aplicar",
+      );
+    // An uncertain remote write must still be reconciled, even after policy changes.
+    if (!verifyOnly)
+      enforcePricingPolicy(
+        snapshot,
+        parameters ? JSON.parse(parameters.data_json) : {},
       );
     if (
       snapshot.input.proposedTitle ||

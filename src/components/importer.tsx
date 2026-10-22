@@ -30,6 +30,9 @@ const fields: Record<string, string> = {
   id: "ID interno",
   version: "Versão",
   storeId: "Loja original",
+  purchaseCost: "Custo de compra (R$)",
+  productId: "ID do produto",
+  productVersion: "Versão do produto",
 };
 const aliases: Record<string, string[]> = {
   name: ["name", "produto", "nome"],
@@ -46,6 +49,14 @@ const aliases: Record<string, string[]> = {
   id: ["id", "idinterno"],
   version: ["version", "versao"],
   storeId: ["storeid", "lojaoriginal"],
+  purchaseCost: [
+    "purchasecost",
+    "custodecompra",
+    "precocusto",
+    "custofornecedor",
+  ],
+  productId: ["productid", "iddoproduto"],
+  productVersion: ["productversion", "versaodoproduto"],
 };
 const normalize = (s: string) =>
   s
@@ -64,7 +75,7 @@ export default function Importer({
   stores: Row[];
   selected: string;
   busy: boolean;
-  onDone: (count: number) => void;
+  onDone: (count: number, kind: string) => void;
   onDirty: () => void;
   onWorking: (working: boolean) => void;
 }) {
@@ -145,14 +156,19 @@ export default function Importer({
         result.type ||= "unit";
         result.status ||= "draft";
         result.origin = result.origin === "reference" ? "reference" : "import";
-        const price = result.price;
-        result.price = price
-          ? price.includes(",")
-            ? price.replaceAll(".", "").replace(",", ".")
-            : price
-          : null;
+        for (const key of ["price", "purchaseCost"]) {
+          if (key === "purchaseCost" && !mapping.purchaseCost) continue;
+          const price = result[key];
+          result[key] = price
+            ? price.includes(",")
+              ? price.replaceAll(".", "").replace(",", ".")
+              : price
+            : null;
+        }
         if (result.version) result.version = Number(result.version);
         else delete result.version;
+        if (result.productVersion)
+          result.productVersion = Number(result.productVersion);
         return result;
       });
       const b = { storeId: store, mode, rows };
@@ -184,7 +200,7 @@ export default function Importer({
         });
         setCompleted(Math.min(start + 40, body.rows.length));
       }
-      onDone(body.rows.length);
+      onDone(body.rows.length, mode === "costs" ? "produtos" : "anúncios");
     } catch (e) {
       const message =
         (e as Error).message +
@@ -198,6 +214,10 @@ export default function Importer({
     }
   }
   const locked = busy || loading || completed > 0;
+  const requiredFields =
+    mode === "costs"
+      ? ["productId", "productVersion", "purchaseCost"]
+      : ["name", "title", ...(mode === "update" ? ["id", "version"] : [])];
   return (
     <div>
       <div className="alert">
@@ -235,14 +255,24 @@ export default function Importer({
             >
               <option value="create">Cadastrar novos anúncios</option>
               <option value="update">Atualizar anúncios exportados</option>
+              <option value="costs">Atualizar custos de produtos</option>
             </select>
           </Field>
         </div>
         {mode === "update" && (
           <p className="small muted">
             Use ID e versão da exportação. Título, descrição, SKU, código ML e
-            situação podem ser atualizados. Produtos compartilhados e preços são
-            alterados pela ficha.
+            situação podem ser atualizados. Para custos compartilhados,
+            selecione a operação Atualizar custos de produtos e a aba Produtos
+            da exportação.
+          </p>
+        )}
+        {mode === "costs" && (
+          <p className="small muted">
+            Use a aba Produtos da exportação, com ID e versão do produto. O
+            custo vale para todos os anúncios vinculados, incluindo kits. Custos
+            específicos dos anúncios são preservados. Uma célula vazia remove o
+            custo compartilhado e deixa a informação pendente.
           </p>
         )}
         <label className="upload-zone">
@@ -295,38 +325,38 @@ export default function Importer({
             <h3>Mapeamento de colunas · {table.rows.length} linhas</h3>
             <details
               className="expand"
-              open={
-                !mapping.name ||
-                !mapping.title ||
-                (mode === "update" && (!mapping.id || !mapping.version))
-              }
+              open={requiredFields.some((key) => !mapping[key])}
             >
               <summary>Conferir mapeamento das colunas</summary>
               <div className="form-grid">
-                {Object.entries(fields).map(([key, label]) => (
-                  <Field key={key} label={label}>
-                    <select
-                      disabled={locked}
-                      value={mapping[key] || ""}
-                      required={[
-                        "name",
-                        "title",
-                        ...(mode === "update" ? ["id", "version"] : []),
-                      ].includes(key)}
-                      onChange={(e) => {
-                        setMapping({ ...mapping, [key]: e.target.value });
-                        reset();
-                      }}
-                    >
-                      <option value="">Não importar / padrão</option>
-                      {table.headers.map((h) => (
-                        <option key={h} value={h}>
-                          {h}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                ))}
+                {Object.entries(fields)
+                  .filter(
+                    ([key]) =>
+                      mode !== "costs" ||
+                      ["productId", "productVersion", "purchaseCost"].includes(
+                        key,
+                      ),
+                  )
+                  .map(([key, label]) => (
+                    <Field key={key} label={label}>
+                      <select
+                        disabled={locked}
+                        value={mapping[key] || ""}
+                        required={requiredFields.includes(key)}
+                        onChange={(e) => {
+                          setMapping({ ...mapping, [key]: e.target.value });
+                          reset();
+                        }}
+                      >
+                        <option value="">Não importar / padrão</option>
+                        {table.headers.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  ))}
               </div>
             </details>
             <Submit
@@ -347,9 +377,11 @@ export default function Importer({
           </div>
           <p className="small muted">
             Destino: {stores.find((s) => s.id === store)?.name}.{" "}
-            {mode === "update"
-              ? "Atualização dos registros identificados; custos e histórico preservados."
-              : "Novos registros, sem substituir ofertas existentes."}
+            {mode === "costs"
+              ? "Atualiza o custo compartilhado e exige revisão das propostas afetadas; o histórico é preservado."
+              : mode === "update"
+                ? "Atualização dos registros identificados; custos e histórico preservados."
+                : "Novos registros, sem substituir ofertas existentes."}
           </p>
           <Collection
             id="import"
@@ -363,7 +395,7 @@ export default function Importer({
                     <tr>
                       <th>Linha</th>
                       <th>Produto / anúncio</th>
-                      <th>Preço</th>
+                      <th>{mode === "costs" ? "Custo de compra" : "Preço"}</th>
                       <th>Validação</th>
                     </tr>
                   </thead>
@@ -373,9 +405,19 @@ export default function Importer({
                         <td>{r.line}</td>
                         <td>
                           {r.data.title}
-                          <small>{r.data.sku || "Sem SKU"}</small>
+                          <small>
+                            {mode === "costs"
+                              ? r.data.productId
+                              : r.data.sku || "Sem SKU"}
+                          </small>
                         </td>
-                        <td>{money(r.data.price)}</td>
+                        <td>
+                          {money(
+                            mode === "costs"
+                              ? r.data.purchaseCost
+                              : r.data.price,
+                          )}
+                        </td>
                         <td>
                           {r.errors.length ? (
                             <span className="danger-text">
@@ -406,11 +448,12 @@ export default function Importer({
             disabled={!preview.valid || busy || loading}
             onClick={confirm}
           >
+            {loading && <LoaderCircle size={16} className="spin" />}
             {loading
               ? "Importando…"
               : completed
                 ? "Retomar importação"
-                : `Confirmar importação de ${preview.total} anúncios`}
+                : `Confirmar importação de ${preview.total} ${mode === "costs" ? "produtos" : "anúncios"}`}
           </button>
         </section>
       )}

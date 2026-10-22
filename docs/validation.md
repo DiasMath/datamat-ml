@@ -1,5 +1,16 @@
 # Validação da versão atual
 
+## Revisão de custos, margem, sincronização e buscas — 22/10/2026
+
+- `npm test`: **241 testes passaram**, sem falhas ou testes ignorados; projetos demo no emulador Firestore.
+- `npm run build` e verificação TypeScript: passaram.
+- Chromium: **20 cenários desta entrega passaram**: Excel e retomada idempotente, custos ao digitar, herança/exceções, cadastro/edição/exclusão, configuração por loja, sincronização completa antes dos indicadores, erros sem perder filtros, 429 simulado com retomada automática, busca ao digitar/colar sem novas leituras do workspace e busca local na precificação.
+- Precificação sem transbordamento horizontal nas larguras 320, 390, 768 e 1440 px; formulário de configuração também conferido em 390 px.
+- Testes cobrem a comparação estrita acima de 40%, sugestão no próximo centavo válido, margem sobre venda distinta da margem sobre receita com subsídio, bloqueio no servidor antes de qualquer chamada de aplicação ao ML, kits e variantes, custos desconhecidos versus zero, snapshots preservados e custos compartilhados no Excel com seis casas decimais.
+- ML usado com respostas controladas nos testes desta entrega. Nenhum preço, estoque, situação ou conteúdo foi publicado nas contas reais para testar estas alterações.
+
+Os registros abaixo descrevem revisões anteriores e seus respectivos conjuntos de testes.
+
 Ambiente cloud: Node.js 24, Next.js 16.4, React 19.3, Java 21 e Chromium. A revisão atual compacta Hoje para anúncios, preços e desempenho, com prioridades verificáveis e resposta inicial menor. As revisões anteriores de cabeçalhos, operações em lote, precificação, integração ML, extensão, mídia/Drive e diálogos permanecem cobertas pelos testes. Testes de negócio usam projetos aleatórios `demo-*` no emulador Firestore e não escrevem cadastros na base operacional `datamat-ml`.
 
 | Verificação              | Resultado                                                                                                                                                  |

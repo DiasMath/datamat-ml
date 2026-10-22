@@ -5,11 +5,13 @@ export default function ListingUpdateProgress({
   done,
   total,
   phase,
+  waitingMs,
   onCancel,
 }: {
   done: number;
   total: number;
   phase?: "catalog" | "indicators";
+  waitingMs?: number;
   onCancel: () => void;
 }) {
   return createPortal(
@@ -21,9 +23,11 @@ export default function ListingUpdateProgress({
         <LoaderCircle size={17} className="spin" aria-hidden="true" />
         <div>
           <strong>
-            {phase === "catalog"
-              ? "Atualizando catálogo da loja"
-              : "Atualizando indicadores ML"}
+            {waitingMs
+              ? "Aguardando o Mercado Livre"
+              : phase === "catalog"
+                ? "Atualizando catálogo da loja"
+                : "Atualizando indicadores ML"}
           </strong>
           <span role="status">
             {phase === "catalog"
@@ -44,7 +48,11 @@ export default function ListingUpdateProgress({
         value={phase === "catalog" ? undefined : done}
         max={total || 1}
       />
-      <small>Você pode interromper e continuar depois.</small>
+      <small>
+        {waitingMs
+          ? "Retomada automática após o tempo de espera do ML."
+          : "As próximas etapas continuam automaticamente. Você pode interromper."}
+      </small>
     </section>,
     document.body,
   );

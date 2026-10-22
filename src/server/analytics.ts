@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { purchaseCostCatalog } from "./purchase-cost";
 import Decimal from "decimal.js";
 import { attachFinancial, effectiveMlCosts } from "../domain/ml-financial";
 import { z } from "zod";
@@ -158,6 +159,13 @@ async function collectStore(
       ]);
       const financialMap = new Map(financialRows.map((r) => [r.offer_id, r]));
       const costMap = new Map(costRows.map((c) => [c.id, c]));
+      const withPurchaseCost = await purchaseCostCatalog(
+        actor,
+        offers.filter((o) => {
+          const row = costMap.get(o.id);
+          return !row || JSON.parse(row.data_json).goods == null;
+        }),
+      );
       const offerMap = new Map(
         offers
           .filter(
@@ -168,7 +176,7 @@ async function collectStore(
           .map((o) => [
             o.ml_id,
             attachFinancial(
-              o,
+              withPurchaseCost(o),
               financialMap.get(o.id),
               connection,
               actor.organization_id,

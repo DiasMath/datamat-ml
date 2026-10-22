@@ -48,6 +48,9 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
       productId: productId || null,
       updateProduct: !!productId && editProduct,
       productVersion: product?.version || 1,
+      ...(!productId || editProduct
+        ? { purchaseCost: nullable(f.get("purchaseCost")) }
+        : {}),
       name: (!editProduct && product?.name) || string(f, "name"),
       model: (!editProduct && product?.model) || string(f, "model") || null,
       brand: (!editProduct && product?.brand) || string(f, "brand") || null,
@@ -113,7 +116,7 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
               checked={editProduct}
               onChange={(e) => setEditProduct(e.target.checked)}
             />
-            Corrigir nome, modelo, marca e categoria do produto
+            Editar dados e custo de compra do produto
           </label>
         )}
         {productId && editProduct && (
@@ -157,7 +160,30 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
                 defaultValue={product?.category || initial?.category}
               />
             </Field>
+            <Field
+              label="Custo de compra do fornecedor (R$)"
+              hint="Por unidade do produto. Vazio fica pendente; 0 representa custo zero confirmado."
+            >
+              <input
+                key={productId || "new"}
+                name="purchaseCost"
+                aria-label="Custo de compra do fornecedor (R$)"
+                type="number"
+                min={0}
+                max={1000000000}
+                step="0.000001"
+                defaultValue={
+                  product?.purchase_cost ?? initial?.product_purchase_cost ?? ""
+                }
+              />
+            </Field>
           </>
+        )}
+        {productId && !editProduct && (
+          <p className="small muted field wide">
+            Custo do produto: {money(product?.purchase_cost)}. Usado nos
+            anúncios sem custo específico de mercadoria.
+          </p>
         )}
         <Field label="Título do anúncio *" wide>
           <AutocompleteInput
@@ -415,9 +441,11 @@ export function CostsForm({
       }}
     >
       <div className="alert">
-        Campos ML vazios usam a consulta automática disponível. Nos demais,
-        vazio é informação pendente; informe <strong>0</strong> quando não
-        houver custo. Mercadoria representa a unidade ou o kit completo.
+        Mercadoria vazia herda o custo de compra do produto ou da composição. Um
+        valor preenchido é uma exceção deste anúncio. Campos ML vazios usam a
+        consulta automática disponível. Nos demais, vazio é informação pendente;
+        informe <strong>0</strong> quando não houver custo. Mercadoria
+        representa a unidade ou o kit completo.
       </div>
       <div className="form-grid">
         {Object.entries(costFields).map(([key, label]) => (
@@ -431,11 +459,21 @@ export function CostsForm({
               step="0.000001"
               defaultValue={initial[key] ?? ""}
               placeholder={
-                automatic[key as keyof Costs] != null
-                  ? `ML: ${automatic[key as keyof Costs]}`
-                  : "Pendente"
+                key === "goods" && offer?.purchaseCost?.amount != null
+                  ? `Produto: ${offer.purchaseCost.amount}`
+                  : automatic[key as keyof Costs] != null
+                    ? `ML: ${automatic[key as keyof Costs]}`
+                    : "Pendente"
               }
             />
+            {key === "goods" && draft?.goods == null && (
+              <small className="ml-cost-source">
+                {offer?.purchaseCost?.amount != null
+                  ? `${offer.purchaseCost.source === "kit" ? "Composição do kit" : "Custo do produto"}: ${money(offer.purchaseCost.amount)}`
+                  : offer?.purchaseCost?.reason ||
+                    "Cadastre o custo de compra no produto ou informe uma exceção aqui."}
+              </small>
+            )}
             {automatic[key as keyof Costs] != null &&
               draft?.[key as keyof Costs] == null && (
                 <small className="ml-cost-source">
@@ -476,7 +514,8 @@ export function CostsForm({
         <div>
           <span>Contribuição</span>
           <strong>
-            {money(result?.margin)} · {percent(result?.marginPercent)}
+            {money(result?.margin)} · {percent(result?.saleMarginPercent)} sobre
+            a venda
           </strong>
         </div>
         {result?.pending.length ? (
@@ -857,10 +896,40 @@ export function ParameterForm({
           taxBase: string(f, "taxBase") || null,
           managementBase: string(f, "managementBase") || null,
           reviewDays: Number(f.get("reviewDays")),
+          salesMarginTarget: nullable(f.get("salesMarginTarget")),
+          enforceSalesMargin: f.get("enforceSalesMargin") === "on",
         });
       }}
     >
       <div className="form-grid">
+        <Field
+          label="Meta de margem sobre a venda (%)"
+          hint="A margem precisa superar a meta. Exatamente 40% não atende à meta de 40%."
+        >
+          <input
+            name="salesMarginTarget"
+            aria-label="Meta de margem sobre a venda (%)"
+            type="number"
+            min={0}
+            max={99.999999}
+            step="0.000001"
+            required
+            defaultValue={initial.salesMarginTarget ?? "40"}
+          />
+        </Field>
+        <label className="checkbox-line field wide">
+          <input
+            name="enforceSalesMargin"
+            type="checkbox"
+            defaultChecked={initial.enforceSalesMargin !== false}
+          />
+          Bloquear aprovação e aplicação abaixo da meta de margem
+        </label>
+        <p className="small muted field wide">
+          Desative para apenas alertar e sugerir o preço. Dados financeiros
+          pendentes continuam exigindo conferência antes da aplicação. Esta
+          regra vale para esta loja.
+        </p>
         {[
           ["minMargin", "Margem mínima (%)"],
           ["desiredMargin", "Margem desejada (%)"],

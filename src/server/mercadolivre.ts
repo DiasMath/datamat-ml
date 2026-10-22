@@ -391,6 +391,7 @@ async function http(
     throw new HttpError(
       429,
       "A consulta atingiu o tempo deste lote; continue a importação para retomar os anúncios restantes",
+      500,
     );
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\"))
     throw new HttpError(422, "Caminho de integração inválido");
@@ -435,6 +436,9 @@ async function http(
           : response.status >= 500
             ? "O Mercado Livre está temporariamente indisponível. Tente novamente em instantes."
             : `Mercado Livre retornou HTTP ${response.status}; confira as permissões da aplicação e tente novamente`,
+      response.status === 429
+        ? retryDelay(response.headers.get("retry-after"))
+        : undefined,
     );
   }
   try {
@@ -869,6 +873,13 @@ async function accessToken(c: Row, rejectedToken?: string): Promise<string> {
     });
     throw e;
   }
+}
+function retryDelay(value: string | null) {
+  const seconds = value == null ? NaN : Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0)
+    return Math.max(1000, seconds * 1000);
+  const date = value == null ? NaN : Date.parse(value);
+  return Number.isFinite(date) ? Math.max(1000, date - Date.now()) : 60000;
 }
 async function api(c: Row, path: string) {
   const batch = readBatch.getStore();
@@ -1366,6 +1377,7 @@ async function syncListingsInside(
       throw new HttpError(
         429,
         "Já existe uma sincronização desta loja em andamento",
+        5000,
       );
     c = current;
     await put("connections", c.id, {
@@ -1675,7 +1687,11 @@ async function syncListingsInside(
           : {}),
       });
     });
-    throw new HttpError(e instanceof HttpError ? e.status : 502, message);
+    throw new HttpError(
+      e instanceof HttpError ? e.status : 502,
+      message,
+      e instanceof HttpError ? e.retryAfterMs : undefined,
+    );
   }
 }
 async function connectedOffer(actor: Actor, offerId: string) {

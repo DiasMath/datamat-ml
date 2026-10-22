@@ -280,7 +280,7 @@ test("an ML consultation error does not change the selected store, filters or ta
   try {
     const target =
       "/configuracoes?store=juntos-data&configTab=integrations&q=produto&page=2";
-    await page.route("**/api/connections/*", async (route) => {
+    await page.route("**/api/catalog/refresh?*", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       await route.fulfill({
         status: 502,

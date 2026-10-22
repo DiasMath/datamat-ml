@@ -10,6 +10,8 @@ import {
   type Parameters,
 } from "../src/domain/finance";
 import { parseCsv, csvCell } from "../src/domain/csv";
+import { purchaseCost } from "../src/domain/purchase-cost";
+import { effectiveMlCosts } from "../src/domain/ml-financial";
 const p: Parameters = {
   minMargin: "10",
   desiredMargin: "20",
@@ -29,6 +31,99 @@ const c: Costs = {
   other: "0",
   otherDescription: "",
 };
+test("selling-price margin is strict, separate from subsidy revenue, and suggests the next valid cent", () => {
+  const costs = {
+    ...c,
+    goods: "60",
+    mlPercent: "0",
+    mlFixed: "0",
+    shipping: "0",
+    packaging: "0",
+    advertising: "0",
+  };
+  const parameters = { ...p, taxRate: "0", managementRate: "0" };
+  const boundary = calculate("100", costs, parameters);
+  assert.equal(boundary.saleMarginPercent, "40.0000");
+  assert.equal(boundary.salesMarginMet, false);
+  assert.equal(boundary.enforceSalesMargin, true);
+  assert.equal(boundary.salesTargetPrice, "100.01");
+  assert.equal(boundary.policyMinPrice, "100.01");
+  assert.equal(boundary.policyMaxDiscount, null);
+  assert.equal(calculate("100.01", costs, parameters).salesMarginMet, true);
+  const fractional = calculate(
+    "100",
+    { ...costs, goods: "59.999999" },
+    parameters,
+  );
+  assert.equal(fractional.saleMarginPercent, "40.0000");
+  assert.equal(
+    fractional.salesMarginMet,
+    true,
+    "compare precise amounts, never rounded display percentages",
+  );
+  const promo = calculate(
+    "100",
+    costs,
+    parameters,
+    simulationSchema.parse({
+      mode: "price",
+      price: "100",
+      mlContribution: "10",
+    }),
+  );
+  assert.equal(promo.saleMarginPercent, "50.0000");
+  assert.equal(promo.marginPercent, "45.4545");
+  assert.equal(
+    promo.salesTargetPrice,
+    "100.01",
+    "standing suggested price excludes temporary subsidies",
+  );
+  assert.equal(calculate("100", emptyCosts(), parameters).salesMarginMet, null);
+  assert.equal(
+    calculate("100", { ...costs, mlPercent: "65" }, parameters)
+      .salesTargetPrice,
+    null,
+  );
+  assert.throws(() =>
+    parameterSchema.parse({ ...parameters, salesMarginTarget: "100" }),
+  );
+});
+test("supplier cost inheritance respects kits, alternative variants, manual zero and unknown costs", () => {
+  const products = new Map([
+    ["a", { purchase_cost: "12.345678" }],
+    ["b", { purchase_cost: "0" }],
+    ["c", { purchase_cost: null }],
+  ]);
+  const unit = { id: "u", type: "unit", product_id: "a" };
+  assert.equal(purchaseCost(unit, products).amount, "12.345678");
+  const components = [
+    { offer_id: "k", product_id: "a", quantity: 3 },
+    { offer_id: "k", product_id: "b", quantity: 2 },
+  ];
+  const kit = purchaseCost({ id: "k", type: "kit" }, products, components);
+  assert.equal(kit.amount, "37.037034");
+  assert.equal(
+    purchaseCost({ id: "k", type: "variation" }, products, components).amount,
+    null,
+  );
+  assert.equal(
+    purchaseCost({ id: "k", type: "kit" }, products, [
+      ...components,
+      { offer_id: "k", product_id: "c", quantity: 1 },
+    ]).amount,
+    null,
+  );
+  const enriched = { ...unit, purchaseCost: purchaseCost(unit, products) };
+  assert.equal(effectiveMlCosts(emptyCosts(), enriched).goods, "12.345678");
+  assert.equal(
+    effectiveMlCosts({ ...emptyCosts(), goods: "0" }, enriched).goods,
+    "0",
+  );
+  assert.equal(
+    effectiveMlCosts({ ...emptyCosts(), goods: "99" }, enriched).goods,
+    "99",
+  );
+});
 test("contribution uses decimal precision and all independent costs", () => {
   const r = calculate("100", c, p);
   assert.equal(r.total, "66.00");

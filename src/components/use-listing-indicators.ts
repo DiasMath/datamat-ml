@@ -5,6 +5,7 @@ import {
   LISTING_INDICATOR_BATCH_SIZE,
 } from "../domain/listing-batches";
 import { jsonRequest } from "./ui";
+import { synchronizeCatalog } from "./catalog-sync";
 import { useToast } from "./toasts";
 import type { IndicatorIssue } from "./listing-indicator-issues";
 
@@ -14,6 +15,7 @@ type Result = {
   metrics: boolean;
   fees: boolean;
   errors?: string[];
+  retryAfterMs?: number;
 };
 export default function useListingIndicators({
   scope,
@@ -33,6 +35,7 @@ export default function useListingIndicators({
     done: number;
     total: number;
     phase?: "catalog" | "indicators";
+    waitingMs?: number;
   } | null>(null);
   const [issues, setIssues] = useState<IndicatorIssue[]>([]);
   const status = useRef(new Map<string, IndicatorIssue>());
@@ -85,68 +88,25 @@ export default function useListingIndicators({
       total: pending.length,
       phase: needsCatalog ? "catalog" : "indicators",
     });
-    const deadline = Date.now() + 180000;
     let catalogSynced = false;
     try {
       if (needsCatalog) {
-        let complete = false,
-          consulted = 0;
-        for (let step = 0; step < 100 && Date.now() < deadline; step++) {
-          const catalog = await jsonRequest<{
-            partial: boolean;
-            results: {
-              storeId: string;
-              status: string;
-              processed?: number;
-              has_more?: boolean;
-            }[];
-          }>(
-            "/api/catalog/refresh?" + new URLSearchParams({ store }),
-            {},
-            "POST",
-            controller.signal,
-            "foreground",
-            Math.min(65000, Math.max(1, deadline - Date.now())),
-          );
-          if (request.current !== controller) return;
-          if (
-            !Array.isArray(catalog.results) ||
-            !catalog.results.length ||
-            catalog.results.some((r) => r.storeId !== store)
-          )
-            throw new Error(
-              "O catálogo da loja não foi consultado. Confira a conexão do ML.",
-            );
-          if (catalog.results.some((r) => r.status === "running"))
-            throw new Error(
-              "Esta loja já está sincronizando. Aguarde a conclusão antes de atualizar novamente.",
-            );
-          if (catalog.results.some((r) => r.status !== "confirmed"))
-            throw new Error(
-              "O ML não confirmou a consulta do catálogo. Tente novamente.",
-            );
-          consulted += catalog.results.reduce(
-            (sum, r) => sum + (r.processed || 0),
-            0,
-          );
-          setProgress({ done: consulted, total: 0, phase: "catalog" });
-          if (!catalog.partial && catalog.results.every((r) => !r.has_more)) {
-            complete = true;
-            break;
-          }
-          if (catalog.results.every((r) => !r.processed)) break;
-        }
-        if (!complete)
-          throw new Error(
-            "Catálogo parcialmente atualizado. Clique novamente para continuar as páginas pendentes.",
-          );
+        await synchronizeCatalog(
+          store,
+          controller.signal,
+          ({ processed, waitingMs }) => {
+            if (request.current === controller)
+              setProgress({
+                done: processed,
+                total: 0,
+                phase: "catalog",
+                waitingMs,
+              });
+          },
+        );
       }
       if (needsCatalog) catalogComplete.current = true;
       catalogSynced = needsCatalog;
-      if (Date.now() >= deadline)
-        throw new Error(
-          "Catálogo atualizado. Consulte novamente para concluir os indicadores pendentes.",
-        );
       setProgress({ done: 0, total: pending.length, phase: "indicators" });
       const outcome = await runListingBatches<Result>(
         pending,
@@ -171,7 +131,7 @@ export default function useListingIndicators({
             "POST",
             controller.signal,
             "foreground",
-            Math.min(65000, Math.max(1, deadline - Date.now())),
+            65000,
           );
           return result.results.map((row) => {
             const current = status.current.get(row.id);
@@ -194,7 +154,13 @@ export default function useListingIndicators({
           resume.current = remaining.length ? { key, ids: remaining } : null;
         },
         {
-          maxDurationMs: Math.max(1, deadline - Date.now()),
+          signal: controller.signal,
+          batchDelayMs: 500,
+          retryDeferred: true,
+          onWait: (waitingMs) =>
+            setProgress((previous) =>
+              previous ? { ...previous, waitingMs } : null,
+            ),
           batchSize: LISTING_INDICATOR_BATCH_SIZE,
         },
       );

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock, Layers, LoaderCircle, RefreshCw } from "lucide-react";
 import { Modal, jsonRequest, money } from "./ui";
+import { synchronizeCatalog } from "./catalog-sync";
 import { ListingHint } from "./listing-information";
 import { runListingBatches } from "../domain/listing-batches";
 type Row = Record<string, any>;
@@ -128,71 +129,20 @@ export default function ListingGlobalPanel({
           `${outcome.successful} consultas concluídas${outcome.failed ? ` · ${outcome.failed} indisponíveis` : ""}${outcome.pendingIds.length ? ` · ${outcome.pendingIds.length} pendentes; continue a consulta` : ""}.${outcome.error ? ` ${outcome.error}` : ""}`,
         );
       } else {
-        const deadline = Date.now() + 180000;
-        let consulted = 0;
-        for (let step = 0; step < 20; step++) {
-          if (Date.now() >= deadline) {
+        const result = await synchronizeCatalog(
+          store,
+          controller.signal,
+          ({ processed, waitingMs }) => {
             setProgress(
-              "Consulta parcial. Continue a atualização para concluir os anúncios pendentes.",
+              waitingMs
+                ? `Aguardando o ML · ${processed} anúncios consultados · retomada automática…`
+                : `Atualizando o catálogo · ${processed} anúncios consultados…`,
             );
-            break;
-          }
-          setProgress(
-            `Atualizando o catálogo · ${consulted} anúncios consultados · etapa ${step + 1}…`,
-          );
-          const result = await jsonRequest(
-            "/api/catalog/refresh?store=" + encodeURIComponent(store),
-            completedSyncStores.current.length
-              ? { completedStoreIds: completedSyncStores.current }
-              : {},
-            "POST",
-            controller.signal,
-            "foreground",
-            65000,
-          );
-          if (request.current !== controller) return;
-          if (!Array.isArray(result.results))
-            throw new Error(
-              "A consulta retornou um lote incompleto. Continue a atualização para retomar.",
-            );
-          for (const row of result.results) {
-            consulted += row.processed || 0;
-            if (row.status === "confirmed" && !row.has_more)
-              completedSyncStores.current = [
-                ...new Set([...completedSyncStores.current, row.storeId]),
-              ];
-          }
-          if (result.results.some((r: Row) => r.status === "running")) {
-            setProgress(
-              "Já existe uma sincronização em andamento. Os dados serão atualizados ao concluir.",
-            );
-            break;
-          }
-          if (!result.partial) {
-            completedSyncStores.current = [];
-            setProgress(
-              result.results.length
-                ? `Consulta do catálogo concluída · ${consulted} anúncios consultados. Tarifas e métricas possuem consultas próprias.`
-                : "Nenhuma loja conectada para consultar.",
-            );
-            break;
-          }
-          if (
-            !result.results.length ||
-            result.results.every(
-              (r: Row) => r.status === "confirmed" && r.processed === 0,
-            )
-          ) {
-            setProgress(
-              "A consulta não avançou. Os dados já atualizados foram mantidos; tente continuar em instantes.",
-            );
-            break;
-          }
-          if (step === 19)
-            setProgress(
-              "Consulta parcial. Continue a atualização para concluir as próximas páginas.",
-            );
-        }
+          },
+        );
+        setProgress(
+          `Consulta do catálogo concluída · ${result.processed} anúncios consultados. Tarifas e métricas possuem consultas próprias.`,
+        );
       }
     } catch (error) {
       if (request.current === controller)

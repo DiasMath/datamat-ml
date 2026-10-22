@@ -200,13 +200,16 @@ export function listingRowInformation(
       {
         label: "Margem de contribuição",
         value: financial?.ready
-          ? `${money(o.calculation.margin)} · ${percent(o.calculation.marginPercent)}`
+          ? `${money(o.calculation.margin)} · ${percent(o.calculation.saleMarginPercent)}`
           : "Complete os custos para calcular",
       },
-      { label: "Preço mínimo estimado", value: money(o.calculation.minPrice) },
+      {
+        label: "Preço mínimo estimado",
+        value: money(o.calculation.policyMinPrice),
+      },
       {
         label: "Desconto máximo estimado",
-        value: listingDiscountLimit(o.calculation.maxDiscount),
+        value: listingDiscountLimit(o.calculation.policyMaxDiscount),
       },
       ...(o.calculation.pending || []).map((label: string) => ({
         label,

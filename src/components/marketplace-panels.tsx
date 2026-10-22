@@ -279,8 +279,8 @@ function CatalogCompetition({
   };
   const belowFloor =
     snapshot?.priceToWin != null &&
-    detail.calculation.minPrice != null &&
-    new Decimal(snapshot.priceToWin).lt(detail.calculation.minPrice);
+    detail.calculation.policyMinPrice != null &&
+    new Decimal(snapshot.priceToWin).lt(detail.calculation.policyMinPrice);
   return (
     <section className="panel">
       <div className="panel-heading">

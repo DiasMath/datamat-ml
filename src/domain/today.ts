@@ -149,6 +149,14 @@ export function todayQueue(
           action: "Revisar preço",
           tab: "costs",
         });
+      else if (costs.salesMarginMet === false)
+        signals.push({
+          severity: "review",
+          reason: "Margem abaixo da meta sobre a venda",
+          evidence: `Margem estimada ${costs.saleMarginPercent}% · meta acima de ${costs.salesMarginTarget}%.`,
+          action: "Revisar preço",
+          tab: "costs",
+        });
       else if (
         costs.marginPercent != null &&
         costs.minMargin != null &&
@@ -255,7 +263,9 @@ export function todayQueue(
       impact: c?.revenue || "0",
       price: offer.ml?.variablePrices ? null : (offer.price ?? null),
       margin: !offer.costs_stale ? (costs?.margin ?? null) : null,
-      marginPercent: !offer.costs_stale ? (costs?.marginPercent ?? null) : null,
+      marginPercent: !offer.costs_stale
+        ? (costs?.saleMarginPercent ?? costs?.marginPercent ?? null)
+        : null,
       minPrice: !offer.costs_stale ? (costs?.minPrice ?? null) : null,
       stock: fresh ? (offer.ml?.availableQuantity ?? null) : null,
       status: offer.status,

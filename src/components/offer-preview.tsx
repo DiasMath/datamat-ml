@@ -241,12 +241,14 @@ export default function OfferPreview({
                       <div>
                         <span>Margem estimada</span>
                         <strong>
-                          {percent(detail.calculation.marginPercent)}
+                          {percent(detail.calculation.saleMarginPercent)}
                         </strong>
                       </div>
                       <div>
                         <span>Preço mínimo</span>
-                        <strong>{money(detail.calculation.minPrice)}</strong>
+                        <strong>
+                          {money(detail.calculation.policyMinPrice)}
+                        </strong>
                       </div>
                     </div>
                     {detail.calculation.pending.length > 0 && (

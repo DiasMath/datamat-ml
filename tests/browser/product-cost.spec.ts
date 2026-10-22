@@ -43,7 +43,7 @@ test("supplier cost registration, live inherited calculations and per-store bloc
     .getByLabel("Nome do produto *")
     .fill("Produto custo fornecedor UI");
   await dialog.getByLabel("Título do anúncio *").fill("CUSTO-FORNECEDOR-UI");
-  await dialog.getByLabel("Custo de compra do fornecedor (R$)").fill("20");
+  await dialog.getByLabel("Preço de custo (R$)").fill("20");
   await dialog.getByLabel("Preço atual (R$)").fill("100");
   const saved = page.waitForResponse(
     (r) => r.url().endsWith("/api/offers") && r.request().method() === "POST",
@@ -62,7 +62,7 @@ test("supplier cost registration, live inherited calculations and per-store bloc
     "Meta atendida",
   );
   await expect(
-    page.getByLabel("Mercadoria · oferta inteira", { exact: true }),
+    page.getByLabel("Mercadoria neste anúncio (R$)", { exact: true }),
   ).toHaveValue("");
   await expect(
     page
@@ -92,8 +92,10 @@ test("supplier cost registration, live inherited calculations and per-store bloc
   await page
     .getByRole("button", { name: "Editar cadastro", exact: true })
     .click();
-  await dialog.getByLabel("Editar dados e custo de compra do produto").check();
-  await dialog.getByLabel("Custo de compra do fornecedor (R$)").fill("30");
+  await dialog
+    .getByLabel("Editar nome, modelo, marca e categoria do produto")
+    .check();
+  await dialog.getByLabel("Preço de custo (R$)").fill("30");
   await dialog
     .getByRole("button", { name: "Salvar cadastro", exact: true })
     .click();
@@ -202,4 +204,108 @@ test("Excel Products sheet changes shared purchase cost once while preserving a 
   expect(first.costs.goods).toBeNull();
   expect(second.costs.goods).toBe("0");
   expect(second.calculation.breakdown.goods).toBe("0.00");
+});
+
+test("product purchase cost is visible on the listing overview and edited directly without a promotion or listing form", async ({
+  page,
+  request,
+}) => {
+  await post(request, "/api/parameters/juntos-com", parameters);
+  const created = await post(request, "/api/offers", {
+    storeId: "juntos-com",
+    name: "Produto independente UI",
+    title: "CADASTRO-PRODUTO-INDEPENDENTE",
+    type: "unit",
+    status: "draft",
+    price: "100",
+  });
+  await post(request, `/api/offers/${created.id}/costs`, costs);
+  await page.goto(`/anuncios/${created.id}?store=juntos-com`);
+  await expect(
+    page.getByRole("heading", {
+      name: "Identificação do anúncio",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const product = page.getByRole("region", {
+    name: "Cadastro do produto",
+    exact: true,
+  });
+  await expect(product).toContainText("Preço de custo do produto");
+  await expect(product).toContainText("Não informado");
+  await product
+    .getByRole("button", { name: "Editar produto", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Cadastro do produto",
+    exact: true,
+  });
+  await expect(dialog.getByLabel("Preço de custo (R$)")).toBeVisible();
+  await expect(dialog.getByRole("checkbox")).toHaveCount(0);
+  await dialog.getByLabel("Preço de custo (R$)").fill("35.75");
+  await dialog
+    .getByRole("button", { name: "Salvar produto", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(product).toContainText("R$ 35,75");
+  const detail = await (await request.get(`/api/offers/${created.id}`)).json();
+  expect(detail.offer.product_purchase_cost).toBe("35.75");
+  expect(detail.offer.price).toBe("100");
+  expect(detail.costs.goods).toBeNull();
+  expect(detail.calculation.margin).toBe("64.25");
+  // The announcement editor also exposes the product cost without any checkbox.
+  await page
+    .getByRole("button", { name: "Editar cadastro", exact: true })
+    .click();
+  const listingDialog = page.getByRole("dialog", {
+    name: "Editar anúncio",
+    exact: true,
+  });
+  await expect(listingDialog.getByLabel("Preço de custo (R$)")).toHaveValue(
+    "35.75",
+  );
+  await expect(
+    listingDialog.getByLabel(
+      "Editar nome, modelo, marca e categoria do produto",
+    ),
+  ).not.toBeChecked();
+  await listingDialog.getByLabel("Preço de custo (R$)").fill("40");
+  await listingDialog
+    .getByRole("button", { name: "Salvar cadastro", exact: true })
+    .click();
+  await expect(listingDialog).not.toBeVisible();
+  await expect(product).toContainText("R$ 40,00");
+  await page.reload();
+  await expect(product).toContainText("R$ 40,00");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page.screenshot({
+    path: "test-results/product-registration-mobile.png",
+    fullPage: true,
+  });
+  await page.goto(
+    "/anuncios?" +
+      new URLSearchParams({ store: "juntos-com", q: created.title }),
+  );
+  await page
+    .getByRole("button", { name: "Prévia de " + created.title, exact: true })
+    .click();
+  const preview = page.locator(".offer-preview");
+  await preview
+    .getByRole("button", { name: "Editar produto", exact: true })
+    .click();
+  const productDialog = page.getByRole("dialog", {
+    name: "Cadastro do produto",
+    exact: true,
+  });
+  await productDialog.getByLabel("Preço de custo (R$)").fill("45");
+  await productDialog
+    .getByRole("button", { name: "Salvar produto", exact: true })
+    .click();
+  await expect(productDialog).not.toBeVisible();
+  await expect(
+    preview.getByRole("region", { name: "Cadastro do produto" }),
+  ).toContainText("R$ 45,00");
 });

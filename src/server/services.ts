@@ -46,6 +46,7 @@ import {
 } from "../domain/finance";
 import {
   offerSchema,
+  productSchema,
   taskSchema,
   noteSchema,
   storeSchema,
@@ -226,42 +227,18 @@ async function product(actor: Actor, p: z.infer<typeof offerSchema>) {
     const existing = await get("products", p.productId);
     if (!existing || existing.organization_id !== actor.organization_id)
       throw new HttpError(404, "Produto não encontrado");
-    if (p.updateProduct) {
-      if (p.productVersion !== (existing.version || 1))
-        throw new HttpError(
-          409,
-          "Produto alterado por outra operação; recarregue o cadastro",
-        );
-      const offers = await productOffers(actor, existing.id);
-      const updated = await put("products", existing.id, {
-        ...existing,
+    if (p.updateProduct)
+      await updateProductInside(actor, existing, {
         name: p.name,
-        model: nullable(p.model),
-        brand_id: await lookup(actor, "brands", p.brand),
-        category_id: await lookup(actor, "categories", p.category),
-        ...(p.purchaseCost !== undefined
-          ? { purchase_cost: p.purchaseCost }
-          : {}),
-        version: (existing.version || 1) + 1,
-        updated_at: now(),
+        model: p.model,
+        brand: p.brand,
+        category: p.category,
+        purchaseCost:
+          p.purchaseCost !== undefined
+            ? p.purchaseCost
+            : (existing.purchase_cost ?? null),
+        version: p.productVersion,
       });
-      for (const offer of offers) {
-        await put("offers", offer.id, {
-          ...offer,
-          version: offer.version + 1,
-          updated_at: now(),
-        });
-        await log(
-          actor,
-          offer.store_id,
-          offer.id,
-          "product.update",
-          existing,
-          updated,
-          "Correção dos dados compartilhados do produto",
-        );
-      }
-    }
     return p.productId;
   }
   const productId = id();
@@ -275,6 +252,59 @@ async function product(actor: Actor, p: z.infer<typeof offerSchema>) {
     purchase_cost: p.purchaseCost ?? null,
   });
   return productId;
+}
+export async function saveProduct(
+  actor: Actor,
+  productId: string,
+  payload: unknown,
+) {
+  canWrite(actor);
+  const p = productSchema.parse(payload);
+  return transaction(async () => {
+    const existing = await get("products", productId);
+    if (!existing || existing.organization_id !== actor.organization_id)
+      throw new HttpError(404, "Produto não encontrado");
+    return updateProductInside(actor, existing, p);
+  });
+}
+async function updateProductInside(
+  actor: Actor,
+  existing: Row,
+  p: Omit<z.infer<typeof productSchema>, "version"> & { version?: number },
+) {
+  if (p.version !== (existing.version || 1))
+    throw new HttpError(
+      409,
+      "Produto alterado por outra operação; recarregue o cadastro",
+    );
+  const offers = await productOffers(actor, existing.id);
+  const updated = await put("products", existing.id, {
+    ...existing,
+    name: p.name,
+    model: nullable(p.model),
+    brand_id: await lookup(actor, "brands", p.brand),
+    category_id: await lookup(actor, "categories", p.category),
+    purchase_cost: p.purchaseCost,
+    version: (existing.version || 1) + 1,
+    updated_at: now(),
+  });
+  for (const offer of offers) {
+    await put("offers", offer.id, {
+      ...offer,
+      version: offer.version + 1,
+      updated_at: now(),
+    });
+    await log(
+      actor,
+      offer.store_id,
+      offer.id,
+      "product.update",
+      existing,
+      updated,
+      "Cadastro e preço de custo do produto atualizados",
+    );
+  }
+  return updated;
 }
 async function productOffers(actor: Actor, productId: string) {
   const [direct, components] = await Promise.all([

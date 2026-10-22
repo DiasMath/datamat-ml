@@ -334,7 +334,7 @@ function CatalogCompetition({
       )}
       <p className="small muted">
         A consulta mostra a disputa observada pelo ML. O preço indicativo pode
-        mudar com a logística e as condições da oferta; não garante a primeira
+        mudar com a logística e as condições do anúncio; não garante a primeira
         posição. Confira custos e tarifas antes de preparar uma proposta.
       </p>
     </section>

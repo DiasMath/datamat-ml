@@ -137,7 +137,7 @@ test("empty costs never masquerade as zero or yield limits", () => {
   const r = calculate("100", emptyCosts(), p);
   assert.equal(r.margin, null);
   assert.equal(r.minPrice, null);
-  assert.ok(r.pending.includes("Mercadoria (oferta inteira)"));
+  assert.ok(r.pending.includes("Custo de mercadoria do anúncio"));
 });
 test("explicit zero overrides are preserved, undefined inherits and null stays pending", () => {
   assert.equal(

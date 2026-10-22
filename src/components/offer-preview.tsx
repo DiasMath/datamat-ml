@@ -1,4 +1,5 @@
 "use client";
+import ProductRegistration from "./product-registration";
 import { useEffect, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -232,6 +233,15 @@ export default function OfferPreview({
                     </div>
                   </section>
                   <section className="panel preview-finance">
+                    <ProductRegistration
+                      offer={detail.offer}
+                      canEdit={canEdit}
+                      disabled={busy || dirty}
+                      onSaved={() => {
+                        setRevision((n) => n + 1);
+                        onChanged();
+                      }}
+                    />
                     <h3>Com os custos cadastrados</h3>
                     <div className="preview-finance-grid">
                       <div>
@@ -294,6 +304,10 @@ export default function OfferPreview({
                       detail.parametersRevision
                     }
                     detail={detail}
+                    onProductSaved={() => {
+                      setRevision((n) => n + 1);
+                      onChanged();
+                    }}
                     busy={busy || loading}
                     onDirty={() => setDirty(true)}
                     onSaveCosts={(p) =>

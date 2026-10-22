@@ -62,7 +62,7 @@ export function listingQuality(offer: Record<string, any>): QualityIssue[] {
     add(
       "description",
       "Descrição não disponível no cadastro",
-      "Conferir e registrar características e conteúdo da oferta.",
+      "Conferir e registrar características e conteúdo do anúncio.",
     );
   const ml = offer.ml;
   if (ml) {

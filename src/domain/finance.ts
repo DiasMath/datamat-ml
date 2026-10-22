@@ -90,7 +90,7 @@ export const emptyCosts = (): Costs => ({
   otherDescription: "",
 });
 const labels: Record<string, string> = {
-  goods: "Mercadoria (oferta inteira)",
+  goods: "Custo de mercadoria do anúncio",
   mlPercent: "Tarifa percentual ML",
   mlFixed: "Cobrança fixa ML",
   shipping: "Frete da loja",

@@ -20,7 +20,7 @@ type Props = {
   onDirty: () => void;
 };
 export const costFields: Record<string, string> = {
-  goods: "Mercadoria · oferta inteira",
+  goods: "Mercadoria neste anúncio (R$)",
   mlPercent: "Tarifa ML (%)",
   mlFixed: "Cobrança fixa ML (R$)",
   shipping: "Frete da loja (R$)",
@@ -43,14 +43,15 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    const purchaseCost = nullable(f.get("purchaseCost"));
+    const purchaseChanged =
+      !!productId && purchaseCost !== (product?.purchase_cost ?? null);
     onSave({
       storeId: string(f, "storeId"),
       productId: productId || null,
-      updateProduct: !!productId && editProduct,
+      updateProduct: !!productId && (editProduct || purchaseChanged),
       productVersion: product?.version || 1,
-      ...(!productId || editProduct
-        ? { purchaseCost: nullable(f.get("purchaseCost")) }
-        : {}),
+      purchaseCost,
       name: (!editProduct && product?.name) || string(f, "name"),
       model: (!editProduct && product?.model) || string(f, "model") || null,
       brand: (!editProduct && product?.brand) || string(f, "brand") || null,
@@ -116,7 +117,7 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
               checked={editProduct}
               onChange={(e) => setEditProduct(e.target.checked)}
             />
-            Editar dados e custo de compra do produto
+            Editar nome, modelo, marca e categoria do produto
           </label>
         )}
         {productId && editProduct && (
@@ -160,31 +161,23 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
                 defaultValue={product?.category || initial?.category}
               />
             </Field>
-            <Field
-              label="Custo de compra do fornecedor (R$)"
-              hint="Por unidade do produto. Vazio fica pendente; 0 representa custo zero confirmado."
-            >
-              <input
-                key={productId || "new"}
-                name="purchaseCost"
-                aria-label="Custo de compra do fornecedor (R$)"
-                type="number"
-                min={0}
-                max={1000000000}
-                step="0.000001"
-                defaultValue={
-                  product?.purchase_cost ?? initial?.product_purchase_cost ?? ""
-                }
-              />
-            </Field>
           </>
         )}
-        {productId && !editProduct && (
-          <p className="small muted field wide">
-            Custo do produto: {money(product?.purchase_cost)}. Usado nos
-            anúncios sem custo específico de mercadoria.
-          </p>
-        )}
+        <Field
+          label="Preço de custo (R$)"
+          hint="Preço pago ao fornecedor por unidade. Pertence ao produto e vale para todos os anúncios vinculados, independentemente de promoções."
+        >
+          <input
+            key={productId || "new"}
+            name="purchaseCost"
+            aria-label="Preço de custo (R$)"
+            type="number"
+            min={0}
+            max={1000000000}
+            step="0.000001"
+            defaultValue={product?.purchase_cost ?? ""}
+          />
+        </Field>
         <Field label="Título do anúncio *" wide>
           <AutocompleteInput
             suggestions={data.offerChoices.map((o: Row) => o.title)}
@@ -206,7 +199,7 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
         <Field label="Código Mercado Livre">
           <input name="mlId" defaultValue={initial?.ml_id} placeholder="MLB…" />
         </Field>
-        <Field label="Tipo de oferta">
+        <Field label="Composição do anúncio">
           <select
             value={type}
             onChange={(e) => {
@@ -359,7 +352,7 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
           </button>
           <p className="muted small">
             Cadastre primeiro os produtos dos componentes. O custo de mercadoria
-            é o valor da oferta inteira.
+            é o valor de todas as unidades vendidas no anúncio.
           </p>
         </div>
       )}
@@ -449,7 +442,15 @@ export function CostsForm({
       </div>
       <div className="form-grid">
         {Object.entries(costFields).map(([key, label]) => (
-          <Field label={label} key={key}>
+          <Field
+            label={label}
+            key={key}
+            hint={
+              key === "goods"
+                ? "Opcional: substitui o custo herdado apenas neste anúncio. O preço de custo do produto está no cadastro acima."
+                : undefined
+            }
+          >
             <input
               name={key}
               aria-label={label}
@@ -569,7 +570,7 @@ function Override({
           onChange={(e) => setMode(e.target.value)}
         >
           <option value="inherit">Usar parâmetro da loja</option>
-          <option value="override">Substituir nesta oferta</option>
+          <option value="override">Substituir neste anúncio</option>
         </select>
         {mode === "override" && (
           <input

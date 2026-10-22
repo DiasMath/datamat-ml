@@ -94,7 +94,7 @@ test("Precificação finds products by SKU or name locally and keeps the selecte
     if (r.url().includes("/api/workspace")) reads++;
   });
   await input.fill("sku0009");
-  const select = page.getByLabel("Selecione uma oferta");
+  const select = page.getByLabel("Selecione um anúncio");
   await expect(select.locator(`option[value="${a.id}"]`)).toHaveCount(1);
   await expect(select.locator(`option[value="${b.id}"]`)).toHaveCount(0);
   await select.selectOption(a.id);

@@ -381,7 +381,7 @@ export default function Importer({
               ? "Atualiza o custo compartilhado e exige revisão das propostas afetadas; o histórico é preservado."
               : mode === "update"
                 ? "Atualização dos registros identificados; custos e histórico preservados."
-                : "Novos registros, sem substituir ofertas existentes."}
+                : "Novos registros, sem substituir anúncios existentes."}
           </p>
           <Collection
             id="import"

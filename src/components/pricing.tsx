@@ -544,7 +544,7 @@ export default function Pricing({
             </div>
             <div className="cost-table">
               <div className="comparison-row table-label">
-                <span>Custo por oferta</span>
+                <span>Custos por venda</span>
                 <span>Atual / proposto</span>
               </div>
               {Object.entries(breakdownLabels).map(([key, label]) => (

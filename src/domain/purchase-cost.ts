@@ -31,7 +31,7 @@ export function purchaseCost(
         source: "variable",
         productIds,
         reason:
-          "Variações com custos diferentes: informe o custo da oferta individual.",
+          "Variações com custos diferentes: informe o custo do anúncio individual.",
       };
     return { amount: amounts[0]!.toFixed(6), source: "variation", productIds };
   }

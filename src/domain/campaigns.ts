@@ -111,7 +111,7 @@ export function campaignIndicators(
       key: "ctr",
       title: "CTR abaixo de 0,5% na amostra",
       action:
-        "Revisar imagem principal, título e pertinência da oferta. Limiar de triagem, não uma meta oficial do ML.",
+        "Revisar imagem principal, título e pertinência do anúncio. Limiar de triagem, não uma meta oficial do ML.",
     });
   if ((row.clicks || 0) >= 30 && row.orders === 0)
     insights.push({

@@ -1423,3 +1423,62 @@ test("Excel product-cost imports validate shared versions, preserve overrides an
   assert.equal(lockPreview.valid, false);
   assert.match(lockPreview.rows[0].errors.join(" "), /andamento/);
 });
+
+test("product registration updates supplier cost independently from listings, promotions and shipping", async () => {
+  const { actor, store, unit, inherited } = await pricingFixture();
+  const related = await s.saveOffer(
+    actor,
+    offer(store.id, { productId: unit.product_id }),
+  );
+  await s.saveCosts(actor, related.id, { ...inherited, goods: "0" });
+  const before = await s.getOffer(actor, unit.id);
+  const saved = await s.saveProduct(actor, unit.product_id, {
+    name: "Produto independente",
+    model: "Fornecedor-1",
+    brand: "Marca A",
+    category: "Categoria A",
+    purchaseCost: "35.750001",
+    version: 1,
+  });
+  assert.equal(saved.purchase_cost, "35.750001");
+  assert.equal(saved.version, 2);
+  const after = await s.getOffer(actor, unit.id);
+  assert.equal(after.price, before.price);
+  assert.equal(after.status, before.status);
+  assert.equal(after.product_id, unit.product_id);
+  assert.equal(after.product_name, "Produto independente");
+  assert.equal(after.version, before.version + 1);
+  assert.equal(
+    (await s.offerDetail(actor, unit.id)).calculation.breakdown.goods,
+    "35.75",
+  );
+  assert.equal((await s.offerDetail(actor, related.id)).costs.goods, "0");
+  await assert.rejects(
+    s.saveProduct(actor, unit.product_id, {
+      name: "Desatualizado",
+      purchaseCost: "1",
+      version: 1,
+    }),
+    /recarregue/,
+  );
+  await assert.rejects(
+    s.saveProduct({ ...actor, role: "viewer" }, unit.product_id, {
+      name: "Consulta",
+      purchaseCost: "1",
+      version: 2,
+    }),
+    /somente de consulta/,
+  );
+  await assert.rejects(
+    s.saveProduct({ ...actor, stores: [] }, unit.product_id, {
+      name: "Sem loja",
+      purchaseCost: "1",
+      version: 2,
+    }),
+    /Loja não encontrada/,
+  );
+  assert.equal(
+    (await get("products", unit.product_id))!.purchase_cost,
+    "35.750001",
+  );
+});

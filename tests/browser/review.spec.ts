@@ -49,7 +49,9 @@ test("UI creates, edits and deletes offers and shared product metadata in Firest
     .getByRole("button", { name: "Rascunho CRUD UI", exact: true })
     .click();
   await page.getByRole("button", { name: "Editar cadastro" }).click();
-  await modal.getByLabel("Editar dados e custo de compra do produto").check();
+  await modal
+    .getByLabel("Editar nome, modelo, marca e categoria do produto")
+    .check();
   await modal.getByLabel("Nome do produto *").fill("Produto CRUD corrigido");
   await modal.getByLabel("Marca", { exact: true }).fill("Marca corrigida UI");
   await modal.getByLabel("Título do anúncio *").fill("Rascunho corrigido UI");
@@ -347,7 +349,7 @@ test("editing kit and variation components preserves their composition, and chan
     component.product_id,
   );
   await expect(modal.getByLabel("Quantidade 1")).toHaveValue("2");
-  await modal.getByLabel("Tipo de oferta").selectOption("variation");
+  await modal.getByLabel("Composição do anúncio").selectOption("variation");
   await modal.getByLabel("Atributos 1").fill("Cor: preto");
   await modal.getByRole("button", { name: "Salvar cadastro" }).click();
   await expect(modal).not.toBeVisible();
@@ -356,7 +358,7 @@ test("editing kit and variation components preserves their composition, and chan
   expect(detail.components[0].variation).toBe("Cor: preto");
   await page.getByRole("button", { name: "Editar cadastro" }).click();
   await expect(modal.getByLabel("Atributos 1")).toHaveValue("Cor: preto");
-  await modal.getByLabel("Tipo de oferta").selectOption("unit");
+  await modal.getByLabel("Composição do anúncio").selectOption("unit");
   await expect(
     modal.getByLabel("Produto 1", { exact: true }),
   ).not.toBeVisible();

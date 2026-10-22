@@ -526,7 +526,7 @@ test("listing estimates normalize money and hide expired quotes or metrics from 
     assert.equal(current.financialStatus.shipping.source, "manual");
     assert.ok(
       current.financialStatus.ownPending.includes(
-        "Mercadoria (oferta inteira)",
+        "Custo de mercadoria do anúncio",
       ),
     );
     assert.equal(current.metrics7d.paidOrders, 0);

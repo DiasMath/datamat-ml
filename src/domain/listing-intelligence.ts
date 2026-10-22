@@ -105,7 +105,7 @@ export function listingDiagnostics(
       if (!stale && o.ml?.availableQuantity === 0 && o.status === "active")
         issues.push({
           title: "Estoque publicado zerado",
-          action: "Conferir saldo e reposição antes de investir na oferta.",
+          action: "Conferir saldo e reposição antes de investir no anúncio.",
         });
       for (const q of o.quality || [])
         issues.push({ title: q.title, action: q.action });

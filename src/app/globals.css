@@ -2348,6 +2348,46 @@ fieldset.form-grid {
   gap: 12px 20px;
   align-items: center;
 }
+.product-registration {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--panel, #202024);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.product-registration-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.product-registration-identity > div {
+  min-width: 0;
+}
+.product-registration-identity strong {
+  overflow-wrap: anywhere;
+}
+.product-registration-identity span,
+.product-registration-cost span,
+.product-registration-cost small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.product-registration-cost strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 17px;
+  color: var(--text);
+}
+.product-registration > button {
+  flex-shrink: 0;
+}
 .offer-picker .field {
   flex: 1;
 }

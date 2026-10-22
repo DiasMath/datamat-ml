@@ -131,7 +131,7 @@ export default function Competitors({
     },
     {
       id: "offer",
-      label: "Sua oferta",
+      label: "Seu anúncio",
       width: 240,
       value: (r) =>
         data.offerChoices.find((o: Row) => o.id === r.offer_id)?.title,
@@ -211,7 +211,7 @@ export default function Competitors({
         <section className="panel">
           <Empty
             title="Acompanhe os concorrentes que importam"
-            body="Adicione uma oferta comparável ou capture o anúncio com a extensão. O histórico começa na primeira observação."
+            body="Adicione um anúncio comparável ou capture o anúncio com a extensão. O histórico começa na primeira observação."
             action={
               canWrite ? (
                 <button className="button" onClick={() => edit(null)}>
@@ -306,7 +306,7 @@ export default function Competitors({
       {modal !== undefined && (
         <Modal
           title={modal ? "Atualizar referência" : "Adicionar referência"}
-          subtitle="Dados observados; nenhuma alteração será aplicada à sua oferta."
+          subtitle="Dados observados; nenhuma alteração será aplicada à seu anúncio."
           onClose={() => {
             if (!busy) setModal(undefined);
           }}
@@ -416,7 +416,7 @@ export default function Competitors({
                   defaultValue={modal?.threshold || "5"}
                 />
               </Field>
-              <Field label="Vincular à sua oferta" wide>
+              <Field label="Vincular à seu anúncio" wide>
                 <select name="offerId" defaultValue={modal?.offer_id || ""}>
                   <option value="">Sem vínculo</option>
                   {data.offerChoices
@@ -458,7 +458,7 @@ export default function Competitors({
               </details>
             )}
             <div className="form-footer">
-              <span>Compare ofertas equivalentes.</span>
+              <span>Compare anúncios equivalentes.</span>
               {canWrite && <Submit busy={busy} label="Salvar referência" />}
             </div>
           </form>

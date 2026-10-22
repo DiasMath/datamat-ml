@@ -98,7 +98,7 @@ test("every workspace screen shares consultation time in Brasilia and incomplete
     "Atualização parcial; há páginas pendentes. A última sincronização completa continua disponível.",
   );
 });
-test("the same sidebar and navbar survive delayed filters and navigation between modules", async ({
+test("the same sidebar and navbar survive local search and navigation between modules", async ({
   page,
   request,
 }) => {
@@ -115,62 +115,47 @@ test("the same sidebar and navbar survive delayed filters and navigation between
     status: "todo",
     priority: "medium",
   });
-  let release: () => void = () => {},
-    pending = false,
-    navigationReads = 0;
+  let navigationReads = 0,
+    workspaceReads = 0;
   page.on("request", (r) => {
     if (r.url().includes("/api/navigation?")) navigationReads++;
+    if (r.url().includes("/api/workspace?")) workspaceReads++;
   });
-  await page.route("**/api/workspace?*", async (route) => {
-    if (new URL(route.request().url()).searchParams.get("q") === "Segundo") {
-      pending = true;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-    }
-    await route.continue();
+  await page.goto(`/anuncios?store=${storeId}`);
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator(".sidebar .nav-count")).toHaveText("1");
+  await page.evaluate(() => {
+    (window as any).__sidebar = document.querySelector(".sidebar");
+    (window as any).__navbar = document.querySelector(".topbar");
   });
-  try {
-    await page.goto(`/anuncios?store=${storeId}`);
-    await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
-    await expect(page.locator(".sidebar .nav-count")).toHaveText("1");
-    await page.evaluate(() => {
-      (window as any).__sidebar = document.querySelector(".sidebar");
-      (window as any).__navbar = document.querySelector(".topbar");
-    });
-    await expect(page.locator(".user-card, .sidebar-bottom")).toHaveCount(0);
-    const options = await page
-      .getByLabel("Loja global")
-      .locator("option")
-      .count();
-    await page.getByLabel("Buscar anúncios", { exact: true }).fill("Segundo");
-    await page.getByRole("button", { name: "Buscar", exact: true }).click();
-    await expect.poll(() => pending).toBe(true);
-    await expect(page.locator(".user-card, .sidebar-bottom")).toHaveCount(0);
-    await expect(page.locator(".sidebar .nav-count")).toHaveText("1");
-    expect(await page.getByLabel("Loja global").locator("option").count()).toBe(
-      options,
-    );
-    await expect(page.getByLabel("Loja global")).toBeEnabled();
-    await expect(page.locator(".skeleton-layout")).toHaveCount(0);
-    release();
-    await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
-    await expect(page.locator(".offers-panel")).toContainText(
-      "Segundo anúncio",
-    );
-    await page.getByRole("button", { name: "Hoje", exact: true }).click();
-    await expect(page.locator(".today-dashboard")).toBeVisible();
-    expect(
-      await page.evaluate(
-        () =>
-          (window as any).__sidebar === document.querySelector(".sidebar") &&
-          (window as any).__navbar === document.querySelector(".topbar"),
-      ),
-    ).toBe(true);
-    expect(navigationReads).toBe(1);
-  } finally {
-    release();
-  }
+  await expect(page.locator(".user-card, .sidebar-bottom")).toHaveCount(0);
+  const options = await page
+    .getByLabel("Loja global")
+    .locator("option")
+    .count();
+  await page.getByLabel("Buscar anúncios", { exact: true }).fill("Segundo");
+  await page.getByRole("button", { name: "Buscar", exact: true }).click();
+  await expect(page).toHaveURL(/q=Segundo/);
+  expect(workspaceReads).toBe(1);
+  await expect(page.locator(".user-card, .sidebar-bottom")).toHaveCount(0);
+  await expect(page.locator(".sidebar .nav-count")).toHaveText("1");
+  expect(await page.getByLabel("Loja global").locator("option").count()).toBe(
+    options,
+  );
+  await expect(page.getByLabel("Loja global")).toBeEnabled();
+  await expect(page.locator(".skeleton-layout")).toHaveCount(0);
+  await expect(page.locator("main")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator(".offers-panel")).toContainText("Segundo anúncio");
+  await page.getByRole("button", { name: "Hoje", exact: true }).click();
+  await expect(page.locator(".today-dashboard")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__sidebar === document.querySelector(".sidebar") &&
+        (window as any).__navbar === document.querySelector(".topbar"),
+    ),
+  ).toBe(true);
+  expect(navigationReads).toBe(1);
 });
 test("Ctrl+K searches the selected store, opens a preview without changing filters and supports media and full detail", async ({
   page,
@@ -270,7 +255,7 @@ test("preview pricing calculates live, protects drafts and persists costs and a 
   await expect(price).toHaveValue("15");
   await preview
     .getByRole("spinbutton", {
-      name: "Mercadoria · oferta inteira",
+      name: "Mercadoria neste anúncio (R$)",
       exact: true,
     })
     .fill("30");

@@ -356,7 +356,9 @@ test("real unpacked extension pairs with isolated server, calculates live and sa
     await page.getByLabel("Código de pareamento").fill(pairing.token);
     await page.getByRole("button", { name: "Conectar extensão" }).click();
     await expect(page.locator("#connected")).toBeVisible();
-    await page.getByLabel("Sua oferta", { exact: true }).selectOption(offer.id);
+    await page
+      .getByLabel("Seu anúncio", { exact: true })
+      .selectOption(offer.id);
     await expect(page.locator("#margin")).toHaveText("R$ 50,00");
     await page.getByLabel("Preço para simular (R$)").fill("90");
     await expect(page.locator("#margin")).toHaveText("R$ 41,00");

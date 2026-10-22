@@ -204,7 +204,7 @@ test("listing costs distinguish automatic, mixed, missing and expired sources wi
       value,
       raw,
       effectiveMlCosts(raw, value),
-      ["Mercadoria (oferta inteira)", "Frete da loja"],
+      ["Custo de mercadoria do anúncio", "Frete da loja"],
       null,
     );
   const automatic = summarize();
@@ -212,7 +212,7 @@ test("listing costs distinguish automatic, mixed, missing and expired sources wi
   assert.equal(automatic.tariff?.source, "ml");
   assert.equal(automatic.shipping?.source, "ml");
   assert.equal(automatic.settlement, "78.00");
-  assert.deepEqual(automatic.ownPending, ["Mercadoria (oferta inteira)"]);
+  assert.deepEqual(automatic.ownPending, ["Custo de mercadoria do anúncio"]);
   const mixed = summarize({ ...rawCosts, mlPercent: "0", shipping: "0" });
   assert.equal(mixed.tariff?.source, "mixed");
   assert.equal(mixed.tariff?.amount, "2.00");

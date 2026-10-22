@@ -88,6 +88,7 @@ import {
 } from "./ui";
 import { OfferForm, TaskForm, NoteForm, ParameterForm } from "./forms";
 import FinancialEditor from "./financial-editor";
+import ProductRegistration from "./product-registration";
 import AutocompleteInput from "./autocomplete";
 import Importer from "./importer";
 import Collection, { pageSize } from "./collection";
@@ -132,11 +133,11 @@ const navigation = [
 ];
 const descriptions: Record<string, string> = {
   "": "O que precisa da sua atenção. Um passo de cada vez.",
-  anuncios: "Organize suas ofertas e acompanhe o que precisa evoluir.",
+  anuncios: "Organize seus anúncios e acompanhe o que precisa evoluir.",
   precificacao: "Conheça os custos. Compare cenários. Prepare decisões.",
   analises: "Entenda as vendas. Encontre prioridades. Acompanhe o dia a dia.",
   concorrencia:
-    "Acompanhe ofertas comparáveis e transforme mudanças em decisões.",
+    "Acompanhe anúncios comparáveis e transforme mudanças em decisões.",
   acoes: "Transforme decisões em trabalho com prazo e responsável.",
   historico: "Uma trilha clara das decisões e mudanças da operação.",
   estudos: "Guarde o aprendizado e conecte ideias ao trabalho.",
@@ -1293,6 +1294,7 @@ export default function Workspace({ view }: { view: string[] }) {
                         onTab={(v: string) => changeParam("tab", v)}
                         onProposal={(p: Row) => open("decision", p)}
                         canWrite={canWrite}
+                        onProductSaved={() => reloadInBackground((n) => n + 1)}
                       />
                       <ListingChecklist
                         detail={detail}
@@ -1377,6 +1379,7 @@ export default function Workspace({ view }: { view: string[] }) {
                           detail.parametersRevision
                         }
                         detail={detail}
+                        onProductSaved={() => reloadInBackground((n) => n + 1)}
                         busy={busy}
                         onDirty={() => setDirty(true)}
                         onSaveCosts={(p) =>
@@ -1482,6 +1485,7 @@ export default function Workspace({ view }: { view: string[] }) {
               {section === "precificacao" && (
                 <PricingPage
                   data={data}
+                  onProductSaved={() => reloadInBackground((n) => n + 1)}
                   selected={search.get("offer")}
                   choose={(v) => changeParam("offer", v)}
                   onDirty={() => setDirty(true)}
@@ -3074,7 +3078,7 @@ function Offers({
             body={
               chips.length
                 ? "Experimente remover um filtro ou buscar por outro produto."
-                : "Cadastre sua primeira oferta ou importe uma planilha Excel ou CSV. Cada anúncio ficará vinculado à sua loja."
+                : "Cadastre seu primeiro anúncio ou importe uma planilha Excel ou CSV. Cada anúncio ficará vinculado à sua loja."
             }
             action={
               !chips.length && canWrite ? (
@@ -3194,16 +3198,23 @@ function Overview({
   onTab,
   onProposal,
   canWrite,
+  onProductSaved,
 }: {
   detail: Row;
   onTab: (v: string) => void;
   onProposal: (p: Row) => void;
   canWrite: boolean;
+  onProductSaved: () => void;
 }) {
   const o = detail.offer,
     r = detail.calculation;
   return (
     <>
+      <ProductRegistration
+        offer={o}
+        canEdit={canWrite}
+        onSaved={onProductSaved}
+      />
       <div className="detail-stats">
         <div className="panel metric">
           <span>Preço atual</span>
@@ -3230,7 +3241,7 @@ function Overview({
       <div className="two-columns">
         <section className="panel">
           <div className="panel-heading">
-            <h2>Identificação da oferta</h2>
+            <h2>Identificação do anúncio</h2>
             <Badge value={o.type} />
           </div>
           <dl className="description-list">
@@ -3242,6 +3253,19 @@ function Overview({
               ["Modelo", o.model || "Pendente"],
               ["SKU", o.sku || "Pendente"],
               ["Código Mercado Livre", o.ml_id || "Pendente"],
+              ...(o.ml
+                ? [
+                    ["Modalidade do anúncio", listingType(o.ml.listingTypeId)],
+                    [
+                      "Condição de frete",
+                      o.ml.freeShipping === true
+                        ? "Grátis para o comprador"
+                        : o.ml.freeShipping === false
+                          ? "Sem frete grátis"
+                          : "Não consultada",
+                    ],
+                  ]
+                : []),
               ["Procedência", labels[o.origin] || o.origin],
               ["Última atualização", date(o.updated_at)],
             ].map(([k, v]) => (
@@ -3394,6 +3418,7 @@ function PricingPage({
   onProposal,
   canWrite,
   onSaveCosts,
+  onProductSaved,
 }: {
   data: Row;
   selected: string | null;
@@ -3404,6 +3429,7 @@ function PricingPage({
   onProposal: (p: Row) => Promise<boolean>;
   canWrite: boolean;
   onSaveCosts: (id: string, data: Row) => void;
+  onProductSaved: () => void;
 }) {
   const offer = data.offerChoices.find((o: Row) => o.id === selected);
   const [detail, setDetail] = useState<Row | null>(null),
@@ -3460,7 +3486,7 @@ function PricingPage({
             )}
           </div>
         </Field>
-        <Field label="Selecione uma oferta">
+        <Field label="Selecione um anúncio">
           <select
             value={offer?.id || ""}
             onChange={(e) => choose(e.target.value)}
@@ -3496,6 +3522,7 @@ function PricingPage({
                 detail.parametersRevision
               }
               detail={detail}
+              onProductSaved={onProductSaved}
               busy={busy}
               onDirty={onDirty}
               onProposal={onProposal}
@@ -3509,10 +3536,10 @@ function PricingPage({
           ) : error ? (
             <Empty
               title="Custos indisponíveis"
-              body="Selecione novamente a oferta para tentar."
+              body="Selecione novamente o anúncio para tentar."
             />
           ) : (
-            <Skeleton variant="pricing" label="Carregando custos da oferta" />
+            <Skeleton variant="pricing" label="Carregando custos do anúncio" />
           )
         ) : (
           <div className="alert">
@@ -3524,7 +3551,7 @@ function PricingPage({
         <section className="panel">
           <Empty
             title="Uma condição de cada vez"
-            body="Escolha uma oferta para comparar preço, desconto, custos e contribuição. Parâmetros desconhecidos permanecem pendentes."
+            body="Escolha um anúncio para comparar preço, desconto, custos e contribuição. Parâmetros desconhecidos permanecem pendentes."
           />
         </section>
       )}
@@ -4249,7 +4276,7 @@ function Configuration({
     [
       "Tarifa e frete",
       "Mercado Livre",
-      "ML → oferta. Revalidar quando o preço mudar.",
+      "ML → anúncio. Revalidar quando o preço mudar.",
     ],
     [
       "Custos, tarefas, notas e decisões",

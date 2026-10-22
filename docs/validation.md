@@ -1,5 +1,13 @@
 # Validação da versão atual
 
+## Cadastro do produto e terminologia — 22/10/2026
+
+- `npm test`: **242 testes passaram**. Build de produção e TypeScript também passaram.
+- **17 cenários relevantes no Chromium**: cadastro e edição direta do preço de custo do produto, atualização da margem, preço de venda preservado, campos visíveis sem checkbox, Excel, busca local, precificação ao digitar, prévia lateral, navegação persistente, CRUD e composição de kits/variações.
+- O formulário independente grava o documento products por /api/products/:id e invalida as versões dos anúncios vinculados, preservando exceções de mercadoria e snapshots. A API foi testada também contra versão desatualizada, acesso somente de consulta e lojas sem permissão.
+- Bloco Cadastro do produto conferido em tela de 390 px, sem transbordamento horizontal. O texto da visão geral é Identificação do anúncio; Clássico/Premium são modalidades e o frete é uma condição do anúncio.
+- Um teste antigo que aguardava uma nova leitura do workspace a cada busca foi ajustado para verificar a busca local sem requisição adicional, mantendo a checagem da mesma navbar e sidebar.
+
 ## Revisão de custos, margem, sincronização e buscas — 22/10/2026
 
 - `npm test`: **241 testes passaram**, sem falhas ou testes ignorados; projetos demo no emulador Firestore.

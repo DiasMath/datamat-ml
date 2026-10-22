@@ -42,7 +42,7 @@ test("complete persisted offer → costs → proposal → approval → manual ap
     .getByRole("button", { name: "Custos e preço", exact: true })
     .click();
   for (const [label, value] of [
-    ["Mercadoria · oferta inteira", "40"],
+    ["Mercadoria neste anúncio (R$)", "40"],
     ["Tarifa ML (%)", "10"],
     ["Cobrança fixa ML (R$)", "2"],
     ["Frete da loja (R$)", "5"],

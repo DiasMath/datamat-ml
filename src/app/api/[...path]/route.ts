@@ -741,6 +741,8 @@ async function handle(req: NextRequest, context: Context) {
         return response(await service.saveCosts(actor, key, body));
       if (resource === "offers" && action === "simulate")
         return response(await service.simulate(actor, key, body, true));
+      if (resource === "products" && key && path.length === 2)
+        return response(await service.saveProduct(actor, key, body));
       if (resource === "offers")
         return response(await service.saveOffer(actor, body, key));
       if (resource === "proposals" && key)

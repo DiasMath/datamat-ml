@@ -67,7 +67,9 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
   await expect(price).toBeFocused();
   await expect(panel.locator(".price-comparison")).toContainText("R$ 15,00");
   await expect(panel.locator(".margin-result")).toContainText("-R$ 37,40");
-  const goods = page.getByLabel("Mercadoria · oferta inteira", { exact: true });
+  const goods = page.getByLabel("Mercadoria neste anúncio (R$)", {
+    exact: true,
+  });
   await goods.fill("");
   await goods.pressSequentially("1");
   await expect(panel.locator(".margin-result")).toContainText("R$ 1,60");
@@ -139,7 +141,7 @@ test("a global pricing scenario can save draft costs for review without modifyin
   await page.goto(`/precificacao?store=juntos-com&offer=${o.id}`);
   await expect(page.locator(".margin-result")).toContainText("R$ 34,00");
   await page
-    .getByLabel("Mercadoria · oferta inteira", { exact: true })
+    .getByLabel("Mercadoria neste anúncio (R$)", { exact: true })
     .fill("15");
   await page.getByLabel("Preço proposto (R$)").fill("90");
   await expect(page.locator(".margin-result")).toContainText("R$ 50,60");

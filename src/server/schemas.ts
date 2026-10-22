@@ -2,6 +2,14 @@ import { z } from "zod";
 import { priceAmount, percent, amount } from "../domain/finance";
 export const text = z.string().trim().min(1).max(200);
 export const optionalText = z.string().trim().max(200).nullable().optional();
+export const productSchema = z.object({
+  name: text,
+  model: optionalText,
+  brand: optionalText,
+  category: optionalText,
+  purchaseCost: amount,
+  version: z.number().int().positive(),
+});
 export const offerSchema = z
   .object({
     storeId: text,
@@ -40,7 +48,7 @@ export const offerSchema = z
   )
   .refine(
     (v) => v.type !== "unit" || v.components.length === 0,
-    "Uma oferta unitária não pode ter composição",
+    "Um anúncio unitário não pode ter composição",
   );
 export const taskSchema = z.object({
   version: z.number().int().positive().optional(),

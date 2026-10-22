@@ -20,6 +20,12 @@ Na exportação Excel, a aba Produtos contém uma linha por produto, com product
 
 Tarifas Clássico/Premium seguem a modalidade real do anúncio e as consultas oficiais, com parcela percentual e fixa separadas. Frete desconhecido continua pendente, inclusive sem gratuidade para o comprador. O sistema não presume tarifas de uma modalidade diferente nem custo zero de frete. Publicidade, promoções, embalagem, impostos e outros custos seguem separados.
 
+## Cadastro do produto e termos da interface — 22/10/2026
+
+Preço de custo é um dado do produto, armazenado no documento products e editável por /api/products/:id. O bloco Cadastro do produto mostra esse valor diretamente na visão geral do anúncio, na prévia lateral e antes do simulador de preços, com botão Editar produto e formulário próprio. Não depende de promoção, proposta, modalidade Clássico/Premium ou condição de frete. No cadastro do anúncio, Preço de custo (R$) fica sempre visível, inclusive para produtos existentes, sem marcar a edição dos demais dados do produto. Versões, auditoria, autorização das lojas vinculadas e proteção de aplicações ML em andamento são compartilhadas com o fluxo já existente.
+
+A interface usa anúncio para o cadastro e suas condições, com Identificação do anúncio na visão geral. Clássico/Premium aparecem como modalidades e o frete como condição do anúncio. Promoções e publicidade continuam separadas do preço de custo do produto. Uma exceção de mercadoria no anúncio permanece explícita e preservada.
+
 ## Sincronização contínua e buscas — 22/10/2026
 
 - Um clique em Sincronizar anúncios nas integrações percorre todas as páginas da loja do cartão, com progresso visível. A tela de Anúncios e o painel global usam a mesma continuação. Os lotes de 20 continuam sendo uma unidade interna da API, sem exigir um clique por lote.

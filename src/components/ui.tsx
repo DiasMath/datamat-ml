@@ -197,6 +197,9 @@ export function Modal({
       onChangeCapture={() => setChanged(true)}
       onCancel={(e) => {
         e.preventDefault();
+        // React bubbles cancel events through enclosing dialogs.
+        // Closing an editor must not also dismiss its preview.
+        e.stopPropagation();
         void close();
       }}
     >

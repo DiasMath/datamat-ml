@@ -1,9 +1,9 @@
 ## Custos atuais separados do simulador e campos em reais — 23/10/2026
 
 - `npm test`: **244 testes passaram** no emulador Firestore, sem falhas ou testes ignorados. `npm run build` e a verificação TypeScript passaram.
-- **35 cenários distintos no Chromium passaram**, contando as verificações corrigidas nas rodadas seguintes: custos atuais e recebimento estimado, edição e descarte protegidos, simulação sem alterar o cadastro, dígitos em centavos, colagem em reais, limpeza e zero explícito, preservação de seis casas decimais, consulta ML restrita ao anúncio/loja, aprovação e aplicação manual completas, revisão em sequência com erro recuperável, Excel, relatórios de campanhas, meta mensal, referências de concorrência, buscas, análises e navegação.
+- **36 cenários distintos no Chromium passaram**, contando as verificações corrigidas nas rodadas seguintes: custos atuais e recebimento estimado, edição e descarte protegidos, simulação sem alterar o cadastro, dígitos em centavos, colagem em reais, limpeza e zero explícito, preservação de seis casas decimais, consulta ML restrita ao anúncio/loja, aprovação e aplicação manual completas, revisão em sequência com erro recuperável, Excel, relatórios de campanhas, meta mensal, referências de concorrência, buscas, análises e navegação.
 - Responsividade conferida em 320, 390, 768 e 1440 px. As quatro abas da prévia têm rolagem horizontal própria. Campos monetários mantêm rótulo e ajuda associados para leitores de tela.
-- A ficha e a prévia oferecem Custos e Simulador separados; a tela Precificação inicia em Custos atuais. A simulação não oferece gravação direta de custos nem edição do produto. Valores automáticos desconhecidos/vencidos não são convertidos em zero.
+- A ficha e a prévia oferecem Custos e Simulador separados; a tela Precificação inicia em Custos atuais. A simulação não oferece gravação direta de custos nem edição do produto. O Esc do editor não se propaga para a prévia; cancelar o descarte preserva o formulário e os valores digitados. Valores automáticos desconhecidos/vencidos não são convertidos em zero.
 - Os testes utilizaram projetos `demo-*` e respostas controladas do ML. Nenhum preço, situação, custo ou produto das contas operacionais foi alterado para testar a entrega.
 
 # Validação da versão atual

@@ -284,3 +284,47 @@ test("global pricing opens current costs and ML cost refresh stays scoped to the
     .doc(connectionId)
     .update({ status: "unauthorized", external_account: null });
 });
+
+test("nested current cost editing keeps the preview open and protects Escape and backdrop dismissal", async ({
+  page,
+  request,
+}) => {
+  const o = await fixture(request);
+  await page.goto(
+    "/anuncios?" + new URLSearchParams({ store: "juntos-com", q: o.title }),
+  );
+  await page
+    .getByRole("button", { name: "Prévia de " + o.title, exact: true })
+    .click();
+  const preview = page.locator("dialog.offer-preview");
+  await preview.getByRole("tab", { name: "Custos", exact: true }).click();
+  await preview
+    .getByRole("button", { name: "Editar custos", exact: true })
+    .click();
+  const editor = page.getByRole("dialog", {
+    name: "Editar custos atuais",
+    exact: true,
+  });
+  const packaging = editor.getByLabel("Embalagem (R$)", { exact: true });
+  await packaging.fill("3,00");
+  await page.keyboard.press("Escape");
+  const confirm = page.getByRole("dialog", {
+    name: "Descartar alterações?",
+    exact: true,
+  });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Continuar editando" }).click();
+  await expect(editor).toBeVisible();
+  await expect(preview).toBeVisible();
+  await expect(packaging).toHaveValue("R$\u00a03,00");
+  await page.mouse.click(2, 2);
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "Descartar e continuar" }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(preview).toBeVisible();
+  expect(
+    (await (await request.get(`/api/offers/${o.id}`)).json()).costs.packaging,
+  ).toBe("1");
+  await page.keyboard.press("Escape");
+  await expect(preview).not.toBeVisible();
+});

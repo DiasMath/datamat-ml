@@ -16,6 +16,7 @@ import { Badge, money, percent, jsonRequest } from "./ui";
 import { MediaImage } from "./listing-media";
 import ListingMedia from "./listing-media";
 import FinancialEditor from "./financial-editor";
+import CurrentCosts from "./current-costs";
 import Skeleton from "./skeleton";
 import { useToast } from "./toasts";
 import useDialogDismiss from "./use-dialog-dismiss";
@@ -46,11 +47,13 @@ export default function OfferPreview({
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false),
     [tab, setTab] = useState(
-      initialTab === "costs"
-        ? "costs"
-        : initialTab === "media"
-          ? "media"
-          : "overview",
+      initialTab === "scenario"
+        ? "scenario"
+        : initialTab === "costs"
+          ? "costs"
+          : initialTab === "media"
+            ? "media"
+            : "overview",
     );
   const confirm = useConfirm(),
     { notify, setHost } = useToast();
@@ -159,7 +162,8 @@ export default function OfferPreview({
           [
             ["overview", "Resumo", LayoutDashboard],
             ["media", "Fotos e vídeos", Images],
-            ["costs", "Simular preço", Calculator],
+            ["costs", "Custos", Calculator],
+            ["scenario", "Simulador", Calculator],
           ] as const
         ).map(([value, name, Icon], index, all) => (
           <button
@@ -178,8 +182,9 @@ export default function OfferPreview({
                 e.key === "Home"
                   ? 0
                   : e.key === "End"
-                    ? 2
-                    : (index + (e.key === "ArrowRight" ? 1 : 2)) % 3;
+                    ? all.length - 1
+                    : (index + (e.key === "ArrowRight" ? 1 : all.length - 1)) %
+                      all.length;
               void changeTab(all[next][0]).then((accepted) => {
                 if (accepted)
                   requestAnimationFrame(() =>
@@ -270,7 +275,7 @@ export default function OfferPreview({
                       className="text-link"
                       onClick={() => void changeTab("costs")}
                     >
-                      Conferir custos e simular
+                      Conferir custos
                       <ArrowUpRight size={13} />
                     </button>
                   </section>
@@ -293,7 +298,44 @@ export default function OfferPreview({
                   onRefresh={() => setRevision((n) => n + 1)}
                 />
               )}
-              {tab === "costs" &&
+              {tab === "costs" && (
+                <CurrentCosts
+                  key={
+                    detail.offer.id +
+                    ":" +
+                    detail.offer.version +
+                    ":" +
+                    detail.parametersRevision
+                  }
+                  detail={detail}
+                  canEdit={canEdit}
+                  busy={busy || loading}
+                  onChanged={() => {
+                    setRevision((n) => n + 1);
+                    onChanged();
+                  }}
+                  onSimulate={() => void changeTab("scenario")}
+                  onSaveCosts={(p) =>
+                    save(
+                      `/api/offers/${id}/costs`,
+                      { ...p, offerVersion: detail.offer.version },
+                      "Custos atuais salvos.",
+                    )
+                  }
+                  onSaveCostsAndNext={
+                    onNext
+                      ? (p) =>
+                          save(
+                            `/api/offers/${id}/costs`,
+                            { ...p, offerVersion: detail.offer.version },
+                            "Custos atuais salvos.",
+                            true,
+                          )
+                      : undefined
+                  }
+                />
+              )}
+              {tab === "scenario" &&
                 (canEdit ? (
                   <FinancialEditor
                     key={
@@ -310,24 +352,6 @@ export default function OfferPreview({
                     }}
                     busy={busy || loading}
                     onDirty={() => setDirty(true)}
-                    onSaveCosts={(p) =>
-                      void save(
-                        `/api/offers/${id}/costs`,
-                        { ...p, offerVersion: detail.offer.version },
-                        "Custos salvos; histórico preservado.",
-                      )
-                    }
-                    onSaveCostsAndNext={
-                      onNext
-                        ? (p) =>
-                            void save(
-                              `/api/offers/${id}/costs`,
-                              { ...p, offerVersion: detail.offer.version },
-                              "Custos salvos.",
-                              true,
-                            )
-                        : undefined
-                    }
                     onProposalAndNext={
                       onNext
                         ? (p) =>

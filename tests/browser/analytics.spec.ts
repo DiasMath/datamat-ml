@@ -164,8 +164,8 @@ test("analytics navigation, charts, pagination, live advertising calculations an
   await page
     .getByText("Simular indicadores sem salvar", { exact: true })
     .click();
-  await page.getByLabel("Investimento em anúncios (R$)").fill("100");
-  await page.getByLabel("Receita atribuída (R$)").fill("500");
+  await page.getByLabel("Investimento em anúncios (R$)").fill("100,00");
+  await page.getByLabel("Receita atribuída (R$)").fill("500,00");
   await page.getByLabel("Impressões", { exact: true }).fill("1000");
   await page.getByLabel("Cliques", { exact: true }).fill("50");
   await expect(

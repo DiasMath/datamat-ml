@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { effectiveMlCosts } from "../domain/ml-financial";
 import MlFinancialConditions from "./ml-financial-conditions";
 import { trackedFetch } from "./ui";
@@ -341,29 +342,36 @@ export default function Pricing({
                   : "Desconto financiado pela loja (%)"
               }
             >
-              <input
-                key={mode}
-                name={mode === "price" ? "price" : "discount"}
-                type="number"
-                min={mode === "price" ? 0.01 : 0}
-                max={mode === "discount" ? 100 : undefined}
-                step={mode === "price" ? "0.01" : "0.000001"}
-                value={values[mode]}
-                onChange={(e) => change(mode, e.target.value)}
-                required
-              />
+              {mode === "price" ? (
+                <MoneyInput
+                  name="price"
+                  aria-label="Preço proposto (R$)"
+                  required
+                  value={values.price}
+                  onValueChange={(v) => change("price", v)}
+                />
+              ) : (
+                <input
+                  name="discount"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.000001"
+                  value={values.discount}
+                  onChange={(e) => change("discount", e.target.value)}
+                  required
+                />
+              )}
             </Field>
             <Field
               label="Contribuição do ML (R$)"
               hint="Subsídio recebido pela loja, separado do desconto."
             >
-              <input
+              <MoneyInput
                 name="mlContribution"
-                type="number"
-                min={0}
-                step="0.01"
+                aria-label="Contribuição do ML (R$)"
                 value={values.mlContribution}
-                onChange={(e) => change("mlContribution", e.target.value)}
+                onValueChange={(v) => change("mlContribution", v)}
               />
             </Field>
             <Field label="Nome da promoção" wide>
@@ -754,18 +762,28 @@ function SimulationOverride({
         <option value="keep">Manter custo informado</option>
         <option value="override">Substituir neste cenário</option>
       </select>
-      {active && (
-        <input
-          name={field}
-          type="number"
-          min={0}
-          max={field === "mlPercent" ? 100 : undefined}
-          step="0.000001"
-          placeholder="Pendente"
-          value={value}
-          onChange={(e) => onValue(e.target.value)}
-        />
-      )}
+      {active &&
+        (field === "mlPercent" ? (
+          <input
+            name={field}
+            aria-label={label}
+            type="number"
+            min={0}
+            max={100}
+            step="0.000001"
+            placeholder="Pendente"
+            value={value}
+            onChange={(e) => onValue(e.target.value)}
+          />
+        ) : (
+          <MoneyInput
+            name={field}
+            aria-label={label}
+            placeholder="Pendente"
+            value={value}
+            onValueChange={onValue}
+          />
+        ))}
     </Field>
   );
 }

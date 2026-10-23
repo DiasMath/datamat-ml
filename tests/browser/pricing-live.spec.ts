@@ -51,7 +51,7 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
   request,
 }) => {
   const o = await fixture(request, "LIVE TYPING");
-  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=costs`);
+  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=scenario`);
   const panel = page.locator(".calculation-panel");
   await expect(panel.locator(".margin-result")).toContainText("R$ 34,00");
   const writes: string[] = [];
@@ -60,10 +60,10 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
   });
   const price = page.getByLabel("Preço proposto (R$)");
   await price.fill("");
-  await price.pressSequentially("1");
+  await price.fill("1,00");
   await expect(panel.locator(".price-comparison")).toContainText("R$ 1,00");
   await expect(panel.locator(".margin-result")).toContainText("-R$ 49,16");
-  await price.pressSequentially("5");
+  await price.fill("15,00");
   await expect(price).toBeFocused();
   await expect(panel.locator(".price-comparison")).toContainText("R$ 15,00");
   await expect(panel.locator(".margin-result")).toContainText("-R$ 37,40");
@@ -71,9 +71,9 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
     exact: true,
   });
   await goods.fill("");
-  await goods.pressSequentially("1");
+  await goods.fill("1,00");
   await expect(panel.locator(".margin-result")).toContainText("R$ 1,60");
-  await goods.pressSequentially("5");
+  await goods.fill("15,00");
   await expect(goods).toBeFocused();
   await expect(panel.locator(".margin-result")).toBeInViewport();
   await expect(panel.locator(".margin-result")).toContainText("-R$ 12,40");
@@ -98,10 +98,8 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
     panel.getByRole("button", { name: "Salvar para revisão" }),
   ).toBeDisabled();
   await price.fill("101.001");
-  await expect(
-    page.getByRole("alert").filter({ hasText: "2 casas decimais" }),
-  ).toBeVisible();
-  await price.fill("90");
+  await expect(price).toHaveValue("R$\u00a01.010,01");
+  await price.fill("90,00");
   await page
     .getByRole("button", { name: "Percentual de desconto", exact: true })
     .click();
@@ -118,13 +116,13 @@ test("prices and unsaved costs recalculate on each keystroke without Enter, blur
   await discount.fill("15");
   await page.setViewportSize({ width: 390, height: 844 });
   await goods.fill("");
-  await goods.pressSequentially("1");
+  await goods.fill("1,00");
   const mobileSummary = page.getByRole("region", {
     name: "Resumo da precificação ao digitar",
   });
   await expect(mobileSummary).toBeInViewport();
   await expect(mobileSummary).toContainText("60,40");
-  await goods.pressSequentially("5");
+  await goods.fill("15,00");
   await expect(mobileSummary).toBeInViewport();
   await expect(mobileSummary).toContainText("46,40");
   await page.screenshot({
@@ -138,12 +136,14 @@ test("a global pricing scenario can save draft costs for review without modifyin
   request,
 }) => {
   const o = await fixture(request, "LIVE GLOBAL");
-  await page.goto(`/precificacao?store=juntos-com&offer=${o.id}`);
+  await page.goto(
+    `/precificacao?store=juntos-com&offer=${o.id}&pricingTab=scenario`,
+  );
   await expect(page.locator(".margin-result")).toContainText("R$ 34,00");
   await page
     .getByLabel("Mercadoria neste anúncio (R$)", { exact: true })
-    .fill("15");
-  await page.getByLabel("Preço proposto (R$)").fill("90");
+    .fill("15,00");
+  await page.getByLabel("Preço proposto (R$)").fill("90,00");
   await expect(page.locator(".margin-result")).toContainText("R$ 50,60");
   await page.getByLabel("Conferi as tarifas").check();
   await page
@@ -158,7 +158,7 @@ test("a global pricing scenario can save draft costs for review without modifyin
   expect(proposals.size).toBe(1);
   const snapshot = JSON.parse(proposals.docs[0].data().snapshot_json);
   expect(snapshot.proposed.margin).toBe("50.60");
-  expect(snapshot.input.costOverrides.goods).toBe("15");
+  expect(snapshot.input.costOverrides.goods).toBe("15.00");
   expect(
     JSON.parse(
       (await db().collection("costs").doc(o.id).get()).data()!.data_json,
@@ -248,7 +248,7 @@ test("live costs and proposed costs agree when a stored zero override is changed
     taxRate: "0",
     managementRate: "0",
   });
-  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=costs`);
+  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=scenario`);
   await expect(page.locator(".margin-result")).toContainText("R$ 40,00");
   await page
     .getByRole("combobox", { name: "Impostos (%)", exact: true })

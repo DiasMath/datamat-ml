@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { trackedFetch } from "./ui";
 import { useSmartTable } from "./smart-table";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -1506,15 +1507,25 @@ function Advertising({ report }: { report: AnalyticsReport | null }) {
           ["orders", "Pedidos atribuídos"],
         ].map(([k, label]) => (
           <Field label={label} key={k}>
-            <input
-              type="number"
-              min="0"
-              step={k === "spend" || k === "attributed" ? "0.01" : "1"}
-              value={values[k as keyof typeof values]}
-              onChange={(e) =>
-                setValues((v) => ({ ...v, [k]: e.target.value }))
-              }
-            />
+            {k === "spend" || k === "attributed" ? (
+              <MoneyInput
+                aria-label={label}
+                value={values[k as keyof typeof values]}
+                onValueChange={(value) =>
+                  setValues((v) => ({ ...v, [k]: value }))
+                }
+              />
+            ) : (
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={values[k as keyof typeof values]}
+                onChange={(e) =>
+                  setValues((v) => ({ ...v, [k]: e.target.value }))
+                }
+              />
+            )}
           </Field>
         ))}
       </div>

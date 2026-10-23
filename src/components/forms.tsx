@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { useState } from "react";
 import { automaticMlCosts, effectiveMlCosts } from "../domain/ml-financial";
 import AutocompleteInput from "./autocomplete";
@@ -167,14 +168,10 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
           label="Preço de custo (R$)"
           hint="Preço pago ao fornecedor por unidade. Pertence ao produto e vale para todos os anúncios vinculados, independentemente de promoções."
         >
-          <input
+          <MoneyInput
             key={productId || "new"}
             name="purchaseCost"
             aria-label="Preço de custo (R$)"
-            type="number"
-            min={0}
-            max={1000000000}
-            step="0.000001"
             defaultValue={product?.purchase_cost ?? ""}
           />
         </Field>
@@ -231,11 +228,8 @@ export function OfferForm({ data, initial, busy, onSave, onDirty }: Props) {
               : "Preço informado pelo cliente. Vazio significa pendente."
           }
         >
-          <input
+          <MoneyInput
             name="price"
-            type="number"
-            min="0.01"
-            step="0.01"
             defaultValue={initial?.price}
             disabled={!!initial}
           />
@@ -376,16 +370,18 @@ export function CostsForm({
   onDraft,
   price,
   offer,
+  mode = "registration",
 }: {
   initial: Row;
   parameters: Row;
   busy: boolean;
-  onSave: (data: Row) => void;
+  onSave?: (data: Row) => void | Promise<boolean>;
   onSaveAndNext?: (data: Row) => void;
   onDirty: () => void;
   onDraft: (costs: Costs | null) => void;
   price: string | null;
   offer?: Row;
+  mode?: "registration" | "scenario";
 }) {
   const [draft, setDraft] = useState<Costs | null>(initial as Costs);
   const [error, setError] = useState("");
@@ -418,7 +414,10 @@ export function CostsForm({
           (e.nativeEvent as SubmitEvent).submitter?.getAttribute(
             "data-next",
           ) === "true";
-        (next && onSaveAndNext ? onSaveAndNext : onSave)(read(e.currentTarget));
+        if (mode === "registration")
+          (next && onSaveAndNext ? onSaveAndNext : onSave)?.(
+            read(e.currentTarget),
+          );
       }}
       onChange={(e) => {
         const parsed = costSchema.safeParse(read(e.currentTarget));
@@ -451,22 +450,35 @@ export function CostsForm({
                 : undefined
             }
           >
-            <input
-              name={key}
-              aria-label={label}
-              type="number"
-              min={0}
-              max={key === "mlPercent" ? 100 : undefined}
-              step="0.000001"
-              defaultValue={initial[key] ?? ""}
-              placeholder={
-                key === "goods" && offer?.purchaseCost?.amount != null
-                  ? `Produto: ${offer.purchaseCost.amount}`
-                  : automatic[key as keyof Costs] != null
-                    ? `ML: ${automatic[key as keyof Costs]}`
+            {key === "mlPercent" ? (
+              <input
+                name={key}
+                aria-label={label}
+                type="number"
+                min={0}
+                max={100}
+                step="0.000001"
+                defaultValue={initial[key] ?? ""}
+                placeholder={
+                  automatic.mlPercent != null
+                    ? `ML: ${automatic.mlPercent}%`
                     : "Pendente"
-              }
-            />
+                }
+              />
+            ) : (
+              <MoneyInput
+                name={key}
+                aria-label={label}
+                defaultValue={initial[key] ?? ""}
+                placeholder={
+                  key === "goods" && offer?.purchaseCost?.amount != null
+                    ? `Produto: ${money(offer.purchaseCost.amount)}`
+                    : automatic[key as keyof Costs] != null
+                      ? `ML: ${money(automatic[key as keyof Costs])}`
+                      : "Pendente"
+                }
+              />
+            )}
             {key === "goods" && draft?.goods == null && (
               <small className="ml-cost-source">
                 {offer?.purchaseCost?.amount != null
@@ -525,24 +537,31 @@ export function CostsForm({
           </p>
         ) : null}
       </div>
-      <div className="form-footer">
-        <span>
-          Resultados mudam ao digitar. Salvar atualiza os custos cadastrados.
-        </span>
-        <div className="sequence-save-actions">
-          <Submit busy={busy} label="Salvar custos" />
-          {onSaveAndNext && (
-            <button
-              type="submit"
-              data-next="true"
-              className="button"
-              disabled={busy}
-            >
-              {busy ? "Salvando…" : "Salvar e próximo"}
-            </button>
-          )}
+      {mode === "registration" ? (
+        <div className="form-footer">
+          <span>
+            Resultados mudam ao digitar. Salvar atualiza os custos cadastrados.
+          </span>
+          <div className="sequence-save-actions">
+            <Submit busy={busy} label="Salvar custos" />
+            {onSaveAndNext && (
+              <button
+                type="submit"
+                data-next="true"
+                className="button"
+                disabled={busy}
+              >
+                {busy ? "Salvando…" : "Salvar e próximo"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <p className="small muted">
+          Hipóteses deste cenário. Os custos cadastrados só mudam após a
+          aplicação de uma proposta aprovada.
+        </p>
+      )}
     </form>
   );
 }

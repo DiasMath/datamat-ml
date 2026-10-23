@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { useConfirm, discardChanges, useUnsavedChanges } from "./confirmation";
 import { useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
@@ -720,30 +721,37 @@ function CampaignForm({
             ["marginBeforeAds", "Margem antes de Ads (%)"],
           ].map(([k, l]) => (
             <Field key={k} label={l}>
-              <input
-                type="number"
-                min={k === "marginBeforeAds" ? -100 : 0}
-                max={
-                  k === "marginBeforeAds" || k === "targetAcos"
-                    ? 100
-                    : undefined
-                }
-                step={
-                  ["impressions", "clicks", "orders"].includes(k) ? 1 : 0.01
-                }
-                required={k === "spend"}
-                value={values[k] ?? ""}
-                onChange={(e) =>
-                  change(
-                    k,
-                    e.target.value === ""
-                      ? null
-                      : ["impressions", "clicks", "orders"].includes(k)
-                        ? Number(e.target.value)
-                        : e.target.value,
-                  )
-                }
-              />
+              {k !== "marginBeforeAds" ? (
+                <MoneyInput
+                  aria-label={l}
+                  value={values[k] ?? ""}
+                  onValueChange={(v) => change(k, v === "" ? null : v)}
+                />
+              ) : (
+                <input
+                  type="number"
+                  min={k === "marginBeforeAds" ? -100 : 0}
+                  max={
+                    k === "marginBeforeAds" || k === "targetAcos"
+                      ? 100
+                      : undefined
+                  }
+                  step={
+                    ["impressions", "clicks", "orders"].includes(k) ? 1 : 0.01
+                  }
+                  value={values[k] ?? ""}
+                  onChange={(e) =>
+                    change(
+                      k,
+                      e.target.value === ""
+                        ? null
+                        : ["impressions", "clicks", "orders"].includes(k)
+                          ? Number(e.target.value)
+                          : e.target.value,
+                    )
+                  }
+                />
+              )}
             </Field>
           ))}
         </div>
@@ -789,7 +797,6 @@ function CampaignForm({
                   step={
                     ["impressions", "clicks", "orders"].includes(k) ? 1 : 0.01
                   }
-                  required={k === "spend"}
                   value={values[k] ?? ""}
                   onChange={(e) =>
                     change(

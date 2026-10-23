@@ -186,8 +186,10 @@ test("campaign reports calculate live, persist updates, deduplicate review tasks
     .click();
   let modal = page.getByRole("dialog");
   await modal.getByLabel("Nome da campanha").fill(name);
-  await modal.getByLabel("Investimento (R$)", { exact: true }).fill("100");
-  await modal.getByLabel("Receita atribuída (R$)", { exact: true }).fill("500");
+  await modal.getByLabel("Investimento (R$)", { exact: true }).fill("100,00");
+  await modal
+    .getByLabel("Receita atribuída (R$)", { exact: true })
+    .fill("500,00");
   await modal.getByLabel("Margem antes de Ads (%)").fill("10");
   await expect(modal.locator(".detail-stats")).toContainText("5.00×");
   await expect(modal.locator(".detail-stats")).toContainText("-R$ 50,00");
@@ -214,7 +216,7 @@ test("campaign reports calculate live, persist updates, deduplicate review tasks
   await page.getByRole("tab", { name: "Publicidade", exact: true }).click();
   await page.getByRole("button", { name, exact: true }).click();
   modal = page.getByRole("dialog");
-  await modal.getByLabel("Investimento (R$)", { exact: true }).fill("120");
+  await modal.getByLabel("Investimento (R$)", { exact: true }).fill("120,00");
   await modal.getByRole("button", { name: "Salvar relatório" }).click();
   await expect(modal).not.toBeVisible();
   expect((await docs[0].ref.get()).data()!.version).toBe(2);

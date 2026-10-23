@@ -166,7 +166,7 @@ test("monthly goal can be created, edited, cancelled and removed on the site wit
   });
   await modal
     .getByLabel("Meta de faturamento (R$) *", { exact: true })
-    .fill("10000");
+    .fill("10000,00");
   await modal.getByRole("button", { name: "Salvar meta mensal" }).click();
   await expect(modal).not.toBeVisible();
   await expect(panel.locator(".monthly-goal-values > span")).toContainText(
@@ -181,13 +181,13 @@ test("monthly goal can be created, edited, cancelled and removed on the site wit
   await page.reload();
   await page.getByRole("button", { name: "Editar meta mensal" }).click();
   const input = modal.getByLabel("Meta de faturamento (R$) *", { exact: true });
-  await expect(input).toHaveValue("10000.00");
-  await input.fill("15000");
+  await expect(input).toHaveValue("R$\u00a010.000,00");
+  await input.fill("15000,00");
   await page.mouse.click(2, 2);
   const decision = page.getByRole("dialog", { name: "Descartar alterações?" });
   await expect(decision).toBeVisible();
   await decision.getByRole("button", { name: "Continuar editando" }).click();
-  await expect(input).toHaveValue("15000");
+  await expect(input).toHaveValue("R$\u00a015.000,00");
   await modal.getByRole("button", { name: "Salvar meta mensal" }).click();
   await expect(panel.locator(".monthly-goal-values > span")).toContainText(
     "15.000,00",
@@ -295,13 +295,20 @@ test("save and next preserves failed edits and advances through pages without ap
   const original = page.url();
   await page.getByRole("button", { name: "Revisar em sequência" }).click();
   const preview = page.locator(".offer-preview");
-  const goods = preview.getByRole("spinbutton", { name: /Mercadoria/ });
-  await goods.fill("20");
+  await preview
+    .getByRole("button", { name: "Editar custos", exact: true })
+    .click();
+  const costDialog = page.getByRole("dialog", {
+    name: "Editar custos atuais",
+    exact: true,
+  });
+  const goods = costDialog.getByRole("textbox", { name: /Mercadoria/ });
+  await goods.fill("20,00");
   await preview
     .getByRole("button", { name: "Salvar e próximo", exact: true })
     .click();
   await expect(preview).toContainText("Conflito controlado de custos");
-  await expect(goods).toHaveValue("20");
+  await expect(goods).toHaveValue("R$\u00a020,00");
   expect(nextReads).toBe(0);
   await preview
     .getByRole("button", { name: "Salvar e próximo", exact: true })
@@ -310,28 +317,36 @@ test("save and next preserves failed edits and advances through pages without ap
   const stored = (
     await db().collection("costs").doc(listings[0].id).get()
   ).data()!;
-  expect(JSON.parse(stored.data_json).goods).toBe("20");
+  expect(JSON.parse(stored.data_json).goods).toBe("20.00");
   for (let i = 1; i < 7; i++) {
     await expect(preview.locator(".preview-header h2")).toHaveText(
       `Revisão ${String(i + 1).padStart(2, "0")}`,
     );
-    await preview
-      .getByRole("spinbutton", { name: /Mercadoria/ })
-      .fill(String(20 + i));
     if (i === 1) {
+      await preview.getByRole("tab", { name: "Simulador" }).click();
+      await preview
+        .getByLabel("Mercadoria neste anúncio (R$)", { exact: true })
+        .fill(`${20 + i},00`);
       await preview
         .getByLabel("Preço proposto (R$)", { exact: true })
-        .fill("90");
+        .fill("90,00");
       await preview
         .getByLabel("Motivo da proposta *", { exact: true })
         .fill("Revisão diária de preço");
       await preview
         .getByRole("button", { name: "Salvar proposta e próximo", exact: true })
         .click();
-    } else
+    } else {
       await preview
+        .getByRole("button", { name: "Editar custos", exact: true })
+        .click();
+      await costDialog
+        .getByRole("textbox", { name: /Mercadoria/ })
+        .fill(`${20 + i},00`);
+      await costDialog
         .getByRole("button", { name: "Salvar e próximo", exact: true })
         .click();
+    }
   }
   await expect(preview).not.toBeVisible();
   await expect(page.getByLabel("Loja global")).toHaveValue(storeId);

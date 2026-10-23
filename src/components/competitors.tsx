@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { useConfirm } from "./confirmation";
 import { useSmartTable } from "./smart-table";
 import { useEffect, useRef, useState } from "react";
@@ -380,21 +381,11 @@ export default function Competitors({
                 />
               </Field>
               <Field label="Preço observado (R$) *">
-                <input
-                  name="price"
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  required
-                  defaultValue={modal?.price}
-                />
+                <MoneyInput name="price" required defaultValue={modal?.price} />
               </Field>
               <Field label="Frete informado (R$)">
-                <input
+                <MoneyInput
                   name="shipping"
-                  type="number"
-                  min="0"
-                  step="0.01"
                   defaultValue={modal?.shipping ?? ""}
                 />
               </Field>

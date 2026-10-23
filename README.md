@@ -28,9 +28,9 @@ A aplicação não cria usuários nem sessões locais. Firebase Authentication, 
 ## Primeira rotina
 
 1. Configurações → Lojas e parâmetros: conferir a base da comissão de gestão (inicia em 1%), impostos e margens. Valores desconhecidos permanecem pendentes.
-2. Anúncios → Novo anúncio: selecionar loja, criar ou reutilizar um produto e informar a oferta. Produtos podem ter vários anúncios; o SKU não é uma chave única. Kits/variações exigem componentes de produtos já cadastrados.
-3. Ficha → Custos e preço: registrar cada custo, usando `0` somente quando o custo realmente for zero. Substituições específicas preservam zero; parâmetros não substituídos são herdados da loja.
-4. Precificação: preço, desconto e custos previstos recalculam ao digitar, sem Enter ou gravação. Os custos digitados podem entrar na proposta; Salvar para revisão faz o servidor recalcular, conferir versões e registrar o cenário sem alterar a condição atual.
+2. Anúncios → Novo anúncio: selecionar loja, criar ou reutilizar um produto e informar o anúncio. Produtos podem ter vários anúncios; o SKU não é uma chave única. Kits/variações exigem componentes de produtos já cadastrados.
+3. Ficha → Custos: consultar o preço de custo do produto, custos atuais do ML, recebimento estimado e margem. Editar produto grava o custo de compra compartilhado; Editar custos registra despesas e exceções deste anúncio. Use `0` somente quando não houver custo. Valores automáticos não consultados ou vencidos permanecem pendentes.
+4. Precificação → Simulador (também disponível na ficha e na prévia): preço, desconto e custos previstos recalculam ao digitar, sem Enter ou gravação. Campos monetários entram em centavos: `1`, `15`, `150`, `1500` mostram R$ 0,01, R$ 0,15, R$ 1,50, R$ 15,00. Colar `1.234,56` interpreta o valor em reais. Os custos digitados podem entrar na proposta; Salvar para revisão faz o servidor recalcular, conferir versões e registrar o cenário sem alterar a condição atual.
 5. Visão geral → Revisar / avançar etapa: aprovação → solicitação → execução no ML/Bling → confirmação manual com evidência. Para anúncio individual elegível, Aplicar preço no ML confere a tarifa, envia após confirmação e consulta o resultado. Outras mudanças seguem confirmação manual; dados ou parâmetros alterados exigem revisão.
 6. Histórico: consultar valores anteriores, novos valores, origem, responsável e retratos financeiros preservados. Atualizar custos não recalcula decisões passadas.
 

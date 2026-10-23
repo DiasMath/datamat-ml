@@ -9,8 +9,6 @@ export default function FinancialEditor({
   detail,
   busy,
   onDirty,
-  onSaveCosts,
-  onSaveCostsAndNext,
   onProposal,
   onProposalAndNext,
   onProductSaved,
@@ -18,19 +16,13 @@ export default function FinancialEditor({
   detail: Row;
   busy: boolean;
   onDirty: () => void;
-  onSaveCosts: (data: Row) => void;
-  onSaveCostsAndNext?: (data: Row) => void;
   onProposal: (data: Row) => Promise<boolean>;
   onProposalAndNext?: (data: Row) => Promise<boolean>;
   onProductSaved: () => void;
 }) {
   const [draftCosts, setDraftCosts] = useState<Costs | null>(detail.costs);
   const [liveFinancial, setLiveFinancial] = useState<Row | null>(null);
-  const [changed, setChanged] = useState(false);
-  const dirty = () => {
-    setChanged(true);
-    onDirty();
-  };
+  const dirty = onDirty;
   const onQuote = useCallback(
     (quote: Row | null) => {
       if (quote && Number(quote.price) === Number(detail.offer.price))
@@ -46,8 +38,7 @@ export default function FinancialEditor({
     <>
       <ProductRegistration
         offer={offer}
-        canEdit
-        disabled={busy || changed}
+        canEdit={false}
         onSaved={onProductSaved}
       />
       <Pricing
@@ -64,7 +55,7 @@ export default function FinancialEditor({
         onProposalAndNext={onProposalAndNext}
         costEditor={
           <details className="expand pricing-cost-editor" open>
-            <summary>Custos do anúncio</summary>
+            <summary>Custos previstos neste cenário</summary>
             <CostsForm
               initial={detail.costs}
               offer={offer}
@@ -73,8 +64,7 @@ export default function FinancialEditor({
               busy={busy}
               onDirty={dirty}
               onDraft={setDraftCosts}
-              onSave={onSaveCosts}
-              onSaveAndNext={onSaveCostsAndNext}
+              mode="scenario"
             />
           </details>
         }

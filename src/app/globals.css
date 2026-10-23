@@ -5497,6 +5497,8 @@ button.today-metric:hover {
   flex-shrink: 0;
 }
 .preview-tabs {
+  min-width: 0;
+  overflow-x: auto;
   display: flex;
   gap: 6px;
   padding: 10px 22px;
@@ -6497,4 +6499,100 @@ button.today-metric:hover {
   font-size: 11px;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.money-input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.current-cost-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.current-cost-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.current-cost-breakdown {
+  margin: 0;
+  min-width: 0;
+}
+.current-cost-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.current-cost-breakdown dt {
+  font-size: 13px;
+}
+.current-cost-breakdown dt small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 3px;
+}
+.current-cost-breakdown dd {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.current-cost-price {
+  font-weight: 600;
+}
+.cost-pending {
+  color: var(--muted);
+  font-size: 12px;
+}
+.current-cost-results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  align-self: start;
+  background: var(--surface);
+}
+.current-cost-results > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.current-cost-results > div > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.current-cost-results > div > strong {
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+.current-cost-results small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.current-cost-results p {
+  margin: 0;
+}
+.offer-preview .current-cost-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (max-width: 768px) {
+  .current-cost-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .current-costs .panel-heading {
+    flex-wrap: wrap;
+  }
+}
+
+.current-cost-results .positive {
+  color: var(--green);
 }

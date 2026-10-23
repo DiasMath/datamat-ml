@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { useState } from "react";
 import { Package, Pencil } from "lucide-react";
 import {
@@ -103,13 +104,9 @@ export default function ProductRegistration({
                 label="Preço de custo (R$)"
                 hint="Valor pago ao fornecedor por uma unidade do produto. Vazio significa pendente."
               >
-                <input
+                <MoneyInput
                   name="purchaseCost"
                   aria-label="Preço de custo (R$)"
-                  type="number"
-                  min={0}
-                  max={1000000000}
-                  step="0.000001"
                   defaultValue={offer.product_purchase_cost ?? ""}
                 />
               </Field>

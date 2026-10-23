@@ -88,6 +88,7 @@ import {
 } from "./ui";
 import { OfferForm, TaskForm, NoteForm, ParameterForm } from "./forms";
 import FinancialEditor from "./financial-editor";
+import CurrentCosts from "./current-costs";
 import ProductRegistration from "./product-registration";
 import AutocompleteInput from "./autocomplete";
 import Importer from "./importer";
@@ -357,6 +358,7 @@ export default function Workspace({ view }: { view: string[] }) {
     "extensionId",
     "tab",
     "configTab",
+    "pricingTab",
     "tableView",
     "returnTo",
     "taskQ",
@@ -1273,7 +1275,8 @@ export default function Workspace({ view }: { view: string[] }) {
                       ["overview", "Visão geral"],
                       ["content", "Conteúdo"],
                       ["media", "Fotos e vídeos"],
-                      ["costs", "Custos e preço"],
+                      ["costs", "Custos"],
+                      ["scenario", "Simulador"],
                       ["performance", "Desempenho"],
                       ["tasks", "Tarefas e notas"],
                       ["history", "Histórico"],
@@ -1357,7 +1360,7 @@ export default function Workspace({ view }: { view: string[] }) {
                       {canWrite && (
                         <button
                           className="button primary"
-                          onClick={() => changeParam("tab", "costs")}
+                          onClick={() => changeParam("tab", "scenario")}
                         >
                           Preparar proposta de conteúdo <ArrowRightIcon />
                         </button>
@@ -1368,7 +1371,30 @@ export default function Workspace({ view }: { view: string[] }) {
                       </p>
                     </section>
                   )}
-                  {tab === "costs" &&
+                  {tab === "costs" && (
+                    <CurrentCosts
+                      key={
+                        detail.offer.id +
+                        ":" +
+                        detail.offer.version +
+                        ":" +
+                        detail.parametersRevision
+                      }
+                      detail={detail}
+                      canEdit={canWrite}
+                      busy={busy}
+                      onChanged={() => reloadInBackground((n) => n + 1)}
+                      onSimulate={() => changeParam("tab", "scenario")}
+                      onSaveCosts={(p) =>
+                        mutate(
+                          "/api/offers/" + offerId + "/costs",
+                          { ...p, offerVersion: detail.offer.version },
+                          "Custos atuais salvos; histórico preservado.",
+                        )
+                      }
+                    />
+                  )}
+                  {tab === "scenario" &&
                     (canWrite ? (
                       <FinancialEditor
                         key={
@@ -1382,13 +1408,6 @@ export default function Workspace({ view }: { view: string[] }) {
                         onProductSaved={() => reloadInBackground((n) => n + 1)}
                         busy={busy}
                         onDirty={() => setDirty(true)}
-                        onSaveCosts={(p) =>
-                          mutate(
-                            "/api/offers/" + offerId + "/costs",
-                            { ...p, offerVersion: detail.offer.version },
-                            "Custos salvos; histórico preservado.",
-                          )
-                        }
                         onProposal={(p) =>
                           mutate(
                             "/api/proposals",
@@ -1484,6 +1503,12 @@ export default function Workspace({ view }: { view: string[] }) {
               )}
               {section === "precificacao" && (
                 <PricingPage
+                  activeTab={
+                    search.get("pricingTab") === "scenario"
+                      ? "scenario"
+                      : "costs"
+                  }
+                  onTab={(value) => changeParam("pricingTab", value)}
                   data={data}
                   onProductSaved={() => reloadInBackground((n) => n + 1)}
                   selected={search.get("offer")}
@@ -3299,7 +3324,10 @@ function Overview({
           <div className="panel-heading">
             <h2>Propostas e decisões</h2>
             {canWrite && (
-              <button className="button compact" onClick={() => onTab("costs")}>
+              <button
+                className="button compact"
+                onClick={() => onTab("scenario")}
+              >
                 <Plus size={14} />
                 Preparar cenário
               </button>
@@ -3358,7 +3386,7 @@ function Overview({
           ) : (
             <Empty
               title="Nenhuma proposta preparada"
-              body="Simule na seção Custos e preço. Salvar uma proposta não altera os dados atuais."
+              body="Simule na aba Simulador. Salvar uma proposta não altera os dados atuais."
             />
           )}
         </section>
@@ -3409,6 +3437,8 @@ function CostSummary({ result }: { result: Row }) {
   );
 }
 function PricingPage({
+  activeTab,
+  onTab,
   data,
   selected,
   choose,
@@ -3420,6 +3450,8 @@ function PricingPage({
   onSaveCosts,
   onProductSaved,
 }: {
+  activeTab: "costs" | "scenario";
+  onTab: (tab: string) => void;
   data: Row;
   selected: string | null;
   choose: (v: string) => void;
@@ -3428,7 +3460,7 @@ function PricingPage({
   onError: (m: string) => void;
   onProposal: (p: Row) => Promise<boolean>;
   canWrite: boolean;
-  onSaveCosts: (id: string, data: Row) => void;
+  onSaveCosts: (id: string, data: Row) => Promise<boolean>;
   onProductSaved: () => void;
 }) {
   const offer = data.offerChoices.find((o: Row) => o.id === selected);
@@ -3491,7 +3523,7 @@ function PricingPage({
             value={offer?.id || ""}
             onChange={(e) => choose(e.target.value)}
           >
-            <option value="">Selecione um anúncio para simular</option>
+            <option value="">Selecione um anúncio</option>
             {choices.map((o: Row) => (
               <option key={o.id} value={o.id}>
                 {o.store_name} · {o.title} · {o.sku || "Sem SKU"}
@@ -3511,47 +3543,83 @@ function PricingPage({
         </p>
       </section>
       {offer ? (
-        canWrite ? (
-          detail && detail.offer.id === offer.id ? (
-            <FinancialEditor
-              key={
-                detail.offer.id +
-                ":" +
-                detail.offer.version +
-                ":" +
-                detail.parametersRevision
-              }
-              detail={detail}
-              onProductSaved={onProductSaved}
-              busy={busy}
-              onDirty={onDirty}
-              onProposal={onProposal}
-              onSaveCosts={(p) =>
-                onSaveCosts(offer.id, {
-                  ...p,
-                  offerVersion: detail.offer.version,
-                })
-              }
-            />
-          ) : error ? (
-            <Empty
-              title="Custos indisponíveis"
-              body="Selecione novamente o anúncio para tentar."
-            />
-          ) : (
-            <Skeleton variant="pricing" label="Carregando custos do anúncio" />
-          )
+        detail && detail.offer.id === offer.id ? (
+          <>
+            <div
+              className="tabs detail-tabs"
+              role="tablist"
+              aria-label="Visão da precificação"
+            >
+              {[
+                ["costs", "Custos atuais"],
+                ["scenario", "Simulador"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  role="tab"
+                  aria-selected={activeTab === value}
+                  className={activeTab === value ? "active" : ""}
+                  onClick={() => onTab(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {activeTab === "costs" ? (
+              <CurrentCosts
+                key={
+                  detail.offer.id +
+                  ":" +
+                  detail.offer.version +
+                  ":" +
+                  detail.parametersRevision
+                }
+                detail={detail}
+                busy={busy}
+                canEdit={canWrite}
+                onChanged={onProductSaved}
+                onSimulate={() => onTab("scenario")}
+                onSaveCosts={(p) =>
+                  onSaveCosts(offer.id, {
+                    ...p,
+                    offerVersion: detail.offer.version,
+                  })
+                }
+              />
+            ) : canWrite ? (
+              <FinancialEditor
+                key={
+                  detail.offer.id +
+                  ":" +
+                  detail.offer.version +
+                  ":" +
+                  detail.parametersRevision
+                }
+                detail={detail}
+                onProductSaved={onProductSaved}
+                busy={busy}
+                onDirty={onDirty}
+                onProposal={onProposal}
+              />
+            ) : (
+              <p className="muted">
+                Preparar cenários exige permissão de gestão.
+              </p>
+            )}
+          </>
+        ) : error ? (
+          <Empty
+            title="Custos indisponíveis"
+            body="Selecione novamente o anúncio para tentar."
+          />
         ) : (
-          <div className="alert">
-            Seu perfil permite consultar os dados financeiros na ficha. Preparar
-            propostas exige permissão de gestão.
-          </div>
+          <Skeleton variant="pricing" label="Carregando custos do anúncio" />
         )
       ) : (
         <section className="panel">
           <Empty
-            title="Uma condição de cada vez"
-            body="Escolha um anúncio para comparar preço, desconto, custos e contribuição. Parâmetros desconhecidos permanecem pendentes."
+            title="Custos e resultado por anúncio"
+            body="Escolha um anúncio para consultar seus custos atuais ou testar alterações no simulador."
           />
         </section>
       )}

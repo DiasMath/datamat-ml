@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import {
   useEffect,
   useState,
@@ -126,7 +127,8 @@ export function Field({
       <span id={key}>{label}</span>
       {Children.map(children, (child) =>
         isValidElement(child) &&
-        ["input", "textarea", "select"].includes(String(child.type))
+        (["input", "textarea", "select"].includes(String(child.type)) ||
+          child.type === MoneyInput)
           ? cloneElement(child as React.ReactElement<Record<string, unknown>>, {
               "aria-labelledby": key,
               "aria-describedby": hint ? key + "-hint" : undefined,

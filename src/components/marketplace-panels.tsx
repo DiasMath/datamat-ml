@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { useState } from "react";
 import Decimal from "decimal.js";
 import { useToastMessage } from "./toasts";
@@ -367,13 +368,11 @@ function AdvertisingCalculator() {
           ["total", "Receita total do período (R$)"],
         ].map(([key, label]) => (
           <Field key={key} label={label}>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
+            <MoneyInput
+              aria-label={label}
               value={values[key as keyof typeof values]}
-              onChange={(e) =>
-                setValues((v) => ({ ...v, [key]: e.target.value }))
+              onValueChange={(value) =>
+                setValues((v) => ({ ...v, [key]: value }))
               }
             />
           </Field>

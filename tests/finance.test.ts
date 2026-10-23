@@ -436,3 +436,47 @@ test("a full draft can switch from a stored zero override back to the store para
   assert.equal(calculate("100", stored, p).margin, "40.00");
   assert.equal(result.margin, "34.00");
 });
+
+test("BRL inputs enter cents right to left, accept localized paste and preserve blank versus zero", async () => {
+  const { centsInput, pastedMoney, moneyInputDisplay } =
+    await import("../src/domain/money-input");
+  assert.equal(centsInput("1"), "0.01");
+  assert.equal(centsInput("R$ 0,015"), "0.15");
+  assert.equal(centsInput("R$ 0,150"), "1.50");
+  assert.equal(centsInput("R$ 1,500"), "15.00");
+  assert.equal(centsInput(""), "");
+  assert.equal(centsInput("0"), "0.00");
+  for (const text of ["R$ 1.234,56", "1.234,56", "1234.56"])
+    assert.equal(pastedMoney(text), "1234.56");
+  assert.equal(pastedMoney("1.234"), "1234.00");
+  assert.equal(pastedMoney("15"), "15.00");
+  assert.equal(pastedMoney(""), "");
+  for (const text of ["-15", "1,2,3", "1e6", "abc", "NaN"])
+    assert.equal(pastedMoney(text), null);
+  assert.equal(moneyInputDisplay("0.123456"), "R$\u00a00,12");
+  assert.equal(moneyInputDisplay(null), "");
+});
+
+test("current costs distinguish ML receipt from net contribution and keep missing charges pending", async () => {
+  const { currentCosts } = await import("../src/domain/current-costs");
+  const offer = {
+    price: "100",
+    purchaseCost: { amount: "40", source: "product" },
+  };
+  const saved = { ...c, goods: null };
+  const actual = currentCosts(offer, saved, p);
+  assert.equal(actual.costs.goods, "40");
+  assert.equal(actual.receipt, "83.00"); // 100 - 10% - 2 fixed - 5 freight
+  assert.equal(actual.calculation.margin, "34.00");
+  assert.equal(
+    currentCosts(offer, { ...saved, goods: "0" }, p).costs.goods,
+    "0",
+  );
+  const incomplete = currentCosts(offer, { ...saved, shipping: null }, p);
+  assert.equal(incomplete.receipt, null);
+  assert.equal(incomplete.calculation.margin, null);
+  const ownPending = currentCosts(offer, { ...saved, packaging: null }, p);
+  assert.equal(ownPending.receipt, "83.00");
+  assert.equal(ownPending.calculation.margin, null);
+  assert.equal(saved.goods, null);
+});

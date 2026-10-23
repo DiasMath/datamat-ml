@@ -32,7 +32,7 @@ test("UI creates, edits and deletes offers and shared product metadata in Firest
   await modal.getByLabel("Nome do produto *").fill("Produto CRUD UI");
   await modal.getByLabel("Título do anúncio *").fill("Rascunho CRUD UI");
   await modal.getByLabel("Código Mercado Livre").fill("MLB-CRUD-UI");
-  await modal.getByLabel("Preço atual (R$)").fill("100");
+  await modal.getByLabel("Preço atual (R$)").fill("100,00");
   await modal.getByRole("button", { name: "Cadastrar anúncio" }).click();
   await expect(modal).not.toBeVisible();
   let workspace = await (

@@ -43,8 +43,8 @@ test("supplier cost registration, live inherited calculations and per-store bloc
     .getByLabel("Nome do produto *")
     .fill("Produto custo fornecedor UI");
   await dialog.getByLabel("Título do anúncio *").fill("CUSTO-FORNECEDOR-UI");
-  await dialog.getByLabel("Preço de custo (R$)").fill("20");
-  await dialog.getByLabel("Preço atual (R$)").fill("100");
+  await dialog.getByLabel("Preço de custo (R$)").fill("20,00");
+  await dialog.getByLabel("Preço atual (R$)").fill("100,00");
   const saved = page.waitForResponse(
     (r) => r.url().endsWith("/api/offers") && r.request().method() === "POST",
   );
@@ -52,10 +52,10 @@ test("supplier cost registration, live inherited calculations and per-store bloc
     .getByRole("button", { name: "Cadastrar anúncio", exact: true })
     .click();
   const offer = await (await saved).json();
-  expect(offer.product_purchase_cost).toBe("20");
+  expect(offer.product_purchase_cost).toBe("20.00");
   await expect(dialog).not.toBeVisible();
   await post(request, `/api/offers/${offer.id}/costs`, costs);
-  await page.goto(`/anuncios/${offer.id}?store=juntos-com&tab=costs`);
+  await page.goto(`/anuncios/${offer.id}?store=juntos-com&tab=scenario`);
   const panel = page.locator(".calculation-panel");
   await expect(panel.locator(".margin-result")).toContainText("R$ 80,00");
   await expect(panel.getByTestId("sales-margin-policy")).toContainText(
@@ -70,12 +70,12 @@ test("supplier cost registration, live inherited calculations and per-store bloc
       .filter({ hasText: "Custo do produto: R$ 20,00" }),
   ).toBeVisible();
   const price = page.getByLabel("Preço proposto (R$)");
-  await price.fill("30");
+  await price.fill("30,00");
   await expect(panel.locator(".margin-result")).toContainText("R$ 10,00");
   await expect(panel.getByTestId("sales-margin-policy")).toContainText(
     "Aprovação bloqueada",
   );
-  await price.fill("100");
+  await price.fill("100,00");
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     expect(
@@ -95,7 +95,7 @@ test("supplier cost registration, live inherited calculations and per-store bloc
   await dialog
     .getByLabel("Editar nome, modelo, marca e categoria do produto")
     .check();
-  await dialog.getByLabel("Preço de custo (R$)").fill("30");
+  await dialog.getByLabel("Preço de custo (R$)").fill("30,00");
   await dialog
     .getByRole("button", { name: "Salvar cadastro", exact: true })
     .click();
@@ -262,14 +262,14 @@ test("product purchase cost is visible on the listing overview and edited direct
     exact: true,
   });
   await expect(listingDialog.getByLabel("Preço de custo (R$)")).toHaveValue(
-    "35.75",
+    "R$\u00a035,75",
   );
   await expect(
     listingDialog.getByLabel(
       "Editar nome, modelo, marca e categoria do produto",
     ),
   ).not.toBeChecked();
-  await listingDialog.getByLabel("Preço de custo (R$)").fill("40");
+  await listingDialog.getByLabel("Preço de custo (R$)").fill("40,00");
   await listingDialog
     .getByRole("button", { name: "Salvar cadastro", exact: true })
     .click();
@@ -300,7 +300,7 @@ test("product purchase cost is visible on the listing overview and edited direct
     name: "Cadastro do produto",
     exact: true,
   });
-  await productDialog.getByLabel("Preço de custo (R$)").fill("45");
+  await productDialog.getByLabel("Preço de custo (R$)").fill("45,00");
   await productDialog
     .getByRole("button", { name: "Salvar produto", exact: true })
     .click();

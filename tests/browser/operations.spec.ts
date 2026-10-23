@@ -27,13 +27,13 @@ test("competitor CRUD, alerts, observed history and review task persist without 
   await dialog
     .getByLabel("URL do anúncio *")
     .fill("https://produto.mercadolivre.com.br/MLB-777001-produto");
-  await dialog.getByLabel("Preço observado (R$) *").fill("100");
+  await dialog.getByLabel("Preço observado (R$) *").fill("100,00");
   await dialog.getByRole("button", { name: "Salvar referência" }).click();
   await expect(dialog).not.toBeVisible();
   await page
     .getByRole("button", { name: "Referência do navegador", exact: true })
     .click();
-  await dialog.getByLabel("Preço observado (R$) *").fill("90");
+  await dialog.getByLabel("Preço observado (R$) *").fill("90,00");
   await dialog.getByRole("button", { name: "Salvar referência" }).click();
   await expect(page.getByText("-10%", { exact: true })).toBeVisible();
   await page.reload();

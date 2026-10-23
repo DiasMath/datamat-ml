@@ -1,4 +1,5 @@
 "use client";
+import MoneyInput from "./money-input";
 import { useEffect, useRef, useState } from "react";
 import { Target, Pencil, Plus, LoaderCircle, RefreshCw } from "lucide-react";
 import { Field, Modal, money, percent, jsonRequest, Submit } from "./ui";
@@ -228,17 +229,13 @@ export default function MonthlyGoal({
                 label="Meta de faturamento (R$) *"
                 hint="Considera vendas pagas do Mercado Livre, antes de custos e despesas."
               >
-                <input
+                <MoneyInput
                   key={selected}
                   name="target"
-                  type="number"
-                  inputMode="decimal"
-                  min="0.01"
-                  max="999999999999"
-                  step="0.01"
                   required
                   defaultValue={goal?.target || ""}
                   autoFocus
+                  maxAmount="999999999999"
                 />
               </Field>
             </fieldset>

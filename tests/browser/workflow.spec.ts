@@ -6,6 +6,22 @@ test("complete persisted offer → costs → proposal → approval → manual ap
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  // This workflow exercises the explicitly configured alert-only policy.
+  // Strict blocking is covered by product-cost.spec.ts and service tests.
+  const params = await request.post("/api/parameters/juntos-com", {
+    headers: { Origin: "http://localhost:3100" },
+    data: {
+      minMargin: "10",
+      desiredMargin: "20",
+      taxRate: "5",
+      taxBase: "price",
+      managementRate: "1",
+      managementBase: "price",
+      reviewDays: 30,
+      enforceSalesMargin: false,
+    },
+  });
+  expect(params.ok(), await params.text()).toBe(true);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Hoje" })).toBeVisible();
   await page.getByRole("button", { name: "Anúncios", exact: true }).click();
@@ -22,7 +38,7 @@ test("complete persisted offer → costs → proposal → approval → manual ap
   await dialog.getByLabel("Título do anúncio *").fill("Fone teste FT-100");
   await dialog.getByLabel("SKU", { exact: true }).fill("FONE-001");
   await dialog.getByLabel("Código Mercado Livre").fill("MLB-TESTE");
-  await dialog.getByLabel("Preço atual (R$)").fill("100");
+  await dialog.getByLabel("Preço atual (R$)").fill("100,00");
   await dialog
     .getByRole("button", { name: "Cadastrar anúncio", exact: true })
     .click();
@@ -38,8 +54,9 @@ test("complete persisted offer → costs → proposal → approval → manual ap
   await page
     .getByRole("button", { name: "Fone teste FT-100", exact: true })
     .click();
+  await page.getByRole("button", { name: "Custos", exact: true }).click();
   await page
-    .getByRole("button", { name: "Custos e preço", exact: true })
+    .getByRole("button", { name: "Editar custos", exact: true })
     .click();
   for (const [label, value] of [
     ["Mercadoria neste anúncio (R$)", "40"],
@@ -51,8 +68,8 @@ test("complete persisted offer → costs → proposal → approval → manual ap
     ["Outros custos (R$)", "0"],
   ])
     await page
-      .getByRole("spinbutton", { name: label, exact: true })
-      .fill(value);
+      .getByLabel(label, { exact: true })
+      .fill(label.includes("R$") ? value + ",00" : value);
   await page
     .getByLabel("Impostos (%)", { exact: true })
     .selectOption("override");
@@ -65,9 +82,10 @@ test("complete persisted offer → costs → proposal → approval → manual ap
     .selectOption("price");
   await page.getByRole("button", { name: "Salvar custos" }).click();
   await expect(
-    page.getByRole("status").filter({ hasText: "Custos salvos" }),
+    page.getByRole("status").filter({ hasText: "Custos atuais salvos" }),
   ).toBeVisible();
-  await page.getByLabel("Preço proposto (R$)").fill("90");
+  await page.getByRole("button", { name: "Simulador", exact: true }).click();
+  await page.getByLabel("Preço proposto (R$)").fill("90,00");
   await page.getByLabel("Conferi as tarifas").check();
   await expect(page.getByText("R$ 25,60", { exact: false })).toBeVisible();
   await page

@@ -4,14 +4,20 @@ A precificação funciona para **cenários manuais com os dados informados**. Pr
 
 ## Como usar
 
-Na ficha → Custos e preço ou na tela Precificação, selecione o anúncio e edite os números. Digitar `1` e depois `5`, formando `15`, produz dois resultados sucessivos. Campos vazios deixam resultados dependentes indisponíveis; `0` representa custo zero conhecido. Valores inválidos removem a prévia anterior e mostram o que corrigir.
+Na ficha e na prévia do anúncio há duas abas: **Custos** e **Simulador**. Na tela Precificação, selecione o anúncio; **Custos atuais** abre por padrão.
 
-O formulário de custos tem uma prévia ao preço atual. A comparação Atual × proposta usa o cadastro salvo na coluna atual e os custos digitados na coluna proposta. Tarifas/frete/publicidade específicos do cenário podem substituir os custos digitados; o seletor informa essa precedência. As bases e margens vêm da configuração da loja.
+**Custos** mostra o cadastro salvo: compra do fornecedor no produto, mercadoria utilizada pelo anúncio (produto, composição ou exceção), tarifa da modalidade Clássico/Premium, cobrança fixa, frete do vendedor, embalagem, impostos, gestão, publicidade e outros custos. As fontes distinguem cadastro manual, parâmetro da loja e consulta automática válida do ML. Frete grátis para o comprador não significa custo zero para a loja. Consultar custos do ML solicita somente tarifas/frete do anúncio selecionado e da sua loja, gravando a atualização oficial; não inicia uma simulação.
 
-- **Digitar:** cálculo local, sem requests ou gravações por tecla.
-- **Salvar custos:** atualiza o custo cadastrado, registra histórico e revisa a versão da oferta.
-- **Salvar para revisão:** registra uma proposta com os custos digitados e os demais valores do cenário, sem mudar preço/custos atuais. O servidor recalcula e compara versões antes de aceitar.
-- **Aplicar:** aprovação → solicitação → execução externa → confirmação manual. Confirmação grava preço/custos aprovados e preserva o snapshot. Preço ou tarifa/frete alterados exigem conferência; mudanças financeiras com pendências não são aplicadas.
+O recebimento estimado do ML é preço menos tarifa percentual, cobrança fixa e frete da loja. O resultado por venda desconta também mercadoria, impostos e demais despesas. Uma cobrança desconhecida mantém o recebimento pendente; um custo próprio desconhecido mantém a margem pendente. Editar produto grava o preço de compra compartilhado; Editar custos abre um formulário protegido para as despesas/exceções atuais do anúncio.
+
+**Simulador** compara o cadastro salvo com hipóteses de preço e custos. Não permite salvar diretamente os custos atuais nem editar o cadastro do produto. Tarifas/frete/publicidade específicos do cenário podem substituir os custos digitados; o seletor informa essa precedência. As bases e margens vêm da configuração da loja.
+
+Campos monetários são formatados em reais, da direita para a esquerda: `1` → R$ 0,01, `15` → R$ 0,15, `150` → R$ 1,50 e `1500` → R$ 15,00. Colar `R$ 1.234,56` interpreta o valor completo; percentuais continuam percentuais. Valores antigos com seis casas decimais são preservados se o campo não for editado. Vazio significa pendente ou herança disponível; `0` significa custo zero explícito.
+
+- **Digitar:** cálculo local imediato, sem gravações por tecla. No modo automático, a consulta ML ocorre após a pausa de 600 ms.
+- **Salvar custos (em Editar custos):** atualiza o cadastro atual com histórico e nova versão do anúncio.
+- **Salvar para revisão (no Simulador):** registra a proposta, sem mudar preço ou custos atuais. O servidor recalcula e compara versões antes de aceitar.
+- **Aplicar:** exige revisão/aprovação e confirmação. Mudanças sem dados completos não são aplicadas. A política padrão bloqueia margem sobre venda de 40% ou menos; a loja pode configurar apenas alerta e sugestão de preço.
 
 A UI guarda estado de digitação e reenvios idempotentes; novas condições/motivo geram outra identidade de operação. Dados alterados em outra sessão ou parâmetros revisados invalidam a versão exibida. Voltar de uma alíquota específica de `0` para “Usar parâmetro da loja” remove a substituição, inclusive na proposta e após sua aplicação.
 
@@ -25,7 +31,7 @@ Definições: `P` = preço pago pelo comprador, depois do desconto e arredondado
 - Bases de impostos/gestão: `P` ou `R`, conforme a configuração. Cada base é independente.
 - Custo total `C = F + tarifaML + impostos + gestão`.
 - Contribuição por venda `M = R − C`.
-- Contribuição percentual `M / R × 100`.
+- Margem sobre a venda `M / P × 100`, usada na meta padrão estritamente acima de 40%. A margem sobre receita `M / R × 100` é distinta quando há subsídio.
 - Novo preço por desconto `P = arredondar(preçoAtual × (1 − desconto/100), 2)`.
 
 Taxas entram como fração no cálculo; percentuais são divididos por 100. Decimal.js evita erros financeiros de ponto flutuante. Totais são calculados antes de arredondar; a soma de parcelas exibidas a centavos pode diferir um centavo do total, porque o total mantém a precisão intermediária.
@@ -52,7 +58,7 @@ São testadas as quatro combinações de base para imposto/gestão, zeros explí
 
 1. Validar por conta as tarifas e a cotação de frete implementadas e evoluir para conciliar o frete efetivo por envio. A consulta usa a categoria/modalidade reais e quantidade 1 para a unidade da oferta; não transforma o número de peças de um kit em quantidade de vendas. Mínimo/desconto permanecem estimados com tarifas constantes, sujeitos a nova consulta no preço escolhido.
 2. Promoções oficiais: elegibilidade, preço-base, desconto financiado pela loja, contrapartida ML e validade. O subsídio atual é informado no cenário e preservado no snapshot; não existe atualização automática de uma promoção ativa.
-3. Custos reais do Bling, composição calculada de kits, atualização por compras e política definida para custo médio/reposição. Hoje mercadoria representa a oferta inteira e é informada manualmente.
+3. Importação de compras e política de custo médio/reposição. O custo de compra já pertence ao produto, pode ser importado no Excel e é herdado pelos anúncios; kits somam quantidades × custos dos componentes. Exceções por anúncio, inclusive zero, são preservadas. Variações com custos diferentes exigem tratamento específico, sem média inventada.
 4. Importar gastos/receitas atribuídas da API de publicidade e definir provisão por venda. A calculadora manual de ROAS/ACOS/TACOS foi entregue em Desempenho, sem alterar custos ou somar receita atribuída ao total.
 5. Conciliação com pedidos/recebimentos: tarifas efetivas, descontos, estornos, devoluções e custos de devolução. O valor mostrado é contribuição, **não lucro líquido nem saldo exato a receber**.
 6. Comparação de cenários, alertas de margem após mudança de custos e sugestões de preço respeitando piso e aprovação. Nenhum preço é alterado automaticamente no ML nesta versão.

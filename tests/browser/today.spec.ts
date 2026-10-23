@@ -79,7 +79,9 @@ test("Hoje is compact, distinguishes preparation from urgency, paginates and loa
     .first()
     .click();
   await expect(page).toHaveURL(new RegExp(`/anuncios/${offers[5].id}`));
-  await expect(page.getByLabel("Preço proposto (R$)")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Custos atuais do anúncio" }),
+  ).toBeVisible();
   expect(workspaceReads).toBe(1);
   await expect(page.locator(".detail-heading")).toHaveCSS("top", "58px");
   await page
@@ -174,7 +176,9 @@ test("Hoje remains readable with five priorities at mobile, tablet and desktop w
     .last()
     .getByRole("button", { name: "Completar custos", exact: true })
     .click();
-  await expect(page.getByLabel("Preço proposto (R$)")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Custos atuais do anúncio" }),
+  ).toBeVisible();
   await expect(page.locator(".detail-heading")).toHaveCSS("top", "94px");
   await page
     .getByRole("button", { name: "Voltar à Hoje", exact: true })

@@ -113,21 +113,21 @@ test("automatic tariffs debounce typing, discard obsolete replies and preserve t
       body: JSON.stringify(quote),
     });
   });
-  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=costs`);
+  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=scenario`);
   const panel = page.locator(".calculation-panel"),
     price = page.getByLabel("Preço proposto (R$)");
   await expect(page.locator(".ml-tariff-box")).toContainText(
     "Tarifa consultada",
   );
   await expect(panel.locator(".margin-result")).toContainText("R$ 30,00");
-  await price.fill("90");
+  await price.fill("90,00");
   await expect(
     panel.getByRole("button", { name: "Salvar para revisão" }),
   ).toBeDisabled();
   await expect.poll(() => quoted.includes("90.00")).toBe(true);
   await price.fill("");
-  await price.pressSequentially("8");
-  await price.pressSequentially("5");
+  await price.pressSequentially("850");
+  await price.pressSequentially("0");
   await expect(panel.locator(".price-comparison")).toContainText("R$ 85,00");
   await expect(page.locator(".ml-tariff-box")).toContainText(
     "Tarifa consultada",
@@ -166,7 +166,7 @@ test("tariff errors allow explicit manual mode and keep mobile pricing responsiv
     }),
   );
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=costs`);
+  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=scenario`);
   await expect(page.locator(".ml-tariff-box")).toContainText(
     "Tarifas indisponíveis",
   );
@@ -179,7 +179,7 @@ test("tariff errors allow explicit manual mode and keep mobile pricing responsiv
     panel.getByRole("button", { name: "Salvar para revisão" }),
   ).toBeEnabled();
   const price = page.getByLabel("Preço proposto (R$)");
-  await price.fill("85");
+  await price.fill("85,00");
   await expect(
     page.getByRole("region", { name: "Resumo da precificação ao digitar" }),
   ).toContainText("21,40");
@@ -252,9 +252,9 @@ test("performance uses the imported period and advertising ratios update live wi
   await page
     .getByText("Conferir retorno da publicidade", { exact: true })
     .click();
-  await page.getByLabel("Investimento em publicidade (R$)").fill("100");
-  await page.getByLabel("Receita atribuída aos anúncios (R$)").fill("500");
-  await page.getByLabel("Receita total do período (R$)").fill("1000");
+  await page.getByLabel("Investimento em publicidade (R$)").fill("100,00");
+  await page.getByLabel("Receita atribuída aos anúncios (R$)").fill("500,00");
+  await page.getByLabel("Receita total do período (R$)").fill("1000,00");
   const ads = page
     .locator("details")
     .filter({ hasText: "Conferir retorno da publicidade" });
@@ -322,14 +322,14 @@ test("automatic ML costs show their sources, reprice freight live and persist th
     await db().collection("ml_quotes").doc(quote.id).set(quote);
     await route.fulfill({ json: quote });
   });
-  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=costs`);
+  await page.goto(`/anuncios/${o.id}?store=juntos-com&tab=scenario`);
   await expect(page.locator(".ml-tariff-box")).toContainText(
     "Tarifa consultada",
   );
   await expect(
     page
       .locator(".pricing-cost-editor")
-      .getByRole("spinbutton", { name: "Frete da loja (R$)", exact: true }),
+      .getByRole("textbox", { name: "Frete da loja (R$)", exact: true }),
   ).toHaveValue("");
   await expect(page.locator(".pricing-cost-editor")).toContainText(
     "ML automático: R$ 8,00",
@@ -340,7 +340,7 @@ test("automatic ML costs show their sources, reprice freight live and persist th
   );
   const panel = page.locator(".calculation-panel");
   await expect(panel.locator(".margin-result")).toContainText("R$ 27,00");
-  await page.getByLabel("Preço proposto (R$)").fill("150");
+  await page.getByLabel("Preço proposto (R$)").fill("150,00");
   await expect(
     page.locator(".ml-condition-row").filter({ hasText: "Frete da loja" }),
   ).toContainText("R$ 15,00");

@@ -187,8 +187,13 @@ test("Ctrl+K searches the selected store, opens a preview without changing filte
   ).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(
-    preview.getByRole("tab", { name: "Simular preço" }),
+    preview.getByRole("tab", { name: "Custos", exact: true }),
   ).toBeFocused();
+  await expect(
+    preview.getByRole("region", { name: "Custos atuais do anúncio" }),
+  ).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(preview.getByRole("tab", { name: "Simulador" })).toBeFocused();
   await expect(
     preview.getByRole("region", { name: "Resumo da precificação ao digitar" }),
   ).toBeVisible();
@@ -237,13 +242,13 @@ test("preview pricing calculates live, protects drafts and persists costs and a 
     })
     .click();
   const preview = page.locator("dialog.offer-preview");
-  await preview.getByRole("tab", { name: "Simular preço" }).click();
+  await preview.getByRole("tab", { name: "Simulador" }).click();
   const price = preview.getByLabel("Preço proposto (R$)");
-  await price.fill("1");
+  await price.fill("1,00");
   await expect(preview.locator(".calculation-panel")).toContainText("29,10");
   await price.press("End");
-  await price.press("5");
-  await expect(price).toHaveValue("15");
+  await price.fill("15,00");
+  await expect(price).toHaveValue("R$\u00a015,00");
   await expect(preview.locator(".calculation-panel")).toContainText("16,50");
   expect((await db().collection("offers").doc(a.id).get()).data()!.price).toBe(
     "100",
@@ -252,16 +257,23 @@ test("preview pricing calculates live, protects drafts and persists costs and a 
   const confirm = page.getByRole("dialog", { name: "Descartar alterações?" });
   await expect(confirm).toBeVisible();
   await confirm.getByRole("button", { name: "Continuar editando" }).click();
-  await expect(price).toHaveValue("15");
+  await expect(price).toHaveValue("R$\u00a015,00");
+  await preview.getByRole("tab", { name: "Custos", exact: true }).click();
+  await confirm.getByRole("button", { name: "Descartar e continuar" }).click();
   await preview
-    .getByRole("spinbutton", {
-      name: "Mercadoria neste anúncio (R$)",
-      exact: true,
-    })
-    .fill("30");
-  await preview
+    .getByRole("button", { name: "Editar custos", exact: true })
+    .click();
+  const costDialog = page.getByRole("dialog", {
+    name: "Editar custos atuais",
+    exact: true,
+  });
+  await costDialog
+    .getByLabel("Mercadoria neste anúncio (R$)", { exact: true })
+    .fill("30,00");
+  await costDialog
     .getByRole("button", { name: "Salvar custos", exact: true })
     .click();
+  await expect(costDialog).not.toBeVisible();
   await expect
     .poll(
       async () =>
@@ -269,9 +281,10 @@ test("preview pricing calculates live, protects drafts and persists costs and a 
           (await db().collection("costs").doc(a.id).get()).data()!.data_json,
         ).goods,
     )
-    .toBe("30");
-  await expect(price).toHaveValue("100");
-  await price.fill("90");
+    .toBe("30.00");
+  await preview.getByRole("tab", { name: "Simulador" }).click();
+  await expect(price).toHaveValue("R$\u00a0100,00");
+  await price.fill("90,00");
   await preview.getByLabel("Conferi as tarifas").check();
   await preview.getByLabel("Motivo da proposta *").fill("Revisão na prévia");
   await preview
@@ -336,7 +349,7 @@ test("search recovers from errors and preview remains usable at mobile and deskt
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 850 });
-  await preview.getByRole("tab", { name: "Simular preço" }).click();
+  await preview.getByRole("tab", { name: "Simulador" }).click();
   await expect(preview.getByLabel("Preço proposto (R$)")).toBeVisible();
   await expect(
     preview.getByRole("region", { name: "Resumo da precificação ao digitar" }),
